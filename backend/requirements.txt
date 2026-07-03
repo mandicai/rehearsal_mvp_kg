@@ -1,0 +1,8 @@
+flask
+flask-cors
+sentence-transformers
+spacy
+torch
+numpy
+openai
+python-dotenv
