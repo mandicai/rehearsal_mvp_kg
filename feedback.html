@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Presentation Feedback Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<h1>Presentation Feedback Simulator</h1>
+
+<!-- carousel of slides -->
+<div id="carousel"></div>
+
+<!-- transcript segment corresponding to slide -->
+<div id="transcript-panel">
+  <div class="slide-number" id="slide-number"></div>
+  <div class="timestamp" id="timestamp"></div>
+  <div class="transcript-text" id="transcript-text">Loading...</div>
+</div>
+
+<!-- pick an audience persona + a prompt, then get in-character feedback -->
+<div id="feedback-module">
+  <h2>Audience Feedback Simulator</h2>
+
+  <div class="feedback-audience-row">
+    <input type="text" id="feedback-audience-input" placeholder="Who should give feedback? (e.g. Marketing Director, 8th-grade student, Skeptical investor)">
+  </div>
+  <div class="audience-section-label">Suggested from this presentation's transcript (click to use):</div>
+  <div id="feedback-suggested-chips"></div>
+
+  <div class="feedback-prompt-group">
+    <label for="feedback-prompt-input">Anything specific you want them to focus on? (optional)</label>
+    <textarea id="feedback-prompt-input" rows="3" placeholder="e.g. Focus on whether the pacing feels rushed, or whether technical terms need more explanation."></textarea>
+  </div>
+
+  <button id="get-feedback-btn">Get Feedback</button>
+  <div id="feedback-status"></div>
+  <div id="feedback-result"></div>
+</div>
+
+<script src="helpers.js"></script>
+<script src="feedback.js"></script>
+
+</body>
+</html>

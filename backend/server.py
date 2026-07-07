@@ -1,6 +1,6 @@
 """
 Local HTTP service exposing the structure-aware semantic segmentation
-pipeline (see segmentation/) to the static frontend in rehearsal_mvp_2/,
+pipeline (see segmentation/) to the static frontend in rehearsal_mvp_kg/,
 which has no server or package manager of its own. Run with:
 python server.py (listens on http://127.0.0.1:8000).
 
@@ -19,6 +19,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 from segmentation import PipelineConfig, SegmentationPipeline
+from feedback_llm import FeedbackLLMClient, LLMCallError as FeedbackLLMCallError
 
 # Structural parsing + NER run in roughly linear time, but boundary scoring
 # and refinement are O(n^2)-ish over base units, so this caps worst-case
@@ -26,10 +27,15 @@ from segmentation import PipelineConfig, SegmentationPipeline
 # before structure parsing (cheaper than checking after the fact).
 MAX_CHARS = 200_000
 
+# Each slide sends a full image to a vision LLM call, so an unreasonably
+# long deck would blow up request size/latency/cost for little benefit.
+MAX_FEEDBACK_SLIDES = 60
+
 app = Flask(__name__)
 CORS(app)
 
 pipeline = SegmentationPipeline(PipelineConfig())
+feedback_client = FeedbackLLMClient()
 
 
 @app.route('/segment', methods=['POST'])
@@ -51,6 +57,33 @@ def segment():
         return jsonify({'error': str(exc)}), 500
 
     return jsonify({'segments': segments, 'truncated': truncated})
+
+
+@app.route('/feedback', methods=['POST'])
+def feedback():
+    data = request.get_json(silent=True) or {}
+    audience = (data.get('audience') or '').strip()
+    prompt = (data.get('prompt') or '').strip()
+    slides = data.get('slides')
+
+    if not audience:
+        return jsonify({'error': 'audience is required'}), 400
+    if not isinstance(slides, list) or not slides:
+        return jsonify({'error': 'slides is required'}), 400
+    if len(slides) > MAX_FEEDBACK_SLIDES:
+        return jsonify({'error': f'too many slides (max {MAX_FEEDBACK_SLIDES})'}), 400
+
+    if not feedback_client.is_configured():
+        return jsonify({
+            'error': 'Feedback requires an LLM API key. Set OPENAI_API_KEY (or OPENROUTER_API_KEY) in backend/.env.'
+        }), 503
+
+    try:
+        feedback_text = feedback_client.get_feedback(audience, prompt, slides)
+    except FeedbackLLMCallError as exc:
+        return jsonify({'error': str(exc)}), 500
+
+    return jsonify({'feedback': feedback_text})
 
 
 if __name__ == '__main__':

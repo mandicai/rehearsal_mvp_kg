@@ -317,6 +317,91 @@ function buildVenn(container, sourceLabel) {
   selectGroup('common');
 }
 
+// --- Slide image payload prep for the feedback module (feedback.html) ---
+// Downscales each slide snapshot via canvas before base64-encoding, since
+// sending a full deck of full-resolution PNGs to a vision LLM would bloat
+// the request/cost with no benefit to feedback quality.
+
+const FEEDBACK_IMAGE_MAX_WIDTH = 640;
+
+function imageToDataUrl(src, maxWidth) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxWidth / img.width);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', 0.72));
+    };
+    img.onerror = () => reject(new Error(`Failed to load image: ${src}`));
+    img.src = src;
+  });
+}
+
+function prepareSlidePayload(slideData, maxWidth) {
+  return Promise.all(
+    slideData.map(slide =>
+      imageToDataUrl(slide.snapshot_image, maxWidth || FEEDBACK_IMAGE_MAX_WIDTH).then(dataUrl => ({
+        slide_index: slide.slide_index,
+        start_time: slide.start_time,
+        end_time: slide.end_time,
+        transcript: slide.transcript || '',
+        image: dataUrl
+      }))
+    )
+  );
+}
+
+// --- Feedback module (also real, like fetchSegments above): calls the same
+// local Python backend (backend/server.py), which forwards the transcript +
+// slide images to a vision-capable LLM role-playing as the chosen audience.
+
+const FEEDBACK_API_URL = 'http://127.0.0.1:8000/feedback';
+
+function fetchFeedback(audience, prompt, slidePayload) {
+  return fetch(FEEDBACK_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ audience, prompt, slides: slidePayload })
+  })
+    .then(res => {
+      if (!res.ok) {
+        return res.json()
+          .catch(() => ({}))
+          .then(body => { throw new Error(body.error || `server responded with ${res.status}`); });
+      }
+      return res.json();
+    })
+    .then(data => data.feedback)
+    .catch(err => {
+      throw new Error(
+        `Could not reach the feedback server at ${FEEDBACK_API_URL} (${err.message}). ` +
+        `Start it with: python backend/server.py`
+      );
+    });
+}
+
+function renderFeedbackResult(container, audience, feedbackText) {
+  container.innerHTML = '';
+
+  const card = document.createElement('div');
+  card.className = 'feedback-response-card';
+
+  const header = document.createElement('div');
+  header.className = 'feedback-response-header';
+  header.textContent = `Feedback from: ${audience}`;
+  card.appendChild(header);
+
+  const body = document.createElement('div');
+  body.className = 'feedback-response-text';
+  body.textContent = feedbackText;
+  card.appendChild(body);
+
+  container.appendChild(card);
+}
+
 // --- Input readers ---
 
 if (typeof pdfjsLib !== 'undefined') {

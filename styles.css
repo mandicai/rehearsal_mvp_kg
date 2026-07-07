@@ -335,6 +335,130 @@ h1 {
   margin-bottom: 12px;
 }
 
+/* --- Feedback module (feedback.html) --- */
+#feedback-module {
+  max-width: 720px;
+  margin: 10px auto 40px;
+  padding: 24px 28px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+}
+
+#feedback-module h2 {
+  font-size: 15px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 16px;
+}
+
+.feedback-audience-row {
+  margin-bottom: 14px;
+}
+
+#feedback-audience-input {
+  width: 100%;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #FFFFFF;
+}
+
+#feedback-audience-input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+#feedback-suggested-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.feedback-prompt-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.feedback-prompt-group label {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+#feedback-prompt-input {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #FFFFFF;
+  resize: vertical;
+}
+
+#feedback-prompt-input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+#get-feedback-btn {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  background: #FFFFFF;
+  color: #EB1000;
+  cursor: pointer;
+}
+
+#get-feedback-btn:hover {
+  background: rgba(255, 255, 255, 0.85);
+}
+
+#get-feedback-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+#feedback-status {
+  font-size: 12px;
+  opacity: 0.85;
+  min-height: 16px;
+  margin-top: 14px;
+}
+
+#feedback-status.error {
+  color: #FFD5CE;
+}
+
+#feedback-result {
+  margin-top: 16px;
+}
+
+.feedback-response-card {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 16px 18px;
+}
+
+.feedback-response-header {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 10px;
+  opacity: 0.9;
+}
+
+.feedback-response-text {
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
 /* --- Text segments --- */
 .segments-feed {
   max-height: 480px;
