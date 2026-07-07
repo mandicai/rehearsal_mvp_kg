@@ -41,6 +41,7 @@ def extract_keyphrase_set(unit):
     return set(noun_chunks_for_unit(unit))
 
 
+# grabs top_n keyphrases
 def rank_keyphrases(units, top_n=6):
     counter = Counter()
     for unit in units:

@@ -34,6 +34,10 @@ class PipelineConfig:
     boundary_weights: BoundaryWeights = field(default_factory=BoundaryWeights)
     similarity_threshold: float = 0.45  # soft boundary score cutoff, in [0, 1]
 
+    # should veto boundary
+    entity_overlap_ratio: float = 0.5
+    embedding_sim: float = 0.75
+
     # segment length constraints (words, except min which is sentences)
     min_sentences: int = 2
     target_min_words: int = 200

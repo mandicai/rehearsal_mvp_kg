@@ -43,7 +43,7 @@ def _extractive_summary(segment, top_terms):
     for unit in segment.units:
         if unit.spacy_doc is None:
             continue
-        sentences.extend(s.text.strip() for s in unit.spacy_doc.sents if s.text.strip())
+        sentences.extend(s.text.strip() for s in unit.spacy_doc.sents if s.text.strip()) # .sents is sentences
     if not sentences:
         return ''
     if len(sentences) == 1:
@@ -55,7 +55,7 @@ def _extractive_summary(segment, top_terms):
         lowered = sentence.lower()
         return sum(1 for t in terms if t in lowered)
 
-    best = max(sentences, key=overlap)
+    best = max(sentences, key=overlap) # return sentence that overlaps the most with entities/keyphrases in the segment, as summary
     return best if overlap(best) > 0 else sentences[0]
 
 

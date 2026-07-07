@@ -14,7 +14,7 @@ from .config import BoundaryReason, PipelineConfig
 from .entities import entity_text_set
 
 _CONTINUITY_PRONOUNS = {
-    'this', 'that', 'these', 'those', 'it', 'they', 'him', 'her', 'them',
+    'this', 'that', 'these', 'those', 'he', 'she', 'they', 'it' #, 'it', 'they', 'him', 'her', 'them',
 }
 _MAX_LENGTH_PASSES = 3
 
@@ -70,7 +70,7 @@ def _starts_with_reference_pronoun(unit) -> bool:
     return bool(tokens) and tokens[0].text.lower() in _CONTINUITY_PRONOUNS
 
 
-def _should_veto_split(prev_unit, unit, unit_embeddings, unit_entities) -> bool:
+def _should_veto_split(prev_unit, unit, unit_embeddings, unit_entities, config) -> bool:
     """Entity-continuity refinement (stage 6): cancel a soft boundary the
     scorer proposed if the two units are actually still part of one thought -
     shared entities, a referring pronoun, or high same-section similarity."""
@@ -79,9 +79,9 @@ def _should_veto_split(prev_unit, unit, unit_embeddings, unit_entities) -> bool:
 
     prev_entities = entity_text_set(unit_entities[prev_unit.unit_id])
     cur_entities = entity_text_set(unit_entities[unit.unit_id])
-    if cur_entities:
+    if cur_entities: # have we reached the end - no current unit
         overlap_ratio = len(prev_entities & cur_entities) / len(cur_entities)
-        if overlap_ratio >= 0.5:
+        if overlap_ratio >= config.entity_overlap_ratio: # if overlap ratio is >= 0.5 between two units, then veto
             return True
 
     same_section = (
@@ -90,21 +90,21 @@ def _should_veto_split(prev_unit, unit, unit_embeddings, unit_entities) -> bool:
     )
     if same_section:
         sim = cosine_similarity(unit_embeddings[prev_unit.unit_id], unit_embeddings[unit.unit_id])
-        if sim >= 0.75:
+        if sim >= config.embedding_sim: # if cosine similarity is >= 0.75 between two units in the same section
             return True
 
     return False
 
 
 def _build_initial_segments(
-    units, forced: Set[int], soft: List[BoundaryScore], unit_embeddings, unit_entities
+    units, forced: Set[int], soft: List[BoundaryScore], unit_embeddings, unit_entities, config: PipelineConfig
 ) -> List[Segment]:
     reason_at = {i: BoundaryReason.HEADING for i in forced}
     for b in soft:
         if b.index in forced:
             continue
         prev_unit, unit = units[b.index - 1], units[b.index]
-        if _should_veto_split(prev_unit, unit, unit_embeddings, unit_entities):
+        if _should_veto_split(prev_unit, unit, unit_embeddings, unit_entities, config):
             continue
         reason_at[b.index] = b.reason
 
@@ -213,6 +213,8 @@ def _local_boundary_scores(segment: Segment, unit_embeddings, unit_entities, uni
 
 
 def _split_segment_recursive(segment: Segment, unit_embeddings, unit_entities, unit_keyphrases, weights, max_words):
+    # less than maximum words
+    # is 1 sentence
     if segment.word_count <= max_words or len(segment.units) < 2:
         return [segment]
 
@@ -277,6 +279,7 @@ class SegmentRefiner:
         if len(units) == 1:
             return [Segment(units=units, start_reason=BoundaryReason.DOCUMENT_START, end_reason=BoundaryReason.DOCUMENT_END)]
 
-        segments = _build_initial_segments(units, forced, soft, unit_embeddings, unit_entities)
-        segments = _enforce_length(segments, unit_embeddings, unit_entities, unit_keyphrases, self.config)
+        segments = _build_initial_segments(units, forced, soft, unit_embeddings, unit_entities, self.config)
+        # do I really need to enforce length of segments?
+        # segments = _enforce_length(segments, unit_embeddings, unit_entities, unit_keyphrases, self.config)
         return segments
