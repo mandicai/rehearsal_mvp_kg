@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Carta Pipeline Inspector</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+</head>
+<body>
+
+<h1>Carta Pipeline Inspector</h1>
+
+<!-- carousel of slides -->
+<div id="carousel"></div>
+
+<!-- transcript segment corresponding to slide -->
+<div id="transcript-panel">
+  <div class="slide-number" id="slide-number"></div>
+  <div class="timestamp" id="timestamp"></div>
+  <div class="transcript-text" id="transcript-text">Loading...</div>
+</div>
+
+<!-- double-check the segmentation_carta pipeline: split chunks + the entity mentions extracted from each -->
+<div id="carta-module">
+  <h2>Carta Pipeline Inspector</h2>
+  <div class="hierarchy-input-row">
+    <div class="input-group">
+      <label for="carta-file-input">Upload document(s) (.txt, .md, .pdf)</label>
+      <input type="file" id="carta-file-input" accept=".txt,.md,.pdf" multiple>
+    </div>
+    <div class="input-divider">and / or</div>
+    <div class="input-group">
+      <label for="carta-url-input">Enter a Wikipedia URL</label>
+      <div class="url-row">
+        <input type="text" id="carta-url-input" placeholder="https://en.wikipedia.org/wiki/...">
+      </div>
+    </div>
+  </div>
+  <button id="carta-extract-btn">Extract</button>
+  <div id="carta-status"></div>
+  <div id="carta-results"></div>
+</div>
+
+<script src="helpers.js"></script>
+<script src="carta.js"></script>
+
+</body>
+</html>

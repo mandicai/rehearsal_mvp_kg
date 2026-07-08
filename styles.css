@@ -298,7 +298,8 @@ h1 {
   padding-bottom: 9px;
 }
 
-#extract-btn {
+#extract-btn,
+#carta-extract-btn {
   font-family: inherit;
   font-size: 13px;
   font-weight: 600;
@@ -311,27 +312,32 @@ h1 {
   margin-top: 20px;
 }
 
-#extract-btn:hover {
+#extract-btn:hover,
+#carta-extract-btn:hover {
   background: rgba(255, 255, 255, 0.85);
 }
 
-#extract-btn:disabled {
+#extract-btn:disabled,
+#carta-extract-btn:disabled {
   opacity: 0.5;
   cursor: default;
 }
 
-#hierarchy-status {
+#hierarchy-status,
+#carta-status {
   font-size: 12px;
   opacity: 0.85;
   min-height: 16px;
   margin-top: 14px;
 }
 
-#hierarchy-status.error {
+#hierarchy-status.error,
+#carta-status.error {
   color: #FFD5CE;
 }
 
-#hierarchy-tree {
+#hierarchy-tree,
+#carta-results {
   margin-top: 10px;
 }
 
@@ -345,6 +351,22 @@ h1 {
   font-size: 12px;
   opacity: 0.7;
   margin-bottom: 12px;
+}
+
+/* --- Carta pipeline inspector module (carta.html) --- */
+#carta-module {
+  max-width: 900px;
+  margin: 10px auto 40px;
+  padding: 24px 28px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+}
+
+#carta-module h2 {
+  font-size: 15px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 16px;
 }
 
 /* --- Feedback module (feedback.html) --- */
@@ -559,7 +581,100 @@ h1 {
   color: #FFFFFF;
 }
 
-/* --- Knowledge graph (document -> section -> subsection -> segment) --- */
+/* --- segmentation_carta inspector (carta.html): chunk entity mentions --- */
+.carta-entity-header {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+  margin: 12px 0 8px;
+}
+
+.carta-entity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.carta-entity {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.carta-entity-name-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.carta-entity-name {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.carta-entity-name-row .chip.keyphrase {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+}
+
+.carta-entity-description {
+  font-size: 12px;
+  opacity: 0.85;
+  line-height: 1.4;
+}
+
+.carta-entity-subheader {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.65;
+  margin: 10px 0 4px;
+}
+
+.carta-entity-evidence-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.carta-entity-evidence-list li {
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 3px 0 3px 14px;
+  position: relative;
+}
+
+.carta-entity-evidence-list li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 11px;
+  width: 8px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.carta-entity-related-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.carta-entity-related-chips .chip.entity {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 9px;
+  background: #FFFFFF;
+  color: #EB1000;
+}
+
+/* --- Knowledge graph (entity/predicate relations) --- */
 .graph-section {
   margin-bottom: 32px;
 }
