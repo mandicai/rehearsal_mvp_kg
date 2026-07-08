@@ -72,6 +72,10 @@ def _build_topic_label(entities, keyphrases):
 
 
 class KeyphraseLabeler(SegmentLabeler):
+    # Relation extraction (subject-predicate-object triples) needs real language
+    # understanding to avoid asserting relations the text doesn't support, so
+    # unlike topic_label/summary/entities/keyphrases it has no local heuristic
+    # fallback here - 'relations' is always empty outside LLM mode.
     def label(self, segment, doc_text, unit_entities):
         entities = _aggregate_entities(segment, unit_entities)
         keyphrases = rank_keyphrases(segment.units)
@@ -80,6 +84,7 @@ class KeyphraseLabeler(SegmentLabeler):
             'summary': _extractive_summary(segment, keyphrases + [e['text'] for e in entities]),
             'top_entities': entities,
             'keyphrases': keyphrases,
+            'relations': [],
         }
 
 

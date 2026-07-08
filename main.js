@@ -119,15 +119,17 @@ audienceInput.addEventListener('keydown', e => {
 // initial call
 renderTargetAudiences();
 
-// --- target audiences --> sphere of knowledge extracted from each module ---
-// NOTE: the knowledge-hierarchy step (buildVenn, in helpers.js) is MOCKED —
-// real content is fetched for Wikipedia URLs / uploaded files, but the venn
-// diagram shown is fixed demo data, built once from all sources combined
-
+// --- target audiences --> knowledge graph extracted from each module ---
 // text segmentation (fetchSegments, also in helpers.js) is REAL and runs
 // separately on each source (each uploaded document and the URL each get
 // their own segmentation pass) rather than on their text concatenated together
 // it calls a local Python backend (backend/server.py) that must be running
+
+// the knowledge graph (buildEntityGraphs, in helpers.js) is also REAL — it
+// aggregates each segment's LLM-extracted "relations" (subject-predicate-
+// object triples, see backend/segmentation/llm.py) into one entity/predicate
+// graph per source. No local fallback: without an LLM key, relations come
+// back empty and the graph renders empty for that source
 const fileInput = document.getElementById('file-input');
 const urlInput = document.getElementById('url-input');
 const extractBtn = document.getElementById('extract-btn');
@@ -165,19 +167,18 @@ function processSources(sources) {
   const segmentTasks = sources.map(source =>
     fetchSegments(source.text, source.label).then(segmentation => {
       renderSegmentation(feedEl, segmentation, source.label);
+      return { label: source.label, segmentation };
     })
   );
 
   const combinedLabel = sources.map(s => s.label).join(' + ');
 
   Promise.all(segmentTasks)
-    .then(() => {
-      setStatus(`Segmented ${sources.length} source${sources.length === 1 ? '' : 's'}. Extracting knowledge hierarchy...`);
-      setTimeout(() => {
-        buildVenn(treeEl, combinedLabel);
-        setStatus(`Done. Parsed "${combinedLabel}".`);
-        extractBtn.disabled = false;
-      }, 700);
+    .then(results => {
+      setStatus(`Segmented ${sources.length} source${sources.length === 1 ? '' : 's'}. Building knowledge graph...`);
+      buildEntityGraphs(treeEl, results);
+      setStatus(`Done. Parsed "${combinedLabel}".`);
+      extractBtn.disabled = false;
     })
     .catch(err => {
       setStatus(err.message, true);

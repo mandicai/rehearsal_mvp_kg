@@ -27,6 +27,7 @@ _SYSTEM_PROMPT = """You are enriching one segment of a longer document for downs
 - "summary": one sentence (max ~30 words) summarizing the segment's content.
 - "top_entities": a list of up to 8 objects {"text": <entity text>, "type": <one of PRODUCT, CONCEPT, TASK, PERSON, ORG, GPE, EVENT, WORK_OF_ART, LAW, OTHER>}, the most important entities/concepts/tasks mentioned.
 - "keyphrases": a list of up to 6 short (1-4 word) keyphrases capturing the segment's key topics, distinct from top_entities where possible.
+- "relations": a list of up to 8 objects {"subject": <entity text>, "predicate": <short verb phrase, e.g. "acquired", "pollinates", "relies on">, "object": <entity text>} stating factual relationships explicitly asserted in the text. Both subject and object must each match (or closely paraphrase) one of the entries in top_entities - do not invent relations the text doesn't support, and do not relate an entity to itself.
 
 Respond with only the JSON object, no other text."""
 
@@ -81,6 +82,7 @@ class LLMClient:
                     'summary': str(parsed.get('summary', '')).strip(),
                     'top_entities': parsed.get('top_entities', []) or [],
                     'keyphrases': parsed.get('keyphrases', []) or [],
+                    'relations': parsed.get('relations', []) or [],
                 }
             except Exception as exc:  # network errors, malformed JSON, API errors
                 last_error = exc

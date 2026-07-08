@@ -23,38 +23,40 @@
   <div class="transcript-text" id="transcript-text">Loading...</div>
 </div>
 
-<!-- target audience specification -->
-<div id="audience-module">
-  <h2>Target Audiences</h2>
-  <div class="audience-input-row">
-    <input type="text" id="audience-input" placeholder="Add a custom audience (e.g. Marketing team)">
-    <button id="add-audience-btn">Add</button>
-  </div>
-  <div class="audience-section-label">Suggested from this presentation's transcript:</div>
-  <div id="suggested-chips"></div>
-  <div class="audience-section-label">Your target audiences:</div>
-  <div id="target-audiences-list"></div>
-</div>
-
-<!-- extracting spheres of knowledge corresponding to different audiences -->
-<div id="hierarchy-module">
-  <h2>Knowledge Hierarchy Extractor</h2>
-  <div class="hierarchy-input-row">
-    <div class="input-group">
-      <label for="file-input">Upload document(s) (.txt, .md, .pdf)</label>
-      <input type="file" id="file-input" accept=".txt,.md,.pdf" multiple>
+<div class="side-by-side-modules">
+  <!-- target audience specification -->
+  <div id="audience-module">
+    <h2>Target Audiences</h2>
+    <div class="audience-input-row">
+      <input type="text" id="audience-input" placeholder="Add a custom audience (e.g. Marketing team)">
+      <button id="add-audience-btn">Add</button>
     </div>
-    <div class="input-divider">and / or</div>
-    <div class="input-group">
-      <label for="url-input">Enter a Wikipedia URL</label>
-      <div class="url-row">
-        <input type="text" id="url-input" placeholder="https://en.wikipedia.org/wiki/...">
+    <div class="audience-section-label">Suggested from this presentation's transcript:</div>
+    <div id="suggested-chips"></div>
+    <div class="audience-section-label">Your target audiences:</div>
+    <div id="target-audiences-list"></div>
+  </div>
+
+  <!-- extracting spheres of knowledge corresponding to different audiences -->
+  <div id="hierarchy-module">
+    <h2>Knowledge Hierarchy Extractor</h2>
+    <div class="hierarchy-input-row">
+      <div class="input-group">
+        <label for="file-input">Upload document(s) (.txt, .md, .pdf)</label>
+        <input type="file" id="file-input" accept=".txt,.md,.pdf" multiple>
+      </div>
+      <div class="input-divider">and / or</div>
+      <div class="input-group">
+        <label for="url-input">Enter a Wikipedia URL</label>
+        <div class="url-row">
+          <input type="text" id="url-input" placeholder="https://en.wikipedia.org/wiki/...">
+        </div>
       </div>
     </div>
+    <button id="extract-btn">Extract</button>
+    <div id="hierarchy-status"></div>
+    <div id="hierarchy-tree"></div>
   </div>
-  <button id="extract-btn">Extract</button>
-  <div id="hierarchy-status"></div>
-  <div id="hierarchy-tree"></div>
 </div>
 
 <script src="helpers.js"></script>

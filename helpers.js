@@ -121,200 +121,322 @@ function renderSegmentation(container, result, sourceLabel) {
   container.appendChild(section);
 }
 
-// --- Knowledge hierarchy Venn diagram ---
-// NOTE: this section is MOCKED — it always renders the same fixed demo data
-// regardless of input, since real hierarchy classification needs a model
-// this prototype doesn't call. Circles are laid out in a 2x2 overlapping
-// cluster (viewBox 0 0 480 380) so all four visually intersect near the
-// center. "common" is the shared core known across every audience; each
-// audience's "items" are the knowledge unique to that group, layered on top
-// of the common core.
+// --- Knowledge graph: entity relations ---
+// Real (LLM-extracted): each segment's "relations" field (see
+// backend/segmentation/llm.py's enrichment prompt, exported per-segment in
+// schema.py) is a list of {subject, predicate, object} triples the model
+// found asserted in that segment's text. There's no local fallback for this
+// (see labeling.KeyphraseLabeler) - without an LLM key, relations is always
+// [] and the graph renders empty for that source. This aggregates every
+// segment's triples into one entity/predicate graph per source: nodes are
+// unique entities (deduped by lowercased text), edges are predicate-labeled
+// directed relations, laid out with a self-contained force-directed
+// simulation (no charting library in this codebase).
 
-const VENN_DATA = {
-  common: {
-    title: 'Common knowledge',
-    subtitle: 'Known by nearly everyone, across all audiences',
-    items: [
-      'A flower is the colorful part of a plant, usually with petals and a pleasant scent',
-      'Flowers grow on stems and eventually wilt or fall off',
-      'Bees, butterflies, and other insects visit flowers',
-      'Flowers are given as gifts and used in weddings, funerals, and decoration',
-      'Flowers can turn into fruit (an apple starts as a flower)',
-      'Flowers come in many colors, sizes, and shapes'
-    ]
-  },
-  audiences: [
-    {
-      id: 'public',
-      label: 'General Public',
-      cx: 190, cy: 150,
-      color: '#FFFFFF',
-      textColor: '#EB1000',
-      labelPos: { x: 23, y: 21 },
-      items: []
-    },
-    {
-      id: 'educated',
-      label: 'Educated Learner',
-      cx: 290, cy: 150,
-      color: '#FFD166',
-      textColor: '#5C3D00',
-      labelPos: { x: 77, y: 21 },
-      items: [
-        'Anatomy: petals (corolla) vs. sepals (calyx)',
-        'Flowers are the plant’s reproductive organ: stamens (male) and pistil (female)',
-        'Pollination moves pollen from stamen to pistil, via insects, wind, or birds',
-        'After pollination the ovary becomes fruit and ovules become seeds',
-        'Some flowers are radially symmetrical (daisy) vs. irregular (orchid)',
-        'Cultural facts: national flowers, flower symbolism, floristry as an industry',
-        'Major food crops (rice, wheat, corn) are flowering plants'
-      ]
-    },
-    {
-      id: 'student',
-      label: 'Botany Student',
-      cx: 190, cy: 230,
-      color: '#06D6A0',
-      textColor: '#003B2E',
-      labelPos: { x: 23, y: 79 },
-      items: [
-        'Precise structure: anther + filament (stamen); stigma + style + ovary (carpel)',
-        'Flower sexuality: perfect/imperfect, monoecious/dioecious, heterantherous',
-        'Biotic vs. abiotic pollination; nectar guides visible only in UV',
-        'Double fertilisation produces both a zygote and triploid endosperm',
-        'Seed/embryo development: cotyledon, radicle, epicotyl, hypocotyl',
-        'Fruit anatomy: exocarp, mesocarp, endocarp/pyrena',
-        'Inflorescences and pseudanthia (a sunflower is a cluster of florets)'
-      ]
-    },
-    {
-      id: 'specialist',
-      label: 'Specialist / Researcher',
-      cx: 290, cy: 230,
-      color: '#118AB2',
-      textColor: '#FFFFFF',
-      labelPos: { x: 77, y: 79 },
-      items: [
-        'ABC(DE) model: MADS-box gene combinations specify organ identity',
-        'Floral formulae and floral diagrams as formal notation systems',
-        'Structural coloration: iridescence and photonic crystals in petals',
-        'Flowering-transition physiology: photoperiodism, vernalization, florigen',
-        'Coevolution case studies, e.g. honeysuckle timed to nocturnal moths',
-        'Evolutionary history debates: molecular estimates vs. fossil record',
-        'History of plant taxonomy from Linnaeus to DNA-sequence classification'
-      ]
+function aggregateRelations(segments) {
+  const triples = new Map(); // `${subj}|${pred}|${obj}` (lowercased) -> { subject, predicate, object, segmentLabels: Set }
+
+  segments.forEach(seg => {
+    (seg.relations || []).forEach(rel => {
+      const subject = (rel.subject || '').trim();
+      const predicate = (rel.predicate || '').trim();
+      const object = (rel.object || '').trim();
+      if (!subject || !predicate || !object || subject.toLowerCase() === object.toLowerCase()) return;
+
+      const key = `${subject.toLowerCase()}|${predicate.toLowerCase()}|${object.toLowerCase()}`;
+      if (!triples.has(key)) {
+        triples.set(key, { subject, predicate, object, segmentLabels: new Set() });
+      }
+      triples.get(key).segmentLabels.add(seg.topic_label || 'Untitled segment');
+    });
+  });
+
+  return Array.from(triples.values());
+}
+
+function buildEntityGraph(triples) {
+  const nodeIndex = new Map(); // lowercased entity text -> node index
+  const nodes = [];
+
+  function nodeFor(text) {
+    const key = text.toLowerCase();
+    if (!nodeIndex.has(key)) {
+      nodeIndex.set(key, nodes.length);
+      nodes.push({ label: text, index: nodes.length });
     }
-  ]
-};
+    return nodeIndex.get(key);
+  }
 
-function renderGroupPanel(panelEl, group, isCommon) {
+  const edges = triples.map(t => ({
+    source: nodeFor(t.subject),
+    target: nodeFor(t.object),
+    predicate: t.predicate,
+    segmentLabels: Array.from(t.segmentLabels),
+  }));
+
+  return { nodes, edges };
+}
+
+// Fruchterman-Reingold force-directed layout: nodes repel each other,
+// connected nodes are pulled together along a spring, with a cooling
+// schedule so positions settle instead of oscillating. width/height are in
+// the same coordinate units as the final render (see aspect-matching in
+// renderEntityGraph) so the simulated layout isn't stretched when displayed.
+function layoutForceGraph(nodes, edges, width, height, iterations) {
+  const n = nodes.length;
+  nodes.forEach((node, i) => {
+    const angle = (i / Math.max(n, 1)) * 2 * Math.PI;
+    node.x = width / 2 + Math.cos(angle) * Math.min(width, height) * 0.35;
+    node.y = height / 2 + Math.sin(angle) * Math.min(width, height) * 0.35;
+  });
+
+  const k = Math.sqrt((width * height) / Math.max(n, 1));
+
+  for (let iter = 0; iter < iterations; iter++) {
+    const dispX = new Array(n).fill(0);
+    const dispY = new Array(n).fill(0);
+
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const dx = nodes[i].x - nodes[j].x;
+        const dy = nodes[i].y - nodes[j].y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
+        const force = (k * k) / dist;
+        const fx = (dx / dist) * force;
+        const fy = (dy / dist) * force;
+        dispX[i] += fx; dispY[i] += fy;
+        dispX[j] -= fx; dispY[j] -= fy;
+      }
+    }
+
+    edges.forEach(edge => {
+      const i = edge.source, j = edge.target;
+      const dx = nodes[i].x - nodes[j].x;
+      const dy = nodes[i].y - nodes[j].y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
+      const force = (dist * dist) / k;
+      const fx = (dx / dist) * force;
+      const fy = (dy / dist) * force;
+      dispX[i] -= fx; dispY[i] -= fy;
+      dispX[j] += fx; dispY[j] += fy;
+    });
+
+    const temp = Math.min(width, height) * 0.1 * (1 - iter / iterations);
+    for (let i = 0; i < n; i++) {
+      const dlen = Math.sqrt(dispX[i] * dispX[i] + dispY[i] * dispY[i]) || 0.01;
+      nodes[i].x += (dispX[i] / dlen) * Math.min(dlen, temp);
+      nodes[i].y += (dispY[i] / dlen) * Math.min(dlen, temp);
+      nodes[i].x = Math.min(width - 6, Math.max(6, nodes[i].x));
+      nodes[i].y = Math.min(height - 6, Math.max(6, nodes[i].y));
+    }
+  }
+}
+
+function edgePairKey(edge) {
+  return edge.source < edge.target ? `${edge.source}-${edge.target}` : `${edge.target}-${edge.source}`;
+}
+
+function renderRelationPanelForNode(panelEl, node, edges) {
   panelEl.innerHTML = '';
 
   const title = document.createElement('div');
-  title.className = 'venn-panel-title';
-  title.textContent = isCommon ? group.title : group.label;
+  title.className = 'graph-panel-title';
+  title.textContent = node.label;
   panelEl.appendChild(title);
 
+  const related = edges.filter(e => e.source === node.index || e.target === node.index);
   const subtitle = document.createElement('div');
-  subtitle.className = 'venn-panel-subtitle';
-  subtitle.textContent = isCommon ? group.subtitle : 'Knowledge unique to this audience, on top of the common core';
+  subtitle.className = 'graph-panel-subtitle';
+  subtitle.textContent = `Entity — ${related.length} relation${related.length === 1 ? '' : 's'}`;
   panelEl.appendChild(subtitle);
 
-  if (group.items.length === 0) {
-    const note = document.createElement('div');
-    note.className = 'empty-note';
-    note.textContent = 'No knowledge beyond the common core — this audience relies entirely on what most people already know.';
-    panelEl.appendChild(note);
-    return;
-  }
-
   const ul = document.createElement('ul');
-  group.items.forEach(item => {
+  related.forEach(e => {
     const li = document.createElement('li');
-    li.textContent = item;
+    li.textContent = e.source === node.index
+      ? `${node.label} → ${e.predicate} → ${e.targetNode.label}`
+      : `${e.sourceNode.label} → ${e.predicate} → ${node.label}`;
     ul.appendChild(li);
   });
   panelEl.appendChild(ul);
 }
 
-function buildVenn(container, sourceLabel) {
-  const section = document.createElement('div');
-  section.className = 'venn-section';
+function renderRelationPanelForEdge(panelEl, edge) {
+  panelEl.innerHTML = '';
 
-  const sourceEl = document.createElement('div');
-  sourceEl.className = 'section-label';
-  sourceEl.textContent = `Knowledge hierarchy for "${sourceLabel}" — demo output (not yet connected to a real model)`;
-  section.appendChild(sourceEl);
+  const title = document.createElement('div');
+  title.className = 'graph-panel-title';
+  title.textContent = `${edge.sourceNode.label} → ${edge.predicate} → ${edge.targetNode.label}`;
+  panelEl.appendChild(title);
+
+  const subtitle = document.createElement('div');
+  subtitle.className = 'graph-panel-subtitle';
+  subtitle.textContent = 'Relation';
+  panelEl.appendChild(subtitle);
+
+  const ul = document.createElement('ul');
+  edge.segmentLabels.forEach(segLabel => {
+    const li = document.createElement('li');
+    li.textContent = `Asserted in segment: ${segLabel}`;
+    ul.appendChild(li);
+  });
+  panelEl.appendChild(ul);
+}
+
+function renderEntityGraph(container, sourceLabel, segments) {
+  const section = document.createElement('div');
+  section.className = 'graph-section';
+
+  const triples = aggregateRelations(segments);
+
+  const label = document.createElement('div');
+  label.className = 'section-label';
+  label.textContent = `Knowledge graph for "${sourceLabel}" — ${triples.length} relation${triples.length === 1 ? '' : 's'} extracted between entities`;
+  section.appendChild(label);
+
+  if (triples.length === 0) {
+    const note = document.createElement('div');
+    note.className = 'graph-empty-note';
+    note.textContent = 'No relations extracted for this source (requires an LLM API key configured in backend/.env - there is no local fallback for relation extraction).';
+    section.appendChild(note);
+    container.appendChild(section);
+    return;
+  }
+
+  const { nodes, edges } = buildEntityGraph(triples);
+  edges.forEach(e => { e.sourceNode = nodes[e.source]; e.targetNode = nodes[e.target]; });
+
+  // Keep the simulation area roughly square-ish (fixed aspect) rather than
+  // matching the very wide, short scroll box directly - an elongated
+  // simulation space (e.g. 8:1) starves vertical spread and collapses every
+  // node into a single cramped row. Both dimensions grow with node count so
+  // larger graphs get proportionally more room without changing the aspect.
+  const ASPECT = 1.8;
+  const area = Math.max(560 * 300, nodes.length * 9000);
+  const wrapPxHeight = Math.max(260, Math.sqrt(area / ASPECT));
+  const wrapPxWidth = Math.max(560, wrapPxHeight * ASPECT);
+  const HEIGHT = 100;
+  const WIDTH = HEIGHT * ASPECT;
+  layoutForceGraph(nodes, edges, WIDTH, HEIGHT, 300);
+
+  // Parallel edges between the same pair of nodes get offset control points
+  // so they render as distinguishable curves instead of overlapping lines.
+  const pairCounts = new Map();
+  edges.forEach(edge => {
+    const key = edgePairKey(edge);
+    edge._pairIndex = pairCounts.get(key) || 0;
+    pairCounts.set(key, edge._pairIndex + 1);
+  });
+  edges.forEach(edge => { edge._pairTotal = pairCounts.get(edgePairKey(edge)); });
+
+  const scroll = document.createElement('div');
+  scroll.className = 'graph-scroll';
 
   const wrap = document.createElement('div');
-  wrap.className = 'venn-wrap';
+  wrap.className = 'graph-wrap';
+  wrap.style.minWidth = `${wrapPxWidth}px`;
+  wrap.style.height = `${wrapPxHeight}px`;
 
   const svgNS = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(svgNS, 'svg');
-  svg.setAttribute('viewBox', '0 0 480 380');
+  svg.setAttribute('viewBox', `0 0 ${WIDTH} ${HEIGHT}`);
 
-  VENN_DATA.audiences.forEach(a => {
-    const circle = document.createElementNS(svgNS, 'circle');
-    circle.setAttribute('cx', a.cx);
-    circle.setAttribute('cy', a.cy);
-    circle.setAttribute('r', 100);
-    circle.setAttribute('fill', a.color);
-    circle.setAttribute('fill-opacity', '0.45');
-    circle.dataset.id = a.id;
-    svg.appendChild(circle);
+  const defs = document.createElementNS(svgNS, 'defs');
+  const marker = document.createElementNS(svgNS, 'marker');
+  marker.setAttribute('id', 'graph-arrow');
+  marker.setAttribute('viewBox', '0 0 10 10');
+  marker.setAttribute('refX', '9');
+  marker.setAttribute('refY', '5');
+  marker.setAttribute('markerWidth', '5');
+  marker.setAttribute('markerHeight', '5');
+  marker.setAttribute('orient', 'auto-start-reverse');
+  const arrowPath = document.createElementNS(svgNS, 'path');
+  arrowPath.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
+  arrowPath.setAttribute('class', 'graph-arrowhead');
+  marker.appendChild(arrowPath);
+  defs.appendChild(marker);
+  svg.appendChild(defs);
+
+  const panel = document.createElement('div');
+  panel.className = 'graph-panel';
+
+  function clearActive() {
+    wrap.querySelectorAll('.graph-node.active, .graph-edge-relation.active').forEach(el => el.classList.remove('active'));
+  }
+
+  const edgeLabelEls = [];
+
+  edges.forEach(edge => {
+    const offset = (edge._pairIndex - (edge._pairTotal - 1) / 2) * (WIDTH * 0.05);
+    const mx = (edge.sourceNode.x + edge.targetNode.x) / 2;
+    const my = (edge.sourceNode.y + edge.targetNode.y) / 2;
+    const dx = edge.targetNode.x - edge.sourceNode.x;
+    const dy = edge.targetNode.y - edge.sourceNode.y;
+    const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
+    const nx = -dy / dist, ny = dx / dist;
+    const ctrlX = mx + nx * offset;
+    const ctrlY = my + ny * offset;
+    const d = `M ${edge.sourceNode.x} ${edge.sourceNode.y} Q ${ctrlX} ${ctrlY} ${edge.targetNode.x} ${edge.targetNode.y}`;
+
+    const path = document.createElementNS(svgNS, 'path');
+    path.setAttribute('d', d);
+    path.setAttribute('class', 'graph-edge-relation');
+    path.setAttribute('marker-end', 'url(#graph-arrow)');
+    svg.appendChild(path);
+
+    const hitPath = document.createElementNS(svgNS, 'path'); // wider invisible stroke, easier to click than the thin visible line
+    hitPath.setAttribute('d', d);
+    hitPath.setAttribute('class', 'graph-edge-hit');
+    const selectEdge = () => {
+      clearActive();
+      path.classList.add('active');
+      renderRelationPanelForEdge(panel, edge);
+    };
+    hitPath.addEventListener('click', selectEdge);
+    svg.appendChild(hitPath);
+
+    const labelX = 0.25 * edge.sourceNode.x + 0.5 * ctrlX + 0.25 * edge.targetNode.x;
+    const labelY = 0.25 * edge.sourceNode.y + 0.5 * ctrlY + 0.25 * edge.targetNode.y;
+    const labelEl = document.createElement('span');
+    labelEl.className = 'graph-edge-label';
+    labelEl.textContent = edge.predicate;
+    labelEl.style.left = `${(labelX / WIDTH) * 100}%`;
+    labelEl.style.top = `${(labelY / HEIGHT) * 100}%`;
+    labelEl.addEventListener('click', selectEdge);
+    edgeLabelEls.push(labelEl);
   });
 
   wrap.appendChild(svg);
+  edgeLabelEls.forEach(el => wrap.appendChild(el));
 
-  const panel = document.createElement('div');
-  panel.className = 'venn-panel';
-
-  function selectGroup(id) {
-    wrap.querySelectorAll('.venn-label').forEach(el => {
-      el.classList.toggle('active', el.dataset.id === id);
+  nodes.forEach(node => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'graph-node graph-node-entity';
+    btn.textContent = node.label;
+    btn.title = node.label;
+    btn.style.left = `${(node.x / WIDTH) * 100}%`;
+    btn.style.top = `${(node.y / HEIGHT) * 100}%`;
+    btn.addEventListener('click', () => {
+      clearActive();
+      btn.classList.add('active');
+      renderRelationPanelForNode(panel, node, edges);
     });
-    svg.querySelectorAll('circle').forEach(el => {
-      el.classList.toggle('active-circle', el.dataset.id === id);
-    });
-
-    if (id === 'common') {
-      renderGroupPanel(panel, VENN_DATA.common, true);
-    } else {
-      renderGroupPanel(panel, VENN_DATA.audiences.find(a => a.id === id), false);
-    }
-  }
-
-  VENN_DATA.audiences.forEach(a => {
-    const label = document.createElement('button');
-    label.type = 'button';
-    label.className = 'venn-label';
-    label.dataset.id = a.id;
-    label.textContent = a.label;
-    label.style.left = `${a.labelPos.x}%`;
-    label.style.top = `${a.labelPos.y}%`;
-    label.style.background = a.color;
-    label.style.color = a.textColor;
-    label.addEventListener('click', () => selectGroup(a.id));
-    wrap.appendChild(label);
+    wrap.appendChild(btn);
   });
 
-  const commonLabel = document.createElement('button');
-  commonLabel.type = 'button';
-  commonLabel.className = 'venn-label common';
-  commonLabel.dataset.id = 'common';
-  commonLabel.textContent = 'Common Knowledge';
-  commonLabel.style.left = '50%';
-  commonLabel.style.top = '50%';
-  commonLabel.style.background = '#FFFFFF';
-  commonLabel.style.color = '#EB1000';
-  commonLabel.addEventListener('click', () => selectGroup('common'));
-  wrap.appendChild(commonLabel);
-
-  section.appendChild(wrap);
+  scroll.appendChild(wrap);
+  section.appendChild(scroll);
   section.appendChild(panel);
   container.appendChild(section);
 
-  selectGroup('common');
+  renderRelationPanelForNode(panel, nodes[0], edges);
+}
+
+function buildEntityGraphs(container, results) {
+  results.forEach(result => {
+    renderEntityGraph(container, result.label, result.segmentation.segments || []);
+  });
 }
 
 // --- Slide image payload prep for the feedback module (feedback.html) ---

@@ -37,6 +37,7 @@ def to_schema_dict(segment, segment_index, document_id, doc_text, label_result) 
         'text': doc_text[segment.char_start:segment.char_end].strip(),
         'top_entities': top_entities,
         'keyphrases': label_result.get('keyphrases', []),
+        'relations': label_result.get('relations', []),
         'source_metadata': {
             'section_title': segment.section_title,
             'subsection_title': segment.subsection_title,

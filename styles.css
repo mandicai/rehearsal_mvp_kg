@@ -99,10 +99,23 @@ h1 {
   margin-bottom: 4px;
 }
 
+/* --- Side-by-side layout for the target audiences + hierarchy modules --- */
+.side-by-side-modules {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 24px;
+  max-width: 1480px;
+  margin: 10px auto 40px;
+}
+
+.side-by-side-modules > div {
+  flex: 1 1 480px;
+}
+
 /* --- Target audiences module --- */
 #audience-module {
-  max-width: 720px;
-  margin: 10px auto 40px;
+  margin: 0;
   padding: 24px 28px;
   background: rgba(0, 0, 0, 0.2);
   border-radius: 8px;
@@ -223,8 +236,7 @@ h1 {
 
 /* --- Hierarchy extractor module --- */
 #hierarchy-module {
-  max-width: 720px;
-  margin: 10px auto 40px;
+  margin: 0;
   padding: 24px 28px;
   background: rgba(0, 0, 0, 0.2);
   border-radius: 8px;
@@ -526,103 +538,181 @@ h1 {
 }
 
 .segment-card .chip.entity,
-.segment-card .chip.keyphrase {
+.segment-card .chip.keyphrase,
+.graph-panel .chip.entity,
+.graph-panel .chip.keyphrase {
   font-size: 11px;
   font-weight: 600;
   padding: 3px 10px;
 }
 
-.segment-card .chip.entity {
+.segment-card .chip.entity,
+.graph-panel .chip.entity {
   background: #FFFFFF;
   color: #EB1000;
 }
 
-.segment-card .chip.keyphrase {
+.segment-card .chip.keyphrase,
+.graph-panel .chip.keyphrase {
   background: rgba(255, 255, 255, 0.12);
   border: 1px solid rgba(255, 255, 255, 0.4);
   color: #FFFFFF;
 }
 
-/* --- Venn diagram --- */
-.venn-wrap {
+/* --- Knowledge graph (document -> section -> subsection -> segment) --- */
+.graph-section {
+  margin-bottom: 32px;
+}
+
+.graph-section:last-child {
+  margin-bottom: 0;
+}
+
+.graph-empty-note {
+  font-size: 13px;
+  font-style: italic;
+  opacity: 0.75;
+}
+
+.graph-scroll {
+  overflow-x: auto;
+  padding-bottom: 4px;
+  margin-bottom: 20px;
+}
+
+.graph-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+.graph-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 4px;
+}
+.graph-scroll::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.graph-wrap {
   position: relative;
   width: 100%;
-  max-width: 460px;
-  margin: 0 auto 20px;
+  height: 300px;
 }
 
-.venn-wrap svg {
-  display: block;
+.graph-wrap svg {
+  position: absolute;
+  inset: 0;
   width: 100%;
-  height: auto;
+  height: 100%;
 }
 
-.venn-wrap svg circle {
-  stroke: rgba(255, 255, 255, 0.9);
-  stroke-width: 2;
-  transition: stroke-width 0.15s ease, fill-opacity 0.15s ease;
+.graph-edge-relation {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.55);
+  stroke-width: 0.35;
+  transition: stroke 0.15s ease, stroke-width 0.15s ease;
 }
 
-.venn-wrap svg circle.active-circle {
-  stroke-width: 4;
-  fill-opacity: 0.75;
+.graph-edge-relation.active {
+  stroke: #FFD166;
+  stroke-width: 0.7;
 }
 
-.venn-label {
+.graph-arrowhead {
+  fill: rgba(255, 255, 255, 0.7);
+}
+
+.graph-edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 3;
+  cursor: pointer;
+}
+
+.graph-edge-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #FFFFFF;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.graph-node {
   position: absolute;
   transform: translate(-50%, -50%);
   font-family: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  padding: 6px 12px;
-  border-radius: 999px;
-  border: 2px solid transparent;
   cursor: pointer;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: 2px solid transparent;
+  border-radius: 999px;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  transition: border-color 0.15s ease;
 }
 
-.venn-label.active {
+.graph-node.active {
   border-color: #FFFFFF;
 }
 
-.venn-label.common {
-  font-size: 13px;
-  padding: 8px 16px;
+.graph-node-entity {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 12px;
+  background: #FFFFFF;
+  color: #EB1000;
+  max-width: 130px;
 }
 
-#hierarchy-tree .venn-panel {
+.graph-panel {
   background: rgba(255, 255, 255, 0.08);
   border-radius: 6px;
   padding: 16px 18px;
 }
 
-#hierarchy-tree .venn-panel-title {
+.graph-panel-title {
   font-size: 14px;
   font-weight: 700;
   margin-bottom: 2px;
 }
 
-#hierarchy-tree .venn-panel-subtitle {
+.graph-panel-subtitle {
   font-size: 12px;
   opacity: 0.7;
   margin-bottom: 12px;
 }
 
-#hierarchy-tree .venn-panel ul {
+.graph-panel-summary {
+  font-size: 13px;
+  font-style: italic;
+  opacity: 0.9;
+  margin-bottom: 10px;
+}
+
+.graph-panel-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.graph-panel ul {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-#hierarchy-tree .venn-panel ul li {
+.graph-panel ul li {
   font-size: 13px;
   line-height: 1.5;
   padding: 5px 0 5px 16px;
   position: relative;
 }
 
-#hierarchy-tree .venn-panel ul li::before {
+.graph-panel ul li::before {
   content: '';
   position: absolute;
   left: 0;
@@ -630,10 +720,4 @@ h1 {
   width: 10px;
   height: 1px;
   background: rgba(255, 255, 255, 0.4);
-}
-
-#hierarchy-tree .venn-panel .empty-note {
-  font-size: 13px;
-  font-style: italic;
-  opacity: 0.75;
 }
