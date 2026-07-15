@@ -21,17 +21,19 @@ function selectSlide(index) {
   }
 }
 
-fetch('slides.json')
+const DECK_DIR = 'presentation-examples/flower';
+
+fetch(`/${DECK_DIR}/slides.json`)
   .then(res => res.json())
   .then(data => {
-    slides = data;
+    slides = data.map(slide => ({ ...slide, snapshot_image: `${DECK_DIR}/${slide.snapshot_image}` }));
     const carousel = document.getElementById('carousel');
 
     slides.forEach((slide, i) => {
       const thumb = document.createElement('div');
       thumb.className = 'slide-thumb';
       thumb.innerHTML = `
-        <img src="${slide.snapshot_image}" alt="Slide ${slide.slide_index}">
+        <img src="/${slide.snapshot_image}" alt="Slide ${slide.slide_index}">
         <div class="thumb-label">${slide.start_time}</div>
       `;
       thumb.addEventListener('click', () => selectSlide(i));
@@ -119,3 +121,70 @@ function runFeedback() {
 }
 
 getFeedbackBtn.addEventListener('click', runFeedback);
+
+// --- Research module: progressive (live, slide-by-slide) vs. retrospective
+// (full transcript, one shot) feedback, run side by side on the same
+// audience/prompt/deck so the two conditions are directly comparable. Both
+// are real LLM calls (see helpers.js's fetchFeedback/runProgressiveTimeline,
+// backend/feedback_llm.py's get_feedback/get_progressive_reaction) - the
+// retrospective column reuses the exact same call as "Get Feedback" above.
+const compareBtn = document.getElementById('compare-feedback-btn');
+const comparisonStatusEl = document.getElementById('comparison-status');
+const progressiveTimelineEl = document.getElementById('progressive-timeline');
+const retrospectiveResultEl = document.getElementById('retrospective-result');
+
+function setComparisonStatus(message, isError) {
+  comparisonStatusEl.textContent = message || '';
+  comparisonStatusEl.classList.toggle('error', !!isError);
+}
+
+function runComparison() {
+  const audience = audienceInput.value.trim();
+  const prompt = promptInput.value.trim();
+
+  if (!audience) {
+    setComparisonStatus('Please enter or pick a target audience first.', true);
+    return;
+  }
+  if (slides.length === 0) {
+    setComparisonStatus('Slides have not loaded yet.', true);
+    return;
+  }
+
+  compareBtn.disabled = true;
+  progressiveTimelineEl.innerHTML = '';
+  retrospectiveResultEl.innerHTML = '';
+  setComparisonStatus('Preparing slide images...');
+
+  prepareSlidePayload(slides)
+    .then(slidePayload => {
+      // Sequenced, not concurrent: each progressive step's request grows
+      // (it resends every prior slide's image in the conversation so far),
+      // and running the single big retrospective call at the same time
+      // doubles the peak token load right when it's highest - a real way to
+      // trip a provider's per-minute rate limit on a full-size deck. This
+      // also mirrors the research framing: progressive reactions happen
+      // live as the deck plays; the retrospective review only happens once
+      // everything has already been seen.
+      setComparisonStatus(`Watching "${audience}" react live, slide by slide...`);
+      return runProgressiveTimeline(progressiveTimelineEl, audience, prompt, slidePayload)
+        .then(() => {
+          setComparisonStatus(`Progressive pass done. Now asking "${audience}" for a retrospective review of the whole deck...`);
+          return fetchFeedback(audience, prompt, slidePayload);
+        })
+        .then(feedbackText => {
+          renderFeedbackResult(retrospectiveResultEl, audience, feedbackText);
+        });
+    })
+    .then(() => {
+      setComparisonStatus('Done.');
+    })
+    .catch(err => {
+      setComparisonStatus(err.message, true);
+    })
+    .finally(() => {
+      compareBtn.disabled = false;
+    });
+}
+
+compareBtn.addEventListener('click', runComparison);

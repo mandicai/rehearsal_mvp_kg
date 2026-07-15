@@ -6,7 +6,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="/styles.css">
 </head>
 <body>
 
@@ -42,8 +42,28 @@
   <div id="feedback-result"></div>
 </div>
 
-<script src="helpers.js"></script>
-<script src="feedback.js"></script>
+<!-- research module: does feedback differ when the agent reacts live, slide by slide, vs. reviewing the full transcript afterward? -->
+<div id="comparison-module">
+  <h2>Progressive vs. Retrospective Feedback</h2>
+  <p class="comparison-description">
+    Runs the same audience persona through this presentation twice: once <strong>retrospectively</strong> (the whole deck at once, one final review - the same as "Get Feedback" above), and once <strong>progressively</strong> (a real, continuing conversation, one new slide per turn, reacting each time with no knowledge of what's still to come). Uses the audience and focus prompt set above.
+  </p>
+  <button id="compare-feedback-btn">Compare Progressive vs. Retrospective</button>
+  <div id="comparison-status"></div>
+  <div class="comparison-columns">
+    <div class="comparison-column">
+      <div class="comparison-column-title">Progressive (live, slide-by-slide)</div>
+      <div id="progressive-timeline"></div>
+    </div>
+    <div class="comparison-column">
+      <div class="comparison-column-title">Retrospective (full transcript, one shot)</div>
+      <div id="retrospective-result"></div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/helpers.js"></script>
+<script src="/js/feedback.js"></script>
 
 </body>
 </html>

@@ -12,7 +12,7 @@ h1 {
   font-size: 20px;
   font-weight: 600;
   letter-spacing: 0.05em;
-  text-transform: uppercase;
+  /* text-transform: uppercase; */
   padding: 20px 16px 0;
   margin: 0;
 }
@@ -99,6 +99,44 @@ h1 {
   margin-bottom: 4px;
 }
 
+/* collect-data.html only: the panel above doubles as the alignment
+   review/edit UI, so its timestamp/transcript are editable inputs instead
+   of the plain text divs the other three pages use (.timestamp/.transcript-text) */
+#transcript-panel .timestamp-edit-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.85;
+  margin-bottom: 12px;
+}
+
+#transcript-panel .timestamp-edit-row input[type="number"] {
+  width: 90px;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 6px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #FFFFFF;
+}
+
+#transcript-panel .transcript-text-input {
+  width: 100%;
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 1.6;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #FFFFFF;
+  resize: vertical;
+  min-height: 90px;
+}
+
 /* --- Side-by-side layout for the target audiences + hierarchy modules --- */
 .side-by-side-modules {
   display: flex;
@@ -123,7 +161,7 @@ h1 {
 
 #audience-module h2 {
   font-size: 15px;
-  text-transform: uppercase;
+  /* text-transform: uppercase; */
   letter-spacing: 0.05em;
   margin: 0 0 16px;
 }
@@ -168,6 +206,7 @@ h1 {
 .audience-section-label {
   font-size: 12px;
   opacity: 0.7;
+  margin-top: 8px;
   margin-bottom: 8px;
 }
 
@@ -244,7 +283,7 @@ h1 {
 
 #hierarchy-module h2 {
   font-size: 15px;
-  text-transform: uppercase;
+  /* text-transform: uppercase; */
   letter-spacing: 0.05em;
   margin: 0 0 16px;
 }
@@ -364,7 +403,7 @@ h1 {
 
 #carta-module h2 {
   font-size: 15px;
-  text-transform: uppercase;
+  /* text-transform: uppercase; */
   letter-spacing: 0.05em;
   margin: 0 0 16px;
 }
@@ -380,7 +419,7 @@ h1 {
 
 #feedback-module h2 {
   font-size: 15px;
-  text-transform: uppercase;
+  /* text-transform: uppercase; */
   letter-spacing: 0.05em;
   margin: 0 0 16px;
 }
@@ -493,6 +532,122 @@ h1 {
   white-space: pre-wrap;
 }
 
+/* --- Progressive vs. retrospective feedback comparison (feedback.html) --- */
+#comparison-module {
+  max-width: 1200px;
+  margin: 10px auto 40px;
+  padding: 24px 28px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+}
+
+#comparison-module h2 {
+  font-size: 15px;
+  /* text-transform: uppercase; */
+  letter-spacing: 0.05em;
+  margin: 0 0 12px;
+}
+
+.comparison-description {
+  font-size: 13px;
+  line-height: 1.5;
+  opacity: 0.85;
+  margin: 0 0 18px;
+  max-width: 760px;
+}
+
+#compare-feedback-btn {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  background: #FFFFFF;
+  color: #EB1000;
+  cursor: pointer;
+}
+
+#compare-feedback-btn:hover {
+  background: rgba(255, 255, 255, 0.85);
+}
+
+#compare-feedback-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+#comparison-status {
+  font-size: 12px;
+  opacity: 0.85;
+  min-height: 16px;
+  margin-top: 14px;
+}
+
+#comparison-status.error {
+  color: #FFD5CE;
+}
+
+.comparison-columns {
+  display: flex;
+  gap: 20px;
+  margin-top: 18px;
+  align-items: flex-start;
+}
+
+.comparison-column {
+  flex: 1 1 360px;
+  min-width: 0;
+}
+
+.comparison-column-title {
+  font-size: 12px;
+  font-weight: 700;
+  /* text-transform: uppercase; */
+  letter-spacing: 0.04em;
+  opacity: 0.75;
+  margin-bottom: 10px;
+}
+
+#progressive-timeline {
+  max-height: 640px;
+  overflow-y: auto;
+  padding-right: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#progressive-timeline::-webkit-scrollbar {
+  width: 8px;
+}
+#progressive-timeline::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 4px;
+}
+#progressive-timeline::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.progressive-step-card {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+
+.progressive-step-header {
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0.75;
+  margin-bottom: 6px;
+}
+
+.progressive-step-text {
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
 /* --- Text segments --- */
 .segments-feed {
   max-height: 480px;
@@ -585,7 +740,7 @@ h1 {
 .carta-entity-header {
   font-size: 11px;
   font-weight: 700;
-  text-transform: uppercase;
+  /* text-transform: uppercase; */
   letter-spacing: 0.04em;
   opacity: 0.7;
   margin: 12px 0 8px;
@@ -631,7 +786,7 @@ h1 {
 .carta-entity-subheader {
   font-size: 10px;
   font-weight: 700;
-  text-transform: uppercase;
+  /* text-transform: uppercase; */
   letter-spacing: 0.04em;
   opacity: 0.65;
   margin: 10px 0 4px;
@@ -835,4 +990,697 @@ h1 {
   width: 10px;
   height: 1px;
   background: rgba(255, 255, 255, 0.4);
+}
+
+/* --- collect-data.html: shared module/button/status styles ---
+   Extracted to shared classes (rather than duplicating the per-ID block
+   above 7x for each new module) because this single page has many more
+   modules than any existing page. */
+.module-card {
+  max-width: 900px;
+  margin: 10px auto 30px;
+  padding: 24px 28px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+}
+
+/* Generic "locked until its prerequisite is ready" state - not scoped to
+   .module-card since the Setup sidebar's Record Transcript section (an
+   .objectives-scope, not a .module-card) also toggles this same class. */
+.disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.module-card h2 {
+  font-size: 15px;
+  /* text-transform: uppercase; */
+  letter-spacing: 0.05em;
+  margin: 0 0 16px;
+}
+
+.btn-primary {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  background: #FFFFFF;
+  color: #EB1000;
+  cursor: pointer;
+}
+
+.btn-primary:hover {
+  background: rgba(255, 255, 255, 0.85);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn-secondary {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 4px;
+  background: transparent;
+  color: #FFFFFF;
+  cursor: pointer;
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.btn-secondary.active {
+  background: #FFFFFF;
+  color: #EB1000;
+  border-color: #FFFFFF;
+}
+
+.tab-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.status-line {
+  font-size: 12px;
+  opacity: 0.85;
+  min-height: 16px;
+  margin-top: 14px;
+}
+
+.status-line.error {
+  color: #FFD5CE;
+}
+
+/* --- Learning objectives (presentation/section/slide chip lists, reuse .chip.target) --- */
+#learning-objectives-module .audience-input-row {
+  margin-bottom: 14px;
+}
+
+#learning-objectives-module div:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.objectives-scope {
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+/* .objectives-scope:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+} */
+
+.objectives-scope h3 {
+  font-size: 13px;
+  /* text-transform: uppercase; */
+  letter-spacing: 0.04em;
+  opacity: 0.85;
+  margin: 0 0 12px;
+}
+
+.required-marker {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  /* text-transform: uppercase; */
+  color: var(--cd-accent, #EB1000);
+  opacity: 1;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+#current-slide-label,
+#current-section-label {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+#presentation-objectives-list, 
+#section-objectives-list, 
+#objectives-list {
+  margin-top: 15px;
+}
+
+/* --- Drag-selected section range on the carousel (distinct from .active,
+   which uses a solid border - outline coexists so a thumb can show both) --- */
+.slide-thumb.section-selected {
+  outline: 2px dashed #FFD166;
+  outline-offset: 2px;
+}
+
+/* Disables native image drag-and-drop and text selection on the carousel,
+   which would otherwise hijack the pointer mid-gesture and stop mousemove
+   events from reaching the drag-to-select-a-section handling in collect-data.js. */
+#carousel {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#carousel img {
+  -webkit-user-drag: none;
+}
+
+/* --- Dependency graph (reuses .graph-wrap/.graph-node/.graph-edge-relation) --- */
+#objective-deps-panel {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.graph-node-slide {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 12px;
+  background: #FFFFFF;
+  color: #EB1000;
+  max-width: 130px;
+}
+
+.graph-node-slide.pending-source {
+  background: #FFD166;
+  color: #EB1000;
+}
+
+#dependency-edge-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 16px;
+}
+
+.dependency-edge-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+.dependency-edge-row .remove-x {
+  cursor: pointer;
+  font-weight: 700;
+  opacity: 0.6;
+  margin-left: auto;
+}
+
+.dependency-edge-row .remove-x:hover {
+  opacity: 1;
+}
+
+/* --- calibrate-priors.html: stacked .dependency-edge-row spacing (same
+   gap convention as #dependency-edge-list above) --- */
+#graded-result,
+#records-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+/* --- calibrate-priors.html: aggregate empirical-priorKnow table --- */
+.calibrate-aggregate-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-top: 8px;
+}
+
+.calibrate-aggregate-table th,
+.calibrate-aggregate-table td {
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.calibrate-aggregate-table th {
+  opacity: 0.75;
+  font-weight: 600;
+  /* text-transform: uppercase; */
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+/* --- collect-data.html: Simulate Audience module (mastery bars + expandable
+   per-objective rows). Only ever rendered on collect-data.html, so these
+   reference the page's --cd-* theme variables directly rather than needing
+   a separate dark/light pair like the shared classes above. --cd-success is
+   the palette's first green - nothing else here needed a "positive" color. */
+
+.mastery-bar {
+  position: relative;
+  display: inline-block;
+  width: 90px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(38, 37, 35, 0.12);
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+
+.mastery-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+}
+
+.mastery-bar-fill.weak {
+  background: var(--cd-accent);
+}
+
+.mastery-bar-fill.strong {
+  background: var(--cd-success);
+}
+
+.mastery-pct {
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.85;
+  width: 36px;
+  text-align: right;
+  flex: 0 0 auto;
+}
+
+/* Click-toggleable popup explaining the mastery bars (not just a hover
+   title - clicking is what most people try first, and hover-only tooltips
+   don't work on touch devices anyway). .sim-info-wrap is the positioning
+   anchor for the absolutely-positioned popup. */
+.sim-info-wrap {
+  position: relative;
+  display: inline-block;
+  margin-left: 8px;
+}
+
+.sim-info-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(38, 37, 35, 0.35);
+  background: none;
+  font-family: inherit;
+  font-size: 11px;
+  font-style: italic;
+  font-weight: 700;
+  line-height: 1;
+  color: inherit;
+  opacity: 0.75;
+  cursor: pointer;
+}
+
+.sim-info-icon:hover,
+.sim-info-icon.active {
+  opacity: 1;
+}
+
+.sim-info-popup {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 320px;
+  max-width: 80vw;
+  padding: 12px 14px;
+  background: var(--cd-card-bg, #FFFFFF);
+  border: 1px solid var(--cd-border, rgba(38, 37, 35, 0.14));
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(38, 37, 35, 0.18);
+  font-size: 12px;
+  line-height: 1.5;
+  z-index: 10;
+}
+
+.sim-scope-chip {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(38, 37, 35, 0.08);
+  white-space: nowrap;
+}
+
+.sim-objective-row {
+  border-bottom: 1px solid rgba(38, 37, 35, 0.1);
+}
+
+.sim-objective-row:last-child {
+  border-bottom: none;
+}
+
+.sim-objective-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 0;
+  background: none;
+  border: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sim-objective-text {
+  flex: 1 1 auto;
+  font-size: 13px;
+}
+
+.sim-expand-caret {
+  flex: 0 0 auto;
+  opacity: 0.6;
+  transition: transform 0.15s ease;
+}
+
+.sim-objective-header.expanded .sim-expand-caret {
+  transform: rotate(180deg);
+}
+
+.sim-objective-detail {
+  padding: 0 0 16px;
+  font-size: 13px;
+}
+
+.sim-question {
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: rgba(38, 37, 35, 0.06);
+  border-radius: 6px;
+}
+
+.sim-rubric {
+  margin-top: 0;
+  margin-bottom: 12px;
+}
+
+/* Stacked (not side-by-side) - a side-by-side layout let a long
+   correct/incorrect explanation (nowrap, sized to its own content) squeeze
+   the answer box down and overflow past the module's edge. Stacking gives
+   both the full row width and lets the explanation wrap normally. */
+.sim-sample {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.sim-sample-answer {
+  padding: 8px 10px;
+  background: rgba(38, 37, 35, 0.04);
+  border-left: 3px solid rgba(38, 37, 35, 0.15);
+  border-radius: 4px;
+}
+
+.sim-sample-grade {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sim-correct {
+  color: var(--cd-success);
+}
+
+.sim-incorrect {
+  color: var(--cd-accent);
+}
+
+.sim-fix-suggestion {
+  margin-top: 8px;
+  font-style: italic;
+}
+
+.sim-alert-row {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sim-summary-fix {
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+/* --- collect-data.html: page layout + collapsible upload sidebar ---
+   The main column is a normal flex child (min-width: 0 so its own content,
+   e.g. the horizontally-scrolling carousel, can't force the flex container
+   wider than the viewport and push the sidebar out); the sidebar is sticky
+   so it stays reachable while scrolling the (often very tall) main column. */
+.page-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 0 20px 40px;
+}
+
+.main-column {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Bigger slide thumbnails, scoped to this page only (index/feedback/carta
+   share the same .slide-thumb base rule and are unaffected). */
+body.collect-data-page .slide-thumb {
+  width: 340px;
+}
+
+.upload-sidebar {
+  flex: 0 0 300px;
+  width: 300px;
+  position: sticky;
+  top: 20px;
+  margin-top: 20px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  padding: 20px 24px;
+  transition: flex-basis 0.2s ease, width 0.2s ease, padding 0.2s ease;
+  overflow: hidden;
+}
+
+.upload-sidebar-body #transcript-source-module, #presentation-notes-section {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border: none;
+}
+
+.upload-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.upload-sidebar-header h2 {
+  font-size: 15px;
+  /* text-transform: uppercase; */
+  letter-spacing: 0.05em;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.sidebar-toggle-btn {
+  flex: 0 0 auto;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 4px;
+  background: transparent;
+  color: #FFFFFF;
+  cursor: pointer;
+}
+
+.sidebar-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.upload-sidebar-body {
+  margin-top: 16px;
+}
+
+.upload-sidebar.collapsed {
+  flex-basis: 52px;
+  width: 52px;
+  padding: 20px 10px;
+}
+
+.upload-sidebar.collapsed .upload-sidebar-header h2,
+.upload-sidebar.collapsed .upload-sidebar-body {
+  display: none;
+}
+
+/* --- collect-data.html: light theme override ---
+   Every other page keeps the red/white Adobe-style theme (the rules
+   above); this page alone swaps to an off-white canvas with a light-gray
+   side panel, serif headers, and a different sans-serif body face. Written
+   as one block, using the same selectors as the base rules above (just
+   prefixed with body.collect-data-page) so specificity naturally wins
+   without touching anything the other three pages rely on. */
+body.collect-data-page {
+  --cd-bg: #F7F5F0;
+  --cd-panel-bg: #E5E3DE;
+  --cd-card-bg: #FFFFFF;
+  --cd-border: rgba(38, 37, 35, 0.14);
+  --cd-border-strong: rgba(38, 37, 35, 0.28);
+  --cd-text: #262523;
+  --cd-accent: #EB1000;
+  --cd-accent-hover: #C50E00;
+  --cd-accent-text: #FFFFFF;
+  --cd-success: #2E7D32;
+  --cd-font-heading: 'Cabin Sketch', cursive;
+  --cd-font-body: 'Source Sans 3', sans-serif;
+
+  background: var(--cd-bg);
+  color: var(--cd-text);
+  font-family: var(--cd-font-body);
+}
+
+body.collect-data-page h1,
+body.collect-data-page h2,
+body.collect-data-page h3 {
+  font-family: var(--cd-font-heading);
+  color: var(--cd-text);
+}
+
+body.collect-data-page #carousel::-webkit-scrollbar-thumb {
+  background: var(--cd-border-strong);
+}
+body.collect-data-page #carousel::-webkit-scrollbar-track {
+  background: var(--cd-border);
+}
+
+body.collect-data-page .slide-thumb {
+  box-shadow: 0 1px 3px rgba(38, 37, 35, 0.18);
+}
+body.collect-data-page .slide-thumb.active {
+  border-color: var(--cd-accent);
+}
+
+body.collect-data-page #transcript-panel,
+body.collect-data-page .module-card,
+body.collect-data-page .graph-panel {
+  background: var(--cd-card-bg);
+  border: 1px solid var(--cd-border);
+  box-shadow: 0 1px 4px rgba(38, 37, 35, 0.06);
+}
+
+body.collect-data-page #transcript-panel .timestamp-edit-row input[type="number"],
+body.collect-data-page #transcript-panel .transcript-text-input,
+body.collect-data-page #audience-input,
+body.collect-data-page .input-group input[type="file"],
+body.collect-data-page .input-group input[type="text"] {
+  background: var(--cd-card-bg);
+  border: 1px solid var(--cd-border-strong);
+  color: var(--cd-text);
+}
+
+body.collect-data-page #audience-input::placeholder,
+body.collect-data-page .input-group input[type="text"]::placeholder {
+  color: rgba(38, 37, 35, 0.45);
+}
+
+body.collect-data-page .btn-primary {
+  background: var(--cd-accent);
+  color: var(--cd-accent-text);
+}
+body.collect-data-page .btn-primary:hover {
+  background: var(--cd-accent-hover);
+}
+
+body.collect-data-page .btn-secondary {
+  border: 1px solid var(--cd-border-strong);
+  color: var(--cd-text);
+}
+body.collect-data-page .btn-secondary:hover {
+  background: rgba(38, 37, 35, 0.06);
+}
+body.collect-data-page .btn-secondary.active {
+  background: var(--cd-accent);
+  color: var(--cd-accent-text);
+  border-color: var(--cd-accent);
+}
+
+body.collect-data-page .status-line.error {
+  color: #B3261E;
+}
+
+body.collect-data-page .objectives-scope {
+  border-bottom: 1px solid var(--cd-border);
+}
+body.collect-data-page .objectives-scope:last-child {
+  border-bottom: none;
+}
+
+body.collect-data-page .chip.suggested {
+  background: rgba(38, 37, 35, 0.05);
+  border: 1px dashed var(--cd-border-strong);
+  color: var(--cd-text);
+}
+body.collect-data-page .chip.suggested:hover {
+  background: rgba(38, 37, 35, 0.1);
+}
+body.collect-data-page .chip.target {
+  background: var(--cd-accent);
+  color: var(--cd-accent-text);
+}
+
+body.collect-data-page .graph-edge-relation {
+  stroke: rgba(38, 37, 35, 0.3);
+}
+body.collect-data-page .graph-edge-relation.active {
+  stroke: var(--cd-accent);
+}
+body.collect-data-page .graph-arrowhead {
+  fill: rgba(38, 37, 35, 0.45);
+}
+body.collect-data-page .graph-edge-label {
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--cd-text);
+  border: 1px solid var(--cd-border);
+}
+body.collect-data-page .graph-node {
+  box-shadow: 0 2px 6px rgba(38, 37, 35, 0.15);
+}
+body.collect-data-page .graph-node.active {
+  border-color: var(--cd-accent);
+}
+body.collect-data-page .graph-node-slide {
+  background: var(--cd-accent);
+  color: var(--cd-accent-text);
+}
+body.collect-data-page .graph-panel ul li::before {
+  background: var(--cd-border-strong);
+}
+
+body.collect-data-page .dependency-edge-row {
+  background: rgba(38, 37, 35, 0.05);
+  border: 1px solid var(--cd-border);
+}
+
+body.collect-data-page .upload-sidebar {
+  background: var(--cd-panel-bg);
+}
+body.collect-data-page .sidebar-toggle-btn {
+  border: 1px solid var(--cd-border-strong);
+  color: var(--cd-text);
+}
+body.collect-data-page .sidebar-toggle-btn:hover {
+  background: rgba(38, 37, 35, 0.08);
 }

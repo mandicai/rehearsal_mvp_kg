@@ -914,7 +914,7 @@ function imageToDataUrl(src, maxWidth) {
 function prepareSlidePayload(slideData, maxWidth) {
   return Promise.all(
     slideData.map(slide =>
-      imageToDataUrl(slide.snapshot_image, maxWidth || FEEDBACK_IMAGE_MAX_WIDTH).then(dataUrl => ({
+      imageToDataUrl(`/${slide.snapshot_image}`, maxWidth || FEEDBACK_IMAGE_MAX_WIDTH).then(dataUrl => ({
         slide_index: slide.slide_index,
         start_time: slide.start_time,
         end_time: slide.end_time,
@@ -971,6 +971,90 @@ function renderFeedbackResult(container, audience, feedbackText) {
   card.appendChild(body);
 
   container.appendChild(card);
+}
+
+// --- Progressive vs. retrospective feedback comparison (also feedback.html) ---
+// Answers "how does an agent's feedback differ live, slide-by-slide, vs.
+// retrospectively from the full transcript?" by running the SAME audience
+// persona through two conditions on the same deck: fetchFeedback above
+// (retrospective: the whole deck at once, one final review) vs. this
+// module (progressive: one real, continuing multi-turn conversation, fed
+// one new slide per turn, reacting each time with no knowledge of what's
+// still to come - see backend/feedback_llm.py's get_progressive_reaction).
+
+const FEEDBACK_PROGRESSIVE_API_URL = 'http://127.0.0.1:8000/feedback/progressive_step';
+
+function fetchProgressiveReaction(audience, prompt, messages, slide) {
+  return fetch(FEEDBACK_PROGRESSIVE_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ audience, prompt, messages, slide })
+  })
+    .then(res => {
+      if (!res.ok) {
+        return res.json()
+          .catch(() => ({}))
+          .then(body => { throw new Error(body.error || `server responded with ${res.status}`); });
+      }
+      return res.json();
+    })
+    .catch(err => {
+      throw new Error(
+        `Could not reach the feedback server at ${FEEDBACK_PROGRESSIVE_API_URL} (${err.message}). ` +
+        `Start it with: python backend/server.py`
+      );
+    });
+}
+
+// Runs the progressive condition end to end: one call per slide, strictly
+// sequential (each call's `messages` depends on the previous one's reply),
+// rendering each slide's reaction into `container` as soon as it arrives -
+// this is what makes the comparison feel "live" rather than a single wait
+// followed by a wall of text.
+//
+// PROGRESSIVE_STEP_DELAY_MS paces the calls: each step's request resends
+// every prior slide's image (the whole conversation so far), so a 9-slide
+// deck fired back-to-back with no gap can burst past a provider's
+// per-minute token rate limit well before hitting any per-request size
+// limit - a real failure observed in testing, not a hypothetical one. A
+// small delay between steps spreads that load out over more wall-clock
+// time instead.
+const PROGRESSIVE_STEP_DELAY_MS = 1500;
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function runProgressiveTimeline(container, audience, prompt, slidePayload, onStep) {
+  let messages = [];
+  return slidePayload.reduce((chain, slide, index) => {
+    return chain
+      .then(() => (index === 0 ? Promise.resolve() : delay(PROGRESSIVE_STEP_DELAY_MS)))
+      .then(() => fetchProgressiveReaction(audience, prompt, messages, slide))
+      .then(data => {
+        messages = data.messages;
+        renderProgressiveStep(container, slide, data.reaction);
+        if (onStep) onStep(slide, data.reaction);
+      });
+  }, Promise.resolve());
+}
+
+function renderProgressiveStep(container, slide, reaction) {
+  const card = document.createElement('div');
+  card.className = 'progressive-step-card';
+
+  const header = document.createElement('div');
+  header.className = 'progressive-step-header';
+  header.textContent = `Slide ${slide.slide_index} (${slide.start_time} - ${slide.end_time})`;
+  card.appendChild(header);
+
+  const body = document.createElement('div');
+  body.className = 'progressive-step-text';
+  body.textContent = reaction;
+  card.appendChild(body);
+
+  container.appendChild(card);
+  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 // --- Input readers ---
@@ -1055,5 +1139,172 @@ function fetchWikipediaUrl(rawUrl) {
     })
     .catch(err => {
       throw new Error(`Failed to fetch that page: ${err.message}`);
+    });
+}
+
+// --- collect-data.html: ingest/transcribe/align/save (also real, backend/ingest/) ---
+// These four hit new multipart or JSON routes on the same local Python
+// backend as the fetch helpers above. Unlike those, the pptx/transcription
+// helpers send FormData and must NOT set a Content-Type header themselves -
+// the browser sets its own multipart boundary.
+
+const INGEST_PPTX_API_URL = 'http://127.0.0.1:8000/ingest/pptx';
+const TRANSCRIBE_API_URL = 'http://127.0.0.1:8000/transcribe';
+const ALIGN_API_URL = 'http://127.0.0.1:8000/align';
+const SAVE_PROJECT_API_URL = 'http://127.0.0.1:8000/projects/save';
+const SUGGEST_OBJECTIVES_API_URL = 'http://127.0.0.1:8000/learning_objectives/suggest';
+
+function handleJsonResponse(res) {
+  if (!res.ok) {
+    return res.json()
+      .catch(() => ({}))
+      .then(body => { throw new Error(body.error || `server responded with ${res.status}`); });
+  }
+  return res.json();
+}
+
+function fetchIngestPptx(file) {
+  const form = new FormData();
+  form.append('file', file);
+
+  return fetch(INGEST_PPTX_API_URL, { method: 'POST', body: form })
+    .then(handleJsonResponse)
+    .catch(err => {
+      throw new Error(
+        `Could not reach the ingest server at ${INGEST_PPTX_API_URL} (${err.message}). ` +
+        `Start it with: python backend/server.py`
+      );
+    });
+}
+
+function fetchTranscription(audioBlob, filename) {
+  const form = new FormData();
+  form.append('file', audioBlob, filename);
+
+  return fetch(TRANSCRIBE_API_URL, { method: 'POST', body: form })
+    .then(handleJsonResponse)
+    .catch(err => {
+      throw new Error(
+        `Could not reach the transcription server at ${TRANSCRIBE_API_URL} (${err.message}). ` +
+        `Start it with: python backend/server.py`
+      );
+    });
+}
+
+function fetchAlignment(payload) {
+  return fetch(ALIGN_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+    .then(handleJsonResponse)
+    .catch(err => {
+      throw new Error(
+        `Could not reach the alignment server at ${ALIGN_API_URL} (${err.message}). ` +
+        `Start it with: python backend/server.py`
+      );
+    });
+}
+
+function fetchSaveProject(payload) {
+  return fetch(SAVE_PROJECT_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+    .then(handleJsonResponse)
+    .catch(err => {
+      throw new Error(
+        `Could not reach the save server at ${SAVE_PROJECT_API_URL} (${err.message}). ` +
+        `Start it with: python backend/server.py`
+      );
+    });
+}
+
+function fetchSuggestObjectives(audience, scopeLabel, slidesForScope) {
+  return fetch(SUGGEST_OBJECTIVES_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ audience, scope_label: scopeLabel, slides: slidesForScope })
+  })
+    .then(handleJsonResponse)
+    .catch(err => {
+      throw new Error(
+        `Could not reach the objectives-suggestion server at ${SUGGEST_OBJECTIVES_API_URL} (${err.message}). ` +
+        `Start it with: python backend/server.py`
+      );
+    });
+}
+
+// --- collect-data.html: Simulate Audience module (backend/ingest/assessment_llm.py) ---
+
+const GENERATE_QUESTION_API_URL = 'http://127.0.0.1:8000/assessment/generate_question';
+const SIMULATE_ANSWER_API_URL = 'http://127.0.0.1:8000/assessment/simulate_answer';
+const GRADE_ANSWERS_API_URL = 'http://127.0.0.1:8000/assessment/grade_answers';
+const SUGGEST_FIX_API_URL = 'http://127.0.0.1:8000/assessment/suggest_fix';
+
+function fetchGenerateQuestion(objectiveText, scopeLabel, slidesForScope) {
+  return fetch(GENERATE_QUESTION_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ objective_text: objectiveText, scope_label: scopeLabel, slides: slidesForScope })
+  })
+    .then(handleJsonResponse)
+    .catch(err => {
+      throw new Error(
+        `Could not reach the question-generation server at ${GENERATE_QUESTION_API_URL} (${err.message}). ` +
+        `Start it with: python backend/server.py`
+      );
+    });
+}
+
+function fetchSimulateAnswer(audience, question, cumulativeSlides) {
+  return fetch(SIMULATE_ANSWER_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ audience, question, cumulative_slides: cumulativeSlides })
+  })
+    .then(handleJsonResponse)
+    .catch(err => {
+      throw new Error(
+        `Could not reach the answer-simulation server at ${SIMULATE_ANSWER_API_URL} (${err.message}). ` +
+        `Start it with: python backend/server.py`
+      );
+    });
+}
+
+function fetchGradeAnswers(question, rubric, referenceAnswer, answers) {
+  return fetch(GRADE_ANSWERS_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question, rubric, reference_answer: referenceAnswer, answers })
+  })
+    .then(handleJsonResponse)
+    .catch(err => {
+      throw new Error(
+        `Could not reach the grading server at ${GRADE_ANSWERS_API_URL} (${err.message}). ` +
+        `Start it with: python backend/server.py`
+      );
+    });
+}
+
+function fetchSuggestFix(objectiveText, scopeLabel, slidesForScope, gradedSamples, blockedObjectiveTexts) {
+  return fetch(SUGGEST_FIX_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      objective_text: objectiveText,
+      scope_label: scopeLabel,
+      slides: slidesForScope,
+      graded_samples: gradedSamples,
+      blocked_objective_texts: blockedObjectiveTexts,
+    })
+  })
+    .then(handleJsonResponse)
+    .catch(err => {
+      throw new Error(
+        `Could not reach the fix-suggestion server at ${SUGGEST_FIX_API_URL} (${err.message}). ` +
+        `Start it with: python backend/server.py`
+      );
     });
 }

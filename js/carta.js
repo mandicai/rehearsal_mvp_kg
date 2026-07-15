@@ -21,17 +21,19 @@ function selectSlide(index) {
   }
 }
 
-fetch('slides.json')
+const DECK_DIR = 'presentation-examples/flower';
+
+fetch(`/${DECK_DIR}/slides.json`)
   .then(res => res.json())
   .then(data => {
-    slides = data;
+    slides = data.map(slide => ({ ...slide, snapshot_image: `${DECK_DIR}/${slide.snapshot_image}` }));
     const carousel = document.getElementById('carousel');
 
     slides.forEach((slide, i) => {
       const thumb = document.createElement('div');
       thumb.className = 'slide-thumb';
       thumb.innerHTML = `
-        <img src="${slide.snapshot_image}" alt="Slide ${slide.slide_index}">
+        <img src="/${slide.snapshot_image}" alt="Slide ${slide.slide_index}">
         <div class="thumb-label">${slide.start_time}</div>
       `;
       thumb.addEventListener('click', () => selectSlide(i));
