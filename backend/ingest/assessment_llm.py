@@ -1,5 +1,5 @@
 """LLM-driven simulated-audience assessment (see server.py's /assessment/*
-routes). collect-data.html's Simulate Audience module calls these once per
+routes). presenter-view.html's Simulate Audience module calls these once per
 learning objective to: write an open-ended comprehension question grounded in
 that objective's own scope, have a persona representing the stated audience
 answer it using only the transcript exposed up to that point (no lookahead),

@@ -1,5 +1,5 @@
-// collect-data.html's "4. Simulate Audience" module. Loaded after
-// collect-data.js, so it reads/depends on that file's globals directly
+// presenter-view.html's "4. Simulate Audience" module. Loaded after
+// presenter-view.js, so it reads/depends on that file's globals directly
 // (slides, audience, presentationObjectives, getAllObjectiveNodes,
 // objectiveDependencies, setStatus) - no module system in this repo.
 //
@@ -411,7 +411,7 @@ function renderSimulationResults(objectiveNodes) {
   const weak = objectiveNodes.filter(n => isWeak(n));
   lastWeakObjectives = weak;
 
-  // Lives in the sidebar (see html/collect-data.html), not this module -
+  // Lives in the sidebar (see html/presenter-view.html), not this module -
   // the module itself only shows the full per-objective list below.
   const notesSection = document.getElementById('presentation-notes-section');
   const notesList = document.getElementById('presentation-notes-list');

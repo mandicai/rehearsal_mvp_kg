@@ -631,7 +631,11 @@ function buildEntityGraph(triples) {
 // schedule so positions settle instead of oscillating. width/height are in
 // the same coordinate units as the final render (see aspect-matching in
 // renderEntityGraph) so the simulated layout isn't stretched when displayed.
-function layoutForceGraph(nodes, edges, width, height, iterations) {
+// marginX/marginY keep node *centers* far enough from each edge that a
+// node's actual rendered half-width/half-height (converted into these same
+// abstract units by the caller) never hangs past the container - default 6
+// matches the original flat margin renderEntityGraph still relies on.
+function layoutForceGraph(nodes, edges, width, height, iterations, marginX = 6, marginY = 6) {
   const n = nodes.length;
   nodes.forEach((node, i) => {
     const angle = (i / Math.max(n, 1)) * 2 * Math.PI;
@@ -675,14 +679,155 @@ function layoutForceGraph(nodes, edges, width, height, iterations) {
       const dlen = Math.sqrt(dispX[i] * dispX[i] + dispY[i] * dispY[i]) || 0.01;
       nodes[i].x += (dispX[i] / dlen) * Math.min(dlen, temp);
       nodes[i].y += (dispY[i] / dlen) * Math.min(dlen, temp);
-      nodes[i].x = Math.min(width - 6, Math.max(6, nodes[i].x));
-      nodes[i].y = Math.min(height - 6, Math.max(6, nodes[i].y));
+      nodes[i].x = Math.min(width - marginX, Math.max(marginX, nodes[i].x));
+      nodes[i].y = Math.min(height - marginY, Math.max(marginY, nodes[i].y));
     }
   }
 }
 
 function edgePairKey(edge) {
   return edge.source < edge.target ? `${edge.source}-${edge.target}` : `${edge.target}-${edge.source}`;
+}
+
+// Generic force-directed "dependency style" graph renderer: nodes + edges in,
+// an SVG with curved edges (parallel-edge offsetting via edgePairKey above)
+// and clickable node buttons out. Shared by presenter-view.js (slide/objective
+// dependency graphs) and participant-view.js (participant takeaway/piece
+// link graph) so the ~90 lines of SVG-building code isn't duplicated per page.
+function renderDependencyStyleGraph(containerId, nodes, edges, options) {
+  const container = document.getElementById(containerId);
+  container.innerHTML = '';
+  if (nodes.length === 0) return;
+
+  edges.forEach(e => { e.sourceNode = nodes[e.source]; e.targetNode = nodes[e.target]; });
+
+  const ASPECT = 1.8;
+  const area = Math.max(560 * 300, nodes.length * 9000);
+  // wrapPxWidth is always derived from wrapPxHeight (never independently
+  // floored) so the wrap's real aspect ratio exactly matches ASPECT - see
+  // the width-setting note below for why that exactness matters.
+  const wrapPxHeight = Math.max(260, Math.sqrt(area / ASPECT));
+  const wrapPxWidth = wrapPxHeight * ASPECT;
+  const HEIGHT = 100;
+  const WIDTH = HEIGHT * ASPECT;
+
+  // Widest/tallest node button classes (.graph-node-takeaway etc. up to
+  // 140px wide; a piece node's .graph-node-icon - 32px + 2px border each
+  // side - plus padding makes ~48px tall) - half that, converted into this
+  // render's abstract units, keeps a node's actual edge from ever hanging
+  // past the wrap's boundary (where .graph-scroll's overflow would
+  // otherwise clip it).
+  const marginX = (70 / wrapPxWidth) * WIDTH;
+  const marginY = (24 / wrapPxHeight) * HEIGHT;
+  layoutForceGraph(nodes, edges, WIDTH, HEIGHT, 300, marginX, marginY);
+
+  const pairCounts = new Map();
+  edges.forEach(edge => {
+    const key = edgePairKey(edge);
+    edge._pairIndex = pairCounts.get(key) || 0;
+    pairCounts.set(key, edge._pairIndex + 1);
+  });
+  edges.forEach(edge => { edge._pairTotal = pairCounts.get(edgePairKey(edge)); });
+
+  const scroll = document.createElement('div');
+  scroll.className = 'graph-scroll';
+  const wrap = document.createElement('div');
+  wrap.className = 'graph-wrap';
+  // Setting an exact width (not just min-width) here is what makes this
+  // fix work: .graph-wrap's CSS default is `width: 100%`, which would
+  // otherwise let the wrap's real rendered box end up wider than
+  // wrapPxWidth/wrapPxHeight's 1.8 aspect ratio. Since the node buttons
+  // below are positioned by plain percentage of the wrap's *actual* box,
+  // while the SVG's viewBox scales to preserve its own 1.8 aspect (via the
+  // default preserveAspectRatio="xMidYMid meet", letterboxing/centering
+  // itself if the box's aspect doesn't match) - any mismatch between the
+  // wrap's real aspect and 1.8 makes edges visually miss the nodes they
+  // connect. Pinning the real width here keeps both perfectly in sync.
+  wrap.style.width = `${wrapPxWidth}px`;
+  wrap.style.height = `${wrapPxHeight}px`;
+
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${WIDTH} ${HEIGHT}`);
+
+  const markerId = `${containerId}-arrow`;
+  const defs = document.createElementNS(svgNS, 'defs');
+  const marker = document.createElementNS(svgNS, 'marker');
+  marker.setAttribute('id', markerId);
+  marker.setAttribute('viewBox', '0 0 10 10');
+  marker.setAttribute('refX', '9');
+  marker.setAttribute('refY', '5');
+  marker.setAttribute('markerWidth', '5');
+  marker.setAttribute('markerHeight', '5');
+  marker.setAttribute('orient', 'auto-start-reverse');
+  const arrowPath = document.createElementNS(svgNS, 'path');
+  arrowPath.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
+  arrowPath.setAttribute('class', 'graph-arrowhead');
+  marker.appendChild(arrowPath);
+  defs.appendChild(marker);
+  svg.appendChild(defs);
+
+  const edgeLabelEls = [];
+
+  edges.forEach(edge => {
+    const offset = (edge._pairIndex - (edge._pairTotal - 1) / 2) * (WIDTH * 0.05);
+    const mx = (edge.sourceNode.x + edge.targetNode.x) / 2;
+    const my = (edge.sourceNode.y + edge.targetNode.y) / 2;
+    const dx = edge.targetNode.x - edge.sourceNode.x;
+    const dy = edge.targetNode.y - edge.sourceNode.y;
+    const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
+    const nx = -dy / dist, ny = dx / dist;
+    const ctrlX = mx + nx * offset;
+    const ctrlY = my + ny * offset;
+    const d = `M ${edge.sourceNode.x} ${edge.sourceNode.y} Q ${ctrlX} ${ctrlY} ${edge.targetNode.x} ${edge.targetNode.y}`;
+
+    const path = document.createElementNS(svgNS, 'path');
+    path.setAttribute('d', d);
+    path.setAttribute('class', 'graph-edge-relation');
+    path.setAttribute('marker-end', `url(#${markerId})`);
+    svg.appendChild(path);
+
+    if (edge.predicate) {
+      const labelX = 0.25 * edge.sourceNode.x + 0.5 * ctrlX + 0.25 * edge.targetNode.x;
+      const labelY = 0.25 * edge.sourceNode.y + 0.5 * ctrlY + 0.25 * edge.targetNode.y;
+      const labelEl = document.createElement('span');
+      labelEl.className = 'graph-edge-label';
+      labelEl.textContent = edge.predicate;
+      labelEl.style.left = `${(labelX / WIDTH) * 100}%`;
+      labelEl.style.top = `${(labelY / HEIGHT) * 100}%`;
+      edgeLabelEls.push(labelEl);
+    }
+  });
+
+  wrap.appendChild(svg);
+  edgeLabelEls.forEach(el => wrap.appendChild(el));
+
+  nodes.forEach(node => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `graph-node ${options.nodeClass || ''} ${node.nodeClass || ''}`.trim();
+    if (options.isPendingSource && options.isPendingSource(node)) {
+      btn.classList.add('pending-source');
+    }
+    if (node.imageSrc) {
+      const icon = document.createElement('img');
+      icon.className = 'graph-node-icon';
+      icon.src = node.imageSrc;
+      icon.alt = '';
+      btn.appendChild(icon);
+    }
+    btn.appendChild(document.createTextNode(node.label));
+    btn.title = node.title || node.label;
+    btn.style.left = `${(node.x / WIDTH) * 100}%`;
+    btn.style.top = `${(node.y / HEIGHT) * 100}%`;
+    if (node.id !== undefined) btn.dataset.nodeId = node.id;
+    if (options.onNodeClick) btn.addEventListener('click', () => options.onNodeClick(node));
+    if (options.onNodeMouseDown) btn.addEventListener('mousedown', () => options.onNodeMouseDown(node));
+    wrap.appendChild(btn);
+  });
+
+  scroll.appendChild(wrap);
+  container.appendChild(scroll);
 }
 
 function renderRelationPanelForNode(panelEl, node, edges) {
@@ -1142,7 +1287,7 @@ function fetchWikipediaUrl(rawUrl) {
     });
 }
 
-// --- collect-data.html: ingest/transcribe/align/save (also real, backend/ingest/) ---
+// --- presenter-view.html: ingest/transcribe/align/save (also real, backend/ingest/) ---
 // These four hit new multipart or JSON routes on the same local Python
 // backend as the fetch helpers above. Unlike those, the pptx/transcription
 // helpers send FormData and must NOT set a Content-Type header themselves -
@@ -1236,7 +1381,7 @@ function fetchSuggestObjectives(audience, scopeLabel, slidesForScope) {
     });
 }
 
-// --- collect-data.html: Simulate Audience module (backend/ingest/assessment_llm.py) ---
+// --- presenter-view.html: Simulate Audience module (backend/ingest/assessment_llm.py) ---
 
 const GENERATE_QUESTION_API_URL = 'http://127.0.0.1:8000/assessment/generate_question';
 const SIMULATE_ANSWER_API_URL = 'http://127.0.0.1:8000/assessment/simulate_answer';

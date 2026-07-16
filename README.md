@@ -9,13 +9,13 @@
    ```
    The spaCy model is used by `backend/segmentation/` and `backend/segmentation_carta/`; `sentence-transformers` will download its embedding model automatically the first time it runs (needs internet access once).
 
-2. **Install LibreOffice** (provides the `soffice` command), needed only for converting an uploaded `.pptx` into slide images in `collect-data.html`:
+2. **Install LibreOffice** (provides the `soffice` command), needed only for converting an uploaded `.pptx` into slide images in `presenter-view.html`:
    - macOS: `brew install --cask libreoffice`
    - Linux: `apt install libreoffice` (or your distro's equivalent)
 
    Confirm it's on your `PATH` with `soffice --version`.
 
-3. **Configure an LLM API key**: copy `backend/.env.example` to `backend/.env` and fill in `OPENAI_API_KEY` with a real OpenAI (or OpenRouter) key. If you're using the real OpenAI API directly (not an internal proxy), delete/blank out the `OPENAI_BASE_URL` line - it's only needed to point at a custom OpenAI-compatible proxy. Without a key, most LLM-backed features (learning objective suggestions, Simulate Audience, feedback, `calibrate-priors.html`) won't work, though the app will still start.
+3. **Configure an LLM API key**: copy `backend/.env.example` to `backend/.env` and fill in `OPENAI_API_KEY` with a real OpenAI (or OpenRouter) key. If you're using the real OpenAI API directly (not an internal proxy), delete/blank out the `OPENAI_BASE_URL` line - it's only needed to point at a custom OpenAI-compatible proxy. Without a key, most LLM-backed features (learning objective suggestions, Simulate Audience, feedback) won't work, though the app will still start. `participant-view.html` doesn't call the LLM at all.
 
 4. **Start both servers** (two separate terminals, both from the repo root):
    ```
@@ -24,8 +24,8 @@
    ```
 
 5. **Open a page** in your browser:
-   - `http://localhost:5500/html/collect-data.html` - upload a `.pptx`, record/align a transcript, define an audience and learning objectives, then run the Simulate Audience (Bayesian Knowledge Tracing) feature.
-   - `http://localhost:5500/html/calibrate-priors.html` - collect real human answers to "cold" comprehension questions, to help tune the BKT priors `js/simulate-audience.js` uses.
+   - `http://localhost:5500/html/presenter-view.html` - upload a `.pptx`, record/align a transcript, define an audience and learning objectives, then run the Simulate Audience (Bayesian Knowledge Tracing) feature.
+   - `http://localhost:5500/html/participant-view.html` - collect real human takeaways/reactions/ratings after watching a presentation.
    - `http://localhost:5500/html/index.html`, `.../feedback.html`, `.../carta.html` - the other tools described below.
 
 HTML pages live in `html/` and JS files live in `js/`; both are served as static files from the repo root by the `http.server` command above, so page/script/asset references use root-absolute paths (e.g. `/js/helpers.js`, `/slides.json`) rather than paths relative to `html/`.
@@ -50,13 +50,13 @@ Handles segmentation of input documents or a Wikipedia URL (placeholder for now,
 
 - Naive presentation feedback system that feeds presentation transcript/images to LLM; asks LLM to simulate a particular audience and return feedback
 
-## html/collect-data.html
+## html/presenter-view.html
 
 - The main rehearsal-prep tool: upload a `.pptx`, record and align a transcript against the slides, define an audience and learning objectives (presentation-wide/section/slide), define dependency relationships between objectives, then run **Simulate Audience** - simulates ~3 independent audience members answering a comprehension question per learning objective, at the point in the presentation where it's first assessable, using a Bayesian-Knowledge-Tracing-style update to estimate how well the audience actually understood each objective. Weak objectives (especially ones other objectives depend on) surface with a suggested fix in the sidebar, exportable as presenter notes.
 
-## html/calibrate-priors.html
+## html/participant-view.html
 
-- A standalone tool for collecting **real human** (not LLM-simulated) answers to "cold" comprehension questions, grouped by stated audience description, to empirically estimate how much a given audience type already knows *before* any instruction - used to sanity-check/tune the `BKT_DEFAULTS` prior constants in `js/simulate-audience.js` from real data instead of a single guessed number. Records persist in the browser's `localStorage` and are exportable as CSV.
+- A standalone tool for collecting **real human** (not LLM-simulated) reactions to a presentation: participants watch a slide+audio deck straight through, then reflect on it open-endedly - main takeaways they'd feel comfortable explaining to a friend, which slides/transcript excerpts contributed to or confused that understanding (and why), dependency links drawn between all of those, and Likert + open-response ratings of the presentation's informativeness/confusingness/understandability. No LLM calls or API key needed - the researcher's Learning Objectives module is reference-only context, not a comprehension quiz. Records persist in the browser's `localStorage` and are exportable as JSON.
 
 ### Task list
 

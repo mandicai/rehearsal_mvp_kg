@@ -17,8 +17,13 @@ h1 {
   margin: 0;
 }
 
+input, select {
+  height: 30px;
+}
+
 /* --- Carousel --- */
-#carousel {
+#carousel,
+#reflection-carousel {
   display: flex;
   gap: 16px;
   overflow-x: auto;
@@ -27,14 +32,17 @@ h1 {
   -webkit-overflow-scrolling: touch;
 }
 
-#carousel::-webkit-scrollbar {
+#carousel::-webkit-scrollbar,
+#reflection-carousel::-webkit-scrollbar {
   height: 8px;
 }
-#carousel::-webkit-scrollbar-thumb {
+#carousel::-webkit-scrollbar-thumb,
+#reflection-carousel::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.5);
   border-radius: 4px;
 }
-#carousel::-webkit-scrollbar-track {
+#carousel::-webkit-scrollbar-track,
+#reflection-carousel::-webkit-scrollbar-track {
   background: rgba(0, 0, 0, 0.15);
 }
 
@@ -99,7 +107,7 @@ h1 {
   margin-bottom: 4px;
 }
 
-/* collect-data.html only: the panel above doubles as the alignment
+/* presenter-view.html only: the panel above doubles as the alignment
    review/edit UI, so its timestamp/transcript are editable inputs instead
    of the plain text divs the other three pages use (.timestamp/.transcript-text) */
 #transcript-panel .timestamp-edit-row {
@@ -269,8 +277,8 @@ h1 {
 
 .audience-empty-hint {
   font-size: 13px;
-  font-style: italic;
-  opacity: 0.7;
+  /* font-style: italic; */
+  opacity: 0.85;
 }
 
 /* --- Hierarchy extractor module --- */
@@ -913,6 +921,9 @@ h1 {
 .graph-node {
   position: absolute;
   transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-family: inherit;
   cursor: pointer;
   white-space: nowrap;
@@ -922,6 +933,18 @@ h1 {
   border-radius: 999px;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
   transition: border-color 0.15s ease;
+}
+
+/* --- participant-view.html: small slide-image icon shown on a "piece" node
+   in the link graph, so it's recognizable at a glance which slide it's
+   from - not just a text label. --- */
+.graph-node-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid #FFFFFF;
+  object-fit: cover;
+  flex: 0 0 auto;
 }
 
 .graph-node.active {
@@ -992,7 +1015,7 @@ h1 {
   background: rgba(255, 255, 255, 0.4);
 }
 
-/* --- collect-data.html: shared module/button/status styles ---
+/* --- presenter-view.html: shared module/button/status styles ---
    Extracted to shared classes (rather than duplicating the per-ID block
    above 7x for each new module) because this single page has many more
    modules than any existing page. */
@@ -1013,7 +1036,7 @@ h1 {
 }
 
 .module-card h2 {
-  font-size: 15px;
+  font-size: 20px;
   /* text-transform: uppercase; */
   letter-spacing: 0.05em;
   margin: 0 0 16px;
@@ -1142,13 +1165,15 @@ h1 {
 
 /* Disables native image drag-and-drop and text selection on the carousel,
    which would otherwise hijack the pointer mid-gesture and stop mousemove
-   events from reaching the drag-to-select-a-section handling in collect-data.js. */
-#carousel {
+   events from reaching the drag-to-select-a-section handling in presenter-view.js. */
+#carousel,
+#reflection-carousel {
   -webkit-user-select: none;
   user-select: none;
 }
 
-#carousel img {
+#carousel img,
+#reflection-carousel img {
   -webkit-user-drag: none;
 }
 
@@ -1169,6 +1194,43 @@ h1 {
 }
 
 .graph-node-slide.pending-source {
+  background: #FFD166;
+  color: #EB1000;
+}
+
+/* --- participant-view.html: takeaway/piece link graph node types (same
+   shared .graph-node/.graph-wrap rendering as the slide/objective graphs
+   above, just color-coded per node kind instead of one uniform look) --- */
+.graph-node-takeaway {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 12px;
+  background: #FFFFFF;
+  color: #EB1000;
+  max-width: 140px;
+}
+
+.graph-node-piece-contributing {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 12px;
+  background: var(--cd-success, #2E7D32);
+  color: #FFFFFF;
+  max-width: 140px;
+}
+
+.graph-node-piece-confusing {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 12px;
+  background: var(--cd-accent, #EB1000);
+  color: #FFFFFF;
+  max-width: 140px;
+}
+
+.graph-node-takeaway.pending-source,
+.graph-node-piece-contributing.pending-source,
+.graph-node-piece-confusing.pending-source {
   background: #FFD166;
   color: #EB1000;
 }
@@ -1201,7 +1263,7 @@ h1 {
   opacity: 1;
 }
 
-/* --- calibrate-priors.html: stacked .dependency-edge-row spacing (same
+/* --- participant-view.html: stacked .dependency-edge-row spacing (same
    gap convention as #dependency-edge-list above) --- */
 #graded-result,
 #records-list {
@@ -1211,7 +1273,7 @@ h1 {
   margin-top: 12px;
 }
 
-/* --- calibrate-priors.html: aggregate empirical-priorKnow table --- */
+/* --- participant-view.html: aggregate empirical-priorKnow table --- */
 .calibrate-aggregate-table {
   width: 100%;
   border-collapse: collapse;
@@ -1234,8 +1296,190 @@ h1 {
   letter-spacing: 0.04em;
 }
 
-/* --- collect-data.html: Simulate Audience module (mastery bars + expandable
-   per-objective rows). Only ever rendered on collect-data.html, so these
+/* --- participant-view.html: live line shown while dragging from one link
+   graph node toward another - positioned in viewport (not document) space
+   via `fixed` so it can be drawn straight from getBoundingClientRect()/
+   clientX/clientY without accounting for scroll offsets. --- */
+.link-drag-line {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 2px;
+  background: var(--cd-accent, #EB1000);
+  transform-origin: 0 50%;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* --- participant-view.html: floating popup shown just above a transcript
+   text selection, offering to tag it - anchored via translate so `left`/
+   `top` (set in JS from the selection's bounding rect) mark its bottom-center
+   point rather than its top-left corner. --- */
+.selection-tag-popup {
+  position: fixed;
+  transform: translate(-50%, -100%);
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  background: var(--cd-card-bg, #FFFFFF);
+  border: 1px solid var(--cd-border-strong, rgba(38, 37, 35, 0.28));
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  z-index: 9999;
+}
+
+/* --- participant-view.html: pre-presentation nav bar - no card background,
+   just the Back/Next buttons floating on the page. --- */
+#pre-nav {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+/* --- participant-view.html: sticky-note-style scratch space for the
+   researcher/mentor editing this interface, not participant-facing content -
+   contenteditable so notes can be typed directly in the browser, with a
+   placeholder shown via :empty so the boilerplate hint disappears the
+   moment something is typed. --- */
+.mentor-note {
+  background: #FFE066;
+  color: #3A2F00;
+  font-size: 12px;
+  font-style: italic;
+  padding: 8px 10px;
+  border-radius: 4px;
+  margin: 6px 0 16px;
+}
+
+.mentor-note:empty::before {
+  content: 'Note to Shunan...';
+  opacity: 0.6;
+}
+
+/* --- participant-view.html: Reflection phase (reference transcript panel,
+   generic textarea, sub-heading, Likert scale pills) --- */
+.reflection-transcript {
+  margin-top: 12px;
+  padding: 14px 16px;
+  border-radius: 6px;
+  background: var(--cd-panel-bg, #E5E3DE);
+  font-size: 15px;
+  line-height: 1.6;
+  min-height: 48px;
+  user-select: text;
+}
+
+.styled-textarea {
+  width: 100%;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 10px 12px;
+  border: 1px solid var(--cd-border-strong, rgba(38, 37, 35, 0.28));
+  border-radius: 6px;
+  background: var(--cd-card-bg, #FFFFFF);
+  color: var(--cd-text, #262523);
+  resize: vertical;
+}
+
+.styled-textarea::placeholder {
+  color: rgba(38, 37, 35, 0.45);
+}
+
+.reflection-subheading {
+  font-size: 12px;
+  opacity: 0.8;
+  margin: 14px 0 6px;
+}
+
+#add-takeaway-status {
+  margin-bottom: 14px;
+}
+
+/* --- participant-view.html: Pieces of the presentation - tagging controls
+   and the slide/transcript reference panel side by side, so a participant
+   can tag a piece while still seeing what they're referencing. min-width: 0
+   on the flex children keeps the horizontally-scrolling carousel from
+   forcing the reference column (and the row) to overflow. --- */
+.pieces-layout {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+#save-piece-btn, #piece-picker-status {
+  margin-bottom: 14px;
+}
+
+.pieces-tagging-col,
+.pieces-reference-col {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.likert-row {
+  margin-bottom: 20px;
+}
+
+.likert-label {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+/* 5 pills * 36px + 4 gaps * 8px = 212px - .likert-endpoints below is set to
+   this exact same width so its low/high labels align under the first/last
+   pill instead of being justified within a mismatched container width. */
+.likert-pills {
+  display: flex;
+  gap: 8px;
+  width: 212px;
+}
+
+.likert-pill {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid var(--cd-border-strong, rgba(38, 37, 35, 0.28));
+  background: var(--cd-card-bg, #FFFFFF);
+  color: var(--cd-text, #262523);
+  cursor: pointer;
+}
+
+.likert-pill:hover {
+  background: rgba(38, 37, 35, 0.06);
+}
+
+.likert-pill.selected {
+  background: var(--cd-accent, #EB1000);
+  color: var(--cd-accent-text, #FFFFFF);
+  border-color: var(--cd-accent, #EB1000);
+}
+
+.likert-endpoints {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  opacity: 0.7;
+  margin-top: 6px;
+  width: 212px;
+}
+
+.likert-endpoints span:first-child {
+  text-align: left;
+}
+
+.likert-endpoints span:last-child {
+  text-align: right;
+}
+
+/* --- presenter-view.html: Simulate Audience module (mastery bars + expandable
+   per-objective rows). Only ever rendered on presenter-view.html, so these
    reference the page's --cd-* theme variables directly rather than needing
    a separate dark/light pair like the shared classes above. --cd-success is
    the palette's first green - nothing else here needed a "positive" color. */
@@ -1436,7 +1680,7 @@ h1 {
   opacity: 0.9;
 }
 
-/* --- collect-data.html: page layout + collapsible upload sidebar ---
+/* --- presenter-view.html: page layout + collapsible upload sidebar ---
    The main column is a normal flex child (min-width: 0 so its own content,
    e.g. the horizontally-scrolling carousel, can't force the flex container
    wider than the viewport and push the sidebar out); the sidebar is sticky
@@ -1526,7 +1770,7 @@ body.collect-data-page .slide-thumb {
   display: none;
 }
 
-/* --- collect-data.html: light theme override ---
+/* --- presenter-view.html: light theme override ---
    Every other page keeps the red/white Adobe-style theme (the rules
    above); this page alone swaps to an off-white canvas with a light-gray
    side panel, serif headers, and a different sans-serif body face. Written

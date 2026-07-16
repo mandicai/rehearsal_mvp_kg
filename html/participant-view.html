@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Participant View</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cabin+Sketch:wght@400;700&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body class="collect-data-page">
+
+<!-- ================= SETUP MODE (researcher-facing) ================= -->
+<div id="setup-view" style="display: none;">
+<div class="page-layout">
+<div class="main-column">
+
+<h1>Participant View - Study Setup</h1>
+
+<!-- Read-only deck (always the same "dog" example presenter-view.html's testing
+     auto-load already uses) - just here so the researcher can drag-select
+     sections and pick a slide to scope an objective to. -->
+<div id="carousel"></div>
+
+<!-- Audio is uploaded fresh each session (not persisted in localStorage -
+     real audio files are too big for it) and drives slide auto-advance for
+     participants via its start/end timestamps, already present per slide. -->
+<div id="audio-setup-module" class="module-card">
+  <h2>Presentation Audio</h2>
+  <div class="mentor-note"></div>
+  <p style="font-size: 13px; opacity: 0.85; margin-top: 0;">
+    Upload the narration audio for this deck. Needs to be re-uploaded each time this page loads.
+  </p>
+  <input type="file" id="audio-upload-input" accept="audio/*">
+  <div id="audio-upload-status" class="status-line"></div>
+</div>
+
+<!-- Learning objectives at all three scopes, kept for the researcher's own
+     reference/context only - they no longer generate a question or drive
+     any checkpoint during the participant's session, which now plays
+     straight through uninterrupted. -->
+<div id="objectives-module" class="module-card">
+  <h2>Learning Objectives (Reference Only)</h2>
+  <div class="mentor-note"></div>
+
+  <div class="objectives-scope">
+    <h3>Entire Presentation</h3>
+    <div class="audience-input-row">
+      <input type="text" id="presentation-objective-input" placeholder="Add a learning objective for the whole presentation">
+      <button id="add-presentation-objective-btn" class="btn-primary">Add</button>
+    </div>
+    <div id="add-presentation-objective-status" class="status-line"></div>
+    <div id="presentation-objectives-list"></div>
+  </div>
+
+  <div class="objectives-scope">
+    <h3>Section of Slides</h3>
+    <p style="font-size: 12px; opacity: 0.75; margin: 0 0 10px;">
+      Click and drag across slide thumbnails above to select a range (or shift+click).
+    </p>
+    <div id="current-section-label" class="audience-empty-hint"></div>
+    <div id="section-editor" style="display: none;">
+      <div class="audience-input-row">
+        <input type="text" id="section-objective-input" placeholder="Add a learning objective for this section">
+        <button id="add-section-objective-btn" class="btn-primary">Add</button>
+      </div>
+      <div id="add-section-objective-status" class="status-line"></div>
+      <div id="section-objectives-list"></div>
+    </div>
+    <div id="all-sections-list"></div>
+  </div>
+
+  <div class="objectives-scope">
+    <h3>Single Slide</h3>
+    <div id="current-slide-label"></div>
+    <div class="audience-input-row">
+      <input type="text" id="slide-objective-input" placeholder="Add a learning objective for this slide">
+      <button id="add-slide-objective-btn" class="btn-primary">Add</button>
+    </div>
+    <div id="add-slide-objective-status" class="status-line"></div>
+    <div id="slide-objectives-list"></div>
+  </div>
+</div>
+
+<div id="start-session-module" class="module-card">
+  <h2>Ready?</h2>
+  <div class="mentor-note"></div>
+  <button id="start-participant-mode-btn" class="btn-primary">Start Participant Session</button>
+  <div id="start-session-status" class="status-line"></div>
+</div>
+
+<div id="dataset-module" class="module-card">
+  <h2>Export Participant Data</h2>
+  <div class="mentor-note"></div>
+  <div id="participant-count-status" class="status-line"></div>
+  <button id="export-dataset-btn" class="btn-secondary">Export All Participants (JSON)</button>
+  <button id="clear-dataset-btn" class="btn-secondary">Clear All Data</button>
+  <div id="dataset-status" class="status-line"></div>
+
+  <h3 style="margin-top: 24px;">Average ratings by self-rated familiarity</h3>
+  <div id="aggregate-table"></div>
+
+  <h3 style="margin-top: 24px;">Participants</h3>
+  <div id="participants-list"></div>
+</div>
+
+</div><!-- /.main-column -->
+</div><!-- /.page-layout -->
+</div><!-- /#setup-view -->
+
+<!-- ================= PARTICIPANT MODE ================= -->
+<div id="participant-view">
+<div class="page-layout">
+<div class="main-column">
+
+<button id="back-to-setup-btn" class="btn-secondary" style="margin-bottom: 16px;">&larr; Back to Setup</button>
+
+<!-- 0. Welcome: shown before a session starts, and again after each
+     participant finishes, ready for the next person. -->
+<div id="welcome-module" class="module-card">
+  <h2>Welcome to our formative study!</h2>
+  <div class="mentor-note">Shunan: I'll put notes here that contextualize how the formative study will be conducted.</div>
+  <p>
+    Broadly, we are interested in how different audiences make sense of a <b>research presentation</b> <i>as it is presented</i>.
+    For example, recall a research talk that lost you early on, which then shaped how well you understood the rest of the talk. 
+    Alternatively, successful research talks build up understanding progressively to communicate their main takeaways.
+  </p>
+  <p style="font-weight: 700; margin-bottom: 8px;">Here's what to expect over the next hour or so:</p>
+  <ol style="margin: 0 0 20px; padding-left: 20px; line-height: 1.7;">
+    <li>A few introductory questions about research talks you have watched (~10 minutes)</li>
+    <li>Watch a short research presentation, start to finish (~15-20 minutes)</li>
+    <li>Reflect on what you watched—your main takeaways, what helped or confused you, and how those pieces connect (~30 minutes)</li>
+    <li>Rate the presentation overall (~5 minutes)</li>
+  </ol>
+</div>
+
+<!-- 1. Demographics: shown before a session starts, and again after each
+     participant finishes, ready for the next person. -->
+<div id="demographics-module" class="module-card" style="display: none;">
+  <h2>About you</h2>
+  <div class="mentor-note"></div>
+  <div class="audience-input-row">
+    <label style="flex: 1;">Age range
+      <select id="demo-age-input" style="width: 100%; margin-top: 4px;">
+        <option value="">Select...</option>
+        <option>Under 18</option>
+        <option>18-24</option>
+        <option>25-34</option>
+        <option>35-44</option>
+        <option>45-54</option>
+        <option>55-64</option>
+        <option>65+</option>
+      </select>
+    </label>
+  </div>
+  <div class="audience-input-row">
+    <label style="flex: 1;">Highest level of education
+      <select id="demo-education-input" style="width: 100%; margin-top: 4px;">
+        <option value="">Select...</option>
+        <option>High school</option>
+        <option>Some college</option>
+        <option>Bachelor's degree</option>
+        <option>Master's degree</option>
+        <option>Doctoral degree</option>
+        <option>Other</option>
+      </select>
+    </label>
+  </div>
+  <div class="audience-input-row">
+    <label style="flex: 1;">Current profession / field of study
+      <input type="text" id="demo-field-input" style="width: 100%; margin-top: 4px;" placeholder="e.g. Mechanical engineer, nursing">
+    </label>
+  </div>
+</div>
+
+<!-- 2. Interview Questions: a few open-ended prompts about research talks
+     the participant has watched before, shown before the live presentation. -->
+<div id="interview-module" class="module-card" style="display: none;">
+  <h2>Intro questions</h2>
+  <div class="mentor-note">Shunan: I'd like to do these questions in person, semi-structured interview style, but putting them here so you can review/we have the option of people answering online.</div>
+  <p class="audience-empty-hint" style="margin: 0 0 16px;">
+    There are no right or wrong answers here—we're interested in your honest experience!
+  </p>
+  <div class="objectives-scope">
+    <label style="display: block; font-weight: 600; margin-bottom: 8px;">
+      Think of a research talk or presentation you've <i>watched</i> that really worked for you. What made it easy to follow and remember?
+    </label>
+    <textarea id="interview-worked-input" class="styled-textarea" rows="3" placeholder="Type your answer here..."></textarea>
+  </div>
+  <div class="objectives-scope">
+    <label style="display: block; font-weight: 600; margin-bottom: 8px;">
+      Now think of one that lost you or was hard to follow. What happened, and where did you feel confused?
+    </label>
+    <textarea id="interview-confusing-input" class="styled-textarea" rows="3" placeholder="Type your answer here..."></textarea>
+  </div>
+  <div class="objectives-scope" style="border-bottom: none; margin-bottom: 0; padding-bottom: 0;">
+    <label style="display: block; font-weight: 600; margin-bottom: 8px;">
+      When you watch a research talk, what usually determines whether you followed and understood it well enough to explain it to someone else?
+    </label>
+    <textarea id="interview-understanding-input" class="styled-textarea" rows="3" placeholder="Type your answer here..."></textarea>
+  </div>
+</div>
+
+<!-- 2b. More Intro Questions: a second, related-but-distinct set of prompts
+     (about presentations the participant has given, rather than watched) -
+     kept as its own module so the two focuses stay visually distinct. -->
+<div id="interview-module-2" class="module-card" style="display: none;">
+  <h2>Intro questions</h2>
+  <div class="mentor-note">Shunan: I'd like to do these questions in person, semi-structured interview style, but putting them here so you can review/we have the option of people answering online.</div>
+  <div class="objectives-scope">
+    <label style="display: block; font-weight: 600; margin-bottom: 8px;">
+      Think of a research talk or presentation you've <i>presented</i>. This should be a presentation you prepared and rehearsed for that had to be adapted for different audiences.
+      What was the topic, and who were the audiences?
+    </label>
+    <textarea id="interview2-presented-input" class="styled-textarea" rows="3" placeholder="Type your answer here..."></textarea>
+  </div>
+  <div class="objectives-scope" style="border-bottom: none; margin-bottom: 0; padding-bottom: 0;">
+    <label style="display: block; font-weight: 600; margin-bottom: 8px;">
+      Regarding the "flow" of the presentation: What kinds of feedback did you receive during preparation and rehearsal?
+      What feedback was memorably helpful in editing and adapting your presentation?
+    </label>
+    <textarea id="interview2-feedback-input" class="styled-textarea" rows="3" placeholder="Type your answer here..."></textarea>
+  </div>
+</div>
+
+<!-- 3. Familiarity: kept as its own step, immediately before the live
+     presentation, so the "cold" self-rating is fresh right before watching. -->
+<div id="familiarity-module" class="module-card" style="display: none;">
+  <h2>One last thing, before we begin ... </h2>
+  <div class="mentor-note"></div>
+  <p class="audience-empty-hint">
+    We will show you a research presentation on the topic of XX. Answer honestly based on what you already know—please don't look anything up.
+  </p>
+  <div class="audience-input-row">
+    <label style="font-weight: 600; flex: 1;">How familiar are you with this general topic area?
+      <select id="demo-familiarity-input" style="width: 100%; margin-top: 4px;">
+        <option value="">Select...</option>
+        <option value="1">1 - Not at all familiar</option>
+        <option value="2">2</option>
+        <option value="3">3 - Somewhat familiar</option>
+        <option value="4">4</option>
+        <option value="5">5 - Expert</option>
+      </select>
+    </label>
+  </div>
+</div>
+
+<!-- Shared back/forward navigation for the pre-presentation steps (Welcome,
+     Demographics, Interview Questions, Familiarity). Fixed in the DOM right
+     after the last step, so it always renders directly below whichever step
+     is currently visible - the other three are display:none and take no
+     space. Hidden once the live presentation begins. -->
+<div id="pre-nav" class="module-card">
+  <div style="display: flex; justify-content: space-between; align-items: center; gap: 16px;">
+    <button id="pre-nav-back-btn" class="btn-secondary" style="display: none;">&larr; Back</button>
+    <div style="flex: 1;"></div>
+    <button id="pre-nav-next-btn" class="btn-primary">Begin</button>
+  </div>
+  <div id="pre-nav-status" class="status-line"></div>
+</div>
+
+<!-- 4. The presentation itself: current slide + audio, hidden until Start.
+     Plays straight through, uninterrupted - no mid-playback checkpoints. -->
+<div id="presentation-player-module" class="module-card" style="display: none;">
+  <p class="audience-empty-hint">
+    <b>Scenario:</b> You are attending a live research presentation. Your friend could not make it, and asked
+    you to explain the main takeaways of the presentation later to them.
+  </p>
+  <p class="audience-empty-hint">
+    Press play on the video and watch the research presentation all the way through. You can take notes while it is playing, 
+    as you would during a real presentation. 
+  </p>
+  <div id="player-progress" class="status-line"></div>
+  <div id="player-slide-display" style="text-align: center;"></div>
+  <audio id="presentation-audio" controls style="width: 100%; margin-top: 12px;"></audio>
+</div>
+
+<!-- 5. Reflection: open-ended data collection, shown once playback ends -->
+<div id="reflection-module" class="module-card" style="display: none;">
+  <h2>Reflection</h2>
+  <div class="mentor-note">Shunan: This part will also be lightly guided by me, but captured on this interface.</div>
+
+  <div class="objectives-scope">
+    <h3>Your main takeaways</h3>
+    <p class="audience-empty-hint" style="margin: 0 0 10px;">
+      Indicate your overall main takeaways from the research presentation that you would feel comfortable explaining to your friend.
+    </p>
+    <textarea id="takeaway-input" class="styled-textarea" rows="4" 
+              placeholder="What's one thing you'd feel comfortable explaining to a friend after watching this? Write as much as you'd like—you can separate takeways by adding them individually."></textarea>
+    <button id="add-takeaway-btn" class="btn-primary" style="margin-top: 8px;">Add Takeaway</button>
+    <div id="add-takeaway-status" class="status-line"></div>
+    <div id="takeaways-list"></div>
+  </div>
+
+  <div class="objectives-scope">
+    <h3>Build up to takeaways</h3>
+    <p class="audience-empty-hint" style="margin: 0 0 10px;">
+      Tag parts of the presentation that were clarifying / helped you understand your takeaways (and note why), and parts 
+      that were confusing. Click a slide to view its transcript below. Highlight some transcript text to tag just that excerpt, 
+      or use the buttons below to tag the whole slide.
+    </p>
+    <div class="pieces-layout">
+      <div class="pieces-reference-col">
+        <!-- <h4 class="reflection-subheading" style="margin-top: 0;">Reference: Slides &amp; Transcript</h4> -->
+        <!-- <p class="audience-empty-hint" style="margin: 0 0 10px;">
+          Click a slide to view its transcript below. Highlight some transcript text to tag just that
+          excerpt, or use the buttons below to tag the whole slide.
+        </p> -->
+        <div class="audience-input-row">
+          <button id="tag-slide-contributing-btn" class="btn-secondary">Tag This Slide as Contributing</button>
+          <button id="tag-slide-confusing-btn" class="btn-secondary">Tag This Slide as Confusing</button>
+        </div>
+        <div id="reflection-carousel"></div>
+        <div id="reflection-transcript" class="reflection-transcript"></div>
+      </div>
+
+      <div class="pieces-tagging-col">
+        <div id="piece-picker-status" class="status-line"></div>
+        <div id="piece-note-form" style="display: none;">
+          <textarea id="piece-note-input" class="styled-textarea" rows="2" placeholder="Why did this help? Or: why was it confusing?"></textarea>
+          <button id="save-piece-btn" class="btn-primary" style="margin-top: 8px;">Save Part</button>
+          <button id="cancel-piece-btn" class="btn-secondary" style="margin-top: 8px;">Cancel</button>
+        </div>
+        <h4 class="reflection-subheading" style="margin-top: 0;">Contributing to your understanding</h4>
+        <div id="contributing-pieces-list"></div>
+        <h4 class="reflection-subheading">Confusing to your understanding</h4>
+        <div id="confusing-pieces-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="objectives-scope">
+    <h3>Link tagged parts together</h3>
+    <p class="audience-empty-hint" style="margin: 0 0 10px;">
+      Click and drag from one part to another to link them—e.g. this part was required to understand another part or takeaway.
+    </p>
+    <div id="link-graph-status" class="status-line"></div>
+    <div id="link-graph"></div>
+    <div id="link-predicate-form" class="audience-input-row" style="display: none;">
+      <input type="text" id="link-predicate-input" class="styled-textarea" style="flex: 1;" placeholder="Describe the relationship (optional), e.g. 'required for', 'made this harder to understand'...">
+      <button id="save-link-btn" class="btn-primary">Save Link</button>
+      <button id="cancel-link-btn" class="btn-secondary">Cancel</button>
+    </div>
+    <div id="link-edge-list"></div>
+  </div>
+
+  <div class="objectives-scope">
+    <h3>Overall ratings</h3>
+    <div id="rating-informativeness" class="likert-row">
+      <div class="likert-label">Informativeness</div>
+      <div class="likert-pills"></div>
+      <div class="likert-endpoints"><span>Not at all informative</span><span>Extremely informative</span></div>
+    </div>
+    <div id="rating-confusingness" class="likert-row">
+      <div class="likert-label">Confusingness</div>
+      <div class="likert-pills"></div>
+      <div class="likert-endpoints"><span>Not at all confusing</span><span>Extremely confusing</span></div>
+    </div>
+    <div id="rating-understandability" class="likert-row">
+      <div class="likert-label">Understandability</div>
+      <div class="likert-pills"></div>
+      <div class="likert-endpoints"><span>Very hard to understand</span><span>Very easy to understand</span></div>
+    </div>
+
+    <div class="likert-label">What feedback do you have for the flow of the presentation?</div>
+    <textarea id="rating-flow-feedback-input" class="styled-textarea" rows="4"></textarea>
+    
+    <div class="likert-label" style="margin-top: 12px;">Anything else you want to share about the presentation?</div>
+    <textarea id="rating-comments-input" class="styled-textarea" rows="4"></textarea>
+  </div>
+
+  <button id="submit-reflection-btn" class="btn-primary">Submit</button>
+  <div id="reflection-status" class="status-line"></div>
+</div>
+
+</div><!-- /.main-column -->
+</div><!-- /.page-layout -->
+</div><!-- /#participant-view -->
+
+<script src="/js/helpers.js"></script>
+<script src="/js/participant-view.js"></script>
+
+</body>
+</html>

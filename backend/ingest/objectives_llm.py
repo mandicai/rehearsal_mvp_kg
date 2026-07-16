@@ -1,7 +1,7 @@
 """LLM-suggested learning objectives + audience-perspective questions (see
 server.py's /learning_objectives/suggest route), scoped to the whole
 presentation, a section (range of slides), or a single slide -
-collect-data.html's Learning Objectives module calls this once per scope,
+presenter-view.html's Learning Objectives module calls this once per scope,
 grounded in that scope's transcript text and the stated audience.
 
 Returns two parallel lists: instructor-authored objectives, and questions

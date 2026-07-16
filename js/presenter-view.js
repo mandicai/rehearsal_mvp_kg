@@ -645,104 +645,10 @@ document.getElementById('suggest-objective-btn').addEventListener('click', () =>
 // --- 6. Dependencies: learning-objective graph (primary) + slide graph
 // (secondary, auto-populated from the objective graph but still directly
 // editable) ---
-// Both reuse the same generic force-directed rendering (layoutForceGraph
-// from helpers.js unmodified; SVG curved edges + arrowhead marker +
-// parallel-edge offsetting via helpers.js's edgePairKey), factored into one
-// shared renderDependencyStyleGraph() so the two graphs aren't ~80 lines of
-// duplicated SVG-building code.
-
-function renderDependencyStyleGraph(containerId, nodes, edges, options) {
-  const container = document.getElementById(containerId);
-  container.innerHTML = '';
-  if (nodes.length === 0) return;
-
-  edges.forEach(e => { e.sourceNode = nodes[e.source]; e.targetNode = nodes[e.target]; });
-
-  const ASPECT = 1.8;
-  const area = Math.max(560 * 300, nodes.length * 9000);
-  const wrapPxHeight = Math.max(260, Math.sqrt(area / ASPECT));
-  const wrapPxWidth = Math.max(560, wrapPxHeight * ASPECT);
-  const HEIGHT = 100;
-  const WIDTH = HEIGHT * ASPECT;
-  layoutForceGraph(nodes, edges, WIDTH, HEIGHT, 300);
-
-  const pairCounts = new Map();
-  edges.forEach(edge => {
-    const key = edgePairKey(edge);
-    edge._pairIndex = pairCounts.get(key) || 0;
-    pairCounts.set(key, edge._pairIndex + 1);
-  });
-  edges.forEach(edge => { edge._pairTotal = pairCounts.get(edgePairKey(edge)); });
-
-  const scroll = document.createElement('div');
-  scroll.className = 'graph-scroll';
-  const wrap = document.createElement('div');
-  wrap.className = 'graph-wrap';
-  wrap.style.minWidth = `${wrapPxWidth}px`;
-  wrap.style.height = `${wrapPxHeight}px`;
-
-  const svgNS = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(svgNS, 'svg');
-  svg.setAttribute('viewBox', `0 0 ${WIDTH} ${HEIGHT}`);
-
-  const markerId = `${containerId}-arrow`;
-  const defs = document.createElementNS(svgNS, 'defs');
-  const marker = document.createElementNS(svgNS, 'marker');
-  marker.setAttribute('id', markerId);
-  marker.setAttribute('viewBox', '0 0 10 10');
-  marker.setAttribute('refX', '9');
-  marker.setAttribute('refY', '5');
-  marker.setAttribute('markerWidth', '5');
-  marker.setAttribute('markerHeight', '5');
-  marker.setAttribute('orient', 'auto-start-reverse');
-  const arrowPath = document.createElementNS(svgNS, 'path');
-  arrowPath.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
-  arrowPath.setAttribute('class', 'graph-arrowhead');
-  marker.appendChild(arrowPath);
-  defs.appendChild(marker);
-  svg.appendChild(defs);
-
-  edges.forEach(edge => {
-    const offset = (edge._pairIndex - (edge._pairTotal - 1) / 2) * (WIDTH * 0.05);
-    const mx = (edge.sourceNode.x + edge.targetNode.x) / 2;
-    const my = (edge.sourceNode.y + edge.targetNode.y) / 2;
-    const dx = edge.targetNode.x - edge.sourceNode.x;
-    const dy = edge.targetNode.y - edge.sourceNode.y;
-    const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
-    const nx = -dy / dist, ny = dx / dist;
-    const ctrlX = mx + nx * offset;
-    const ctrlY = my + ny * offset;
-    const d = `M ${edge.sourceNode.x} ${edge.sourceNode.y} Q ${ctrlX} ${ctrlY} ${edge.targetNode.x} ${edge.targetNode.y}`;
-
-    const path = document.createElementNS(svgNS, 'path');
-    path.setAttribute('d', d);
-    path.setAttribute('class', 'graph-edge-relation');
-    path.setAttribute('marker-end', `url(#${markerId})`);
-    svg.appendChild(path);
-  });
-
-  wrap.appendChild(svg);
-
-  nodes.forEach(node => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = `graph-node ${options.nodeClass}`;
-    if (options.isPendingSource && options.isPendingSource(node)) {
-      btn.classList.add('pending-source');
-    }
-    btn.textContent = node.label;
-    btn.title = node.title || node.label;
-    btn.style.left = `${(node.x / WIDTH) * 100}%`;
-    btn.style.top = `${(node.y / HEIGHT) * 100}%`;
-    if (node.id !== undefined) btn.dataset.nodeId = node.id;
-    if (options.onNodeClick) btn.addEventListener('click', () => options.onNodeClick(node));
-    if (options.onNodeMouseDown) btn.addEventListener('mousedown', () => options.onNodeMouseDown(node));
-    wrap.appendChild(btn);
-  });
-
-  scroll.appendChild(wrap);
-  container.appendChild(scroll);
-}
+// Both reuse the same generic force-directed rendering, factored into the
+// shared renderDependencyStyleGraph() in helpers.js so the two graphs (and
+// participant-view.js's takeaway/piece link graph) aren't ~90 lines of
+// duplicated SVG-building code per page.
 
 // -- 6a. Slide dependencies (unchanged interaction: click prerequisite slide, then dependent slide) --
 
@@ -1089,7 +995,7 @@ saveProjectBtn.addEventListener('click', saveProject);
 
 // --- TESTING ONLY: auto-load a pre-baked example project ---
 // The presenter's own upload+record flow above is the real path; this just
-// bootstraps collect-data.html with an already-aligned example (slides +
+// bootstraps presenter-view.html with an already-aligned example (slides +
 // transcript, no learning objectives/dependencies yet) so the objectives
 // and dependency-graph features can be tested immediately, without an
 // upload+recording round trip every time. Remove this block once real

@@ -1,6 +1,6 @@
 """Configuration knobs for the ingest package (see pptx_render.py,
 transcription.py, align.py) - the data-collection pipeline behind
-collect-data.html. Independent of segmentation/segmentation_carta's configs;
+presenter-view.html. Independent of segmentation/segmentation_carta's configs;
 this package has no shared imports with either."""
 from dataclasses import dataclass
 

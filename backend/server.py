@@ -53,7 +53,7 @@ MAX_CARTA_CHARS = 40_000
 # long deck would blow up request size/latency/cost for little benefit.
 MAX_FEEDBACK_SLIDES = 60
 
-# Bounds on collect-data.html uploads (see /ingest/pptx, /transcribe below).
+# Bounds on presenter-view.html uploads (see /ingest/pptx, /transcribe below).
 MAX_PPTX_SIZE_MB = 50
 MAX_AUDIO_SIZE_MB = 50
 

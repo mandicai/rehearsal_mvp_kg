@@ -3,7 +3,7 @@
 slide-activation timestamps into [start, end) windows, then assign each
 timed transcript word to the last window whose start <= word.start, using
 Whisper's word-level timestamps (the fresh-recording path is the only
-transcript source collect-data.html offers).
+transcript source presenter-view.html offers).
 
 A fallback path (no per-word timestamps at all, just the plain transcript
 text) splits the text proportionally by token count weighted by each
