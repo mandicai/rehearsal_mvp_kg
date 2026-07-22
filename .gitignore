@@ -4,3 +4,6 @@ slides.json
 prompts.md
 system-build.ai
 system-build.png
+
+# Local Netlify folder
+.netlify

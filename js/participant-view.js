@@ -21,6 +21,39 @@ const OBJECTIVES_STORAGE_KEY = 'calibrate-priors-objectives-v2';
 const PARTICIPANTS_STORAGE_KEY = 'calibrate-priors-participants-v3';
 const DECK_FOLDER_STORAGE_KEY = 'calibrate-priors-deck-folder-v1';
 const TALK_ABSTRACT_STORAGE_KEY = 'calibrate-priors-talk-abstract-v1';
+
+// --- TEMPORARY: seeded Setup defaults for a fresh deploy ---
+// A fresh browser has no localStorage yet, so Setup would otherwise come up
+// blank on every new visitor's machine. This snapshot (captured from an
+// already-filled-in Setup page) is used as a fallback only when localStorage
+// is empty - a researcher's own edits in their own browser still always win
+// (see loadObjectivesState() and the deck-folder/abstract restore near the
+// bottom of this file, both of which check localStorage first).
+//
+// TO REMOVE LATER: delete this DEFAULT_SETUP constant, then in
+// loadObjectivesState() change `return DEFAULT_SETUP.objectives;` back to
+// `return { presentationObjectives: [], sectionsByRange: {}, slideObjectives: {} };`,
+// and near the bottom of the file change
+// `localStorage.getItem(DECK_FOLDER_STORAGE_KEY) || DEFAULT_SETUP.deckFolder`
+// and `localStorage.getItem(TALK_ABSTRACT_STORAGE_KEY) || DEFAULT_SETUP.talkAbstract`
+// back to plain `localStorage.getItem(...)` calls.
+const DEFAULT_SETUP = {
+  deckFolder: 'presentation-examples/agent',
+  talkAbstract: 'We propose and explore the concept of Partial Participation, facilitating remote collaborators to contribute to meetings in which they are not able to fully participate via an AI agent acting as a proxy. During the meeting, users can monitor LLM-generated real-time meeting updates and respond to questions posed by other attendees. Through a mixed-methods user study with 24 participants using our prototype, ProxyMe, we investigated how the frequency of updates (high vs. low) and the type of response style (multiple choice vs. text input) impact perceived presence and mental workload. Our findings reveal that no single setup is universally optimal, and the partial participation fosters a moderate level of social presence and attentional mental workload. Our contributions introduce partial participation as a new paradigm for remote collaboration and highlight how AI can mediate participation when full presence is not feasible.',
+  objectives: {
+    presentationObjectives: [],
+    sectionsByRange: {
+      '1-1': { start_slide_index: 1, end_slide_index: 1, title: 'Opening', objectives: [] },
+      '2-15': { start_slide_index: 2, end_slide_index: 15, title: 'Motivating Problem', objectives: [] },
+      '16-16': { start_slide_index: 16, end_slide_index: 16, title: 'System Build', objectives: [] },
+      '17-26': { start_slide_index: 17, end_slide_index: 26, title: 'Experimental Design', objectives: [] },
+      '27-49': { start_slide_index: 27, end_slide_index: 49, title: 'Study Findings & Design Implications', objectives: [] },
+      '50-52': { start_slide_index: 50, end_slide_index: 52, title: 'Limitations & Future Work', objectives: [] },
+      '53-54': { start_slide_index: 53, end_slide_index: 54, title: 'Takeaways', objectives: [] },
+    },
+    slideObjectives: {},
+  },
+};
 const RATING_KEYS = ['understandability', 'relevance', 'detail'];
 
 function shorten(text) {
@@ -44,7 +77,7 @@ function loadObjectivesState() {
     const parsed = JSON.parse(localStorage.getItem(OBJECTIVES_STORAGE_KEY));
     if (parsed) return parsed;
   } catch (err) { /* fall through to defaults */ }
-  return { presentationObjectives: [], sectionsByRange: {}, slideObjectives: {} };
+  return DEFAULT_SETUP.objectives;
 }
 function saveObjectives() {
   localStorage.setItem(OBJECTIVES_STORAGE_KEY, JSON.stringify({
@@ -2196,12 +2229,12 @@ renderParticipantsList();
 // Silently restore the last-loaded deck folder on page refresh - a plain
 // reload isn't a deliberate "load new presentation files" act, so it
 // shouldn't reset the takeaways already specified for it (resetTakeaways: false).
-const savedDeckFolder = localStorage.getItem(DECK_FOLDER_STORAGE_KEY);
+const savedDeckFolder = localStorage.getItem(DECK_FOLDER_STORAGE_KEY) || DEFAULT_SETUP.deckFolder;
 if (savedDeckFolder) {
   document.getElementById('deck-folder-input').value = savedDeckFolder;
   loadDeckFolder(savedDeckFolder, { resetTakeaways: false });
 }
 
-const savedTalkAbstract = localStorage.getItem(TALK_ABSTRACT_STORAGE_KEY);
+const savedTalkAbstract = localStorage.getItem(TALK_ABSTRACT_STORAGE_KEY) || DEFAULT_SETUP.talkAbstract;
 if (savedTalkAbstract) document.getElementById('talk-abstract-input').value = savedTalkAbstract;
 renderTalkAbstractDisplay();
