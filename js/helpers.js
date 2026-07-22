@@ -701,8 +701,11 @@ function renderDependencyStyleGraph(containerId, nodes, edges, options) {
 
   edges.forEach(e => { e.sourceNode = nodes[e.source]; e.targetNode = nodes[e.target]; });
 
-  const ASPECT = 1.8;
-  const area = Math.max(560 * 300, nodes.length * 9000);
+  // aspect/minArea are overridable per call site (e.g. participant-view.js's
+  // link graph wants a visibly taller canvas than the default) while keeping
+  // every other caller pixel-identical to before.
+  const ASPECT = options.aspect || 1.8;
+  const area = Math.max(options.minArea || 560 * 300, nodes.length * 9000);
   // wrapPxWidth is always derived from wrapPxHeight (never independently
   // floored) so the wrap's real aspect ratio exactly matches ASPECT - see
   // the width-setting note below for why that exactness matters.
@@ -712,13 +715,13 @@ function renderDependencyStyleGraph(containerId, nodes, edges, options) {
   const WIDTH = HEIGHT * ASPECT;
 
   // Widest/tallest node button classes (.graph-node-takeaway etc. up to
-  // 140px wide; a piece node's .graph-node-icon - 32px + 2px border each
-  // side - plus padding makes ~48px tall) - half that, converted into this
-  // render's abstract units, keeps a node's actual edge from ever hanging
-  // past the wrap's boundary (where .graph-scroll's overflow would
-  // otherwise clip it).
-  const marginX = (70 / wrapPxWidth) * WIDTH;
-  const marginY = (24 / wrapPxHeight) * HEIGHT;
+  // 140px wide; a stacked .graph-node-stacked piece node - above-label line
+  // + 56px .graph-node-icon (+ 2px border each side) + its own label below -
+  // makes ~110px tall) - half that, converted into this render's abstract
+  // units, keeps a node's actual edge from ever hanging past the wrap's
+  // boundary (where .graph-scroll's overflow would otherwise clip it).
+  const marginX = (90 / wrapPxWidth) * WIDTH;
+  const marginY = (60 / wrapPxHeight) * HEIGHT;
   layoutForceGraph(nodes, edges, WIDTH, HEIGHT, 300, marginX, marginY);
 
   const pairCounts = new Map();
@@ -805,9 +808,19 @@ function renderDependencyStyleGraph(containerId, nodes, edges, options) {
   nodes.forEach(node => {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = `graph-node ${options.nodeClass || ''} ${node.nodeClass || ''}`.trim();
+    // node.aboveLabel switches the node to a stacked (column) layout with its
+    // own text sitting above the image, instead of the default side-by-side
+    // icon+label - used by participant-view.js's link graph to show a piece's
+    // slide/section above its thumbnail rather than next to it.
+    btn.className = `graph-node ${node.aboveLabel ? 'graph-node-stacked' : ''} ${options.nodeClass || ''} ${node.nodeClass || ''}`.trim();
     if (options.isPendingSource && options.isPendingSource(node)) {
       btn.classList.add('pending-source');
+    }
+    if (node.aboveLabel) {
+      const above = document.createElement('span');
+      above.className = 'graph-node-above-label';
+      above.textContent = node.aboveLabel;
+      btn.appendChild(above);
     }
     if (node.imageSrc) {
       const icon = document.createElement('img');
@@ -1375,7 +1388,7 @@ function fetchSuggestObjectives(audience, scopeLabel, slidesForScope) {
     .then(handleJsonResponse)
     .catch(err => {
       throw new Error(
-        `Could not reach the objectives-suggestion server at ${SUGGEST_OBJECTIVES_API_URL} (${err.message}). ` +
+        `Could not reach the takeaway-suggestion server at ${SUGGEST_OBJECTIVES_API_URL} (${err.message}). ` +
         `Start it with: python backend/server.py`
       );
     });

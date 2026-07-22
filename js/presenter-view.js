@@ -470,7 +470,7 @@ function renderLearningObjectivesModule() {
 
 function renderPresentationObjectives() {
   chipListRender('presentation-objectives-list', presentationObjectives,
-    'No presentation-wide learning objectives yet.',
+    'No presentation-wide takeaways yet.',
     item => {
       presentationObjectives = presentationObjectives.filter(o => o.id !== item.id);
       renderPresentationObjectives();
@@ -530,10 +530,10 @@ function renderSectionObjectives() {
     editor.style.display = 'none';
   } else {
     const section = getOrCreateSection(currentSectionRange);
-    label.textContent = `Editing objectives for Slides ${section.start_slide_index}-${section.end_slide_index}`;
+    label.textContent = `Editing takeaways for Slides ${section.start_slide_index}-${section.end_slide_index}`;
     editor.style.display = '';
     chipListRender('section-objectives-list', section.objectives,
-      'No learning objectives yet for this section.',
+      'No takeaways yet for this section.',
       item => {
         section.objectives = section.objectives.filter(o => o.id !== item.id);
         renderSectionObjectives();
@@ -597,10 +597,10 @@ document.getElementById('suggest-section-objective-btn').addEventListener('click
 function renderSlideObjectives() {
   if (slides.length === 0) return;
   const slide = slides[activeIndex];
-  document.getElementById('current-slide-label').textContent = `Objectives for Slide ${slide.slide_index}`;
+  document.getElementById('current-slide-label').textContent = `Takeaways for Slide ${slide.slide_index}`;
   const objectives = learningObjectivesBySlide[slide.slide_index] || [];
   chipListRender('objectives-list', objectives,
-    'No learning objectives yet for this slide.',
+    'No takeaways yet for this slide.',
     item => {
       learningObjectivesBySlide[slide.slide_index] = objectives.filter(o => o.id !== item.id);
       renderSlideObjectives();
@@ -956,7 +956,7 @@ function saveProject() {
     return;
   }
   if (presentationObjectives.length === 0) {
-    setStatus('save-status', 'Add at least one presentation-wide learning objective first (see the Learning Objectives module).', true);
+    setStatus('save-status', 'Add at least one presentation-wide takeaway first (see the Takeaways module).', true);
     return;
   }
 
@@ -1000,13 +1000,13 @@ saveProjectBtn.addEventListener('click', saveProject);
 // and dependency-graph features can be tested immediately, without an
 // upload+recording round trip every time. Remove this block once real
 // projects are being exercised end to end.
-const EXAMPLE_PROJECT_DIR = 'presentation-examples/dog';
+const EXAMPLE_PROJECT_DIR = 'presentation-examples/election';
 
 fetch(`/${EXAMPLE_PROJECT_DIR}/slides.json`)
   .then(res => res.json())
   .then(data => {
-    projectId = 'dog-example';
-    pptxFilename = 'Huskies_service_dog.pptx';
+    projectId = 'election-example';
+    pptxFilename = 'Designing Election Dashboards Trust.pptx';
     slides = data.map(slide => ({ ...slide, snapshot_image: `${EXAMPLE_PROJECT_DIR}/${slide.snapshot_image}` }));
     renderCarousel();
     setStatus('pptx-upload-status', `Loaded example project (${slides.length} slides, already aligned).`);

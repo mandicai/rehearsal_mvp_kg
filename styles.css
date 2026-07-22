@@ -23,7 +23,8 @@ input, select {
 
 /* --- Carousel --- */
 #carousel,
-#reflection-carousel {
+#reflection-carousel,
+#edits-carousel {
   display: flex;
   gap: 16px;
   overflow-x: auto;
@@ -33,16 +34,19 @@ input, select {
 }
 
 #carousel::-webkit-scrollbar,
-#reflection-carousel::-webkit-scrollbar {
+#reflection-carousel::-webkit-scrollbar,
+#edits-carousel::-webkit-scrollbar {
   height: 8px;
 }
 #carousel::-webkit-scrollbar-thumb,
-#reflection-carousel::-webkit-scrollbar-thumb {
+#reflection-carousel::-webkit-scrollbar-thumb,
+#edits-carousel::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.5);
   border-radius: 4px;
 }
 #carousel::-webkit-scrollbar-track,
-#reflection-carousel::-webkit-scrollbar-track {
+#reflection-carousel::-webkit-scrollbar-track,
+#edits-carousel::-webkit-scrollbar-track {
   background: rgba(0, 0, 0, 0.15);
 }
 
@@ -935,14 +939,36 @@ input, select {
   transition: border-color 0.15s ease;
 }
 
-/* --- participant-view.html: small slide-image icon shown on a "piece" node
-   in the link graph, so it's recognizable at a glance which slide it's
-   from - not just a text label. --- */
+/* Used when a node has an aboveLabel (see js/helpers.js) - stacks that label
+   above the image instead of the default side-by-side icon+label pill. */
+.graph-node-stacked {
+  flex-direction: column;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  border-radius: 10px;
+  padding: 4px 8px 6px;
+  gap: 2px;
+  max-width: 104px;
+}
+
+.graph-node-above-label {
+  font-size: 9px;
+  font-weight: 700;
+  text-align: center;
+  line-height: 1.25;
+}
+
+/* --- participant-view.html: slide-image (or, for a drawn-region piece, its
+   own cropped close-up - see cropRegionThumbnail()) icon shown on a "piece"
+   node in the link graph, so it's recognizable at a glance which slide/part
+   it's from - not just a text label. Sized to actually show a circled
+   region clearly, not just a tiny "there's an image here" hint. --- */
 .graph-node-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: 2px solid #FFFFFF;
+  width: 60px;
+  height: 60px;
+  /* border-radius: 50%; */
+  /* border: 2px solid #FFFFFF; */
   object-fit: cover;
   flex: 0 0 auto;
 }
@@ -1042,16 +1068,29 @@ input, select {
   margin: 0 0 16px;
 }
 
-.btn-primary {
+/* .btn-primary/.btn-secondary/.btn-danger share height:30px + inline-flex
+   centering so they line up exactly with the 30px-tall input/select next to
+   them in an .audience-input-row (padding alone doesn't guarantee that,
+   since it depends on font metrics rather than a fixed box height). */
+.btn-primary,
+.btn-secondary,
+.btn-danger {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
   font-family: inherit;
   font-size: 13px;
   font-weight: 600;
-  padding: 8px 16px;
-  border: none;
   border-radius: 4px;
+  cursor: pointer;
+}
+
+.btn-primary {
+  border: none;
   background: #FFFFFF;
   color: #EB1000;
-  cursor: pointer;
 }
 
 .btn-primary:hover {
@@ -1064,15 +1103,9 @@ input, select {
 }
 
 .btn-secondary {
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  padding: 8px 16px;
   border: 1px solid rgba(255, 255, 255, 0.5);
-  border-radius: 4px;
   background: transparent;
   color: #FFFFFF;
-  cursor: pointer;
 }
 
 .btn-secondary:hover {
@@ -1083,6 +1116,21 @@ input, select {
   background: #FFFFFF;
   color: #EB1000;
   border-color: #FFFFFF;
+}
+
+/* Every "red button" (destructive actions) shares this one definition -
+   a fill distinctly different from the page's own red background (#EB1000),
+   so it never looks unfilled/blends in at rest, with a consistent, simple
+   darken-on-hover (matching the darken-on-hover convention .btn-primary and
+   .btn-secondary already use). */
+.btn-danger {
+  border: 1px solid #FFFFFF;
+  background: #FF0000;
+  color: #FFFFFF;
+}
+
+.btn-danger:hover {
+  background: #E60000;
 }
 
 .tab-row {
@@ -1118,19 +1166,34 @@ input, select {
   border-bottom: 1px solid rgba(255, 255, 255, 0.15);
 }
 
+/* --- Interview questions (Participant mode): one question highlighted at a
+   time, the rest faded - see renderInterviewHighlight() in participant-view.js --- */
+.interview-q-active {
+  opacity: 1;
+  border-left: 3px solid #FFFFFF;
+  padding-left: 13px;
+  margin-left: -16px;
+  transition: opacity 0.2s ease;
+}
+
+.interview-q-faded {
+  opacity: 0.3;
+  transition: opacity 0.2s ease;
+}
+
 /* .objectives-scope:last-child {
   margin-bottom: 0;
   padding-bottom: 0;
   border-bottom: none;
 } */
 
-.objectives-scope h3 {
+/* .objectives-scope h3 {
   font-size: 13px;
-  /* text-transform: uppercase; */
+  text-transform: uppercase;
   letter-spacing: 0.04em;
   opacity: 0.85;
   margin: 0 0 12px;
-}
+} */
 
 .required-marker {
   font-size: 10px;
@@ -1167,13 +1230,15 @@ input, select {
    which would otherwise hijack the pointer mid-gesture and stop mousemove
    events from reaching the drag-to-select-a-section handling in presenter-view.js. */
 #carousel,
-#reflection-carousel {
+#reflection-carousel,
+#edits-carousel {
   -webkit-user-select: none;
   user-select: none;
 }
 
 #carousel img,
-#reflection-carousel img {
+#reflection-carousel img,
+#edits-carousel img {
   -webkit-user-drag: none;
 }
 
@@ -1201,38 +1266,63 @@ input, select {
 /* --- participant-view.html: takeaway/piece link graph node types (same
    shared .graph-node/.graph-wrap rendering as the slide/objective graphs
    above, just color-coded per node kind instead of one uniform look) --- */
+.graph-node-goal {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 12px;
+  background: #3F51B5;
+  color: #FFFFFF;
+  max-width: 140px;
+}
+
 .graph-node-takeaway {
   font-size: 11px;
   font-weight: 700;
   padding: 6px 12px;
   background: #FFFFFF;
-  color: #EB1000;
+  color: #3F51B5;
   max-width: 140px;
 }
 
+/* Contributing/confusing pieces mark their color on the tagged image itself
+   (a ring around .graph-node-icon) rather than filling the whole node pill,
+   so the color reads as "this is what got tagged" instead of just a badge. */
 .graph-node-piece-contributing {
   font-size: 11px;
   font-weight: 700;
   padding: 6px 12px;
-  background: var(--cd-success, #2E7D32);
-  color: #FFFFFF;
+  background: transparent;
+  /* color: #FFFFFF; */
   max-width: 140px;
+  background-color: rgba(46, 125, 50, 0.25);
+  /* border-color: var(--cd-success, #2E7D32); */
 }
 
 .graph-node-piece-confusing {
   font-size: 11px;
   font-weight: 700;
   padding: 6px 12px;
-  background: var(--cd-accent, #EB1000);
-  color: #FFFFFF;
+  background: transparent;
+  /* color: #FFFFFF; */
   max-width: 140px;
+  background-color: rgba(235, 16, 0, 0.25);
+  /* border-color: var(--cd-accent, #EB1000); */
 }
 
+/* .graph-node-piece-contributing .graph-node-icon {
+  border-color: var(--cd-success, #2E7D32);
+}
+
+.graph-node-piece-confusing .graph-node-icon {
+  border-color: var(--cd-accent, #EB1000);
+} */
+
+.graph-node-goal.pending-source,
 .graph-node-takeaway.pending-source,
 .graph-node-piece-contributing.pending-source,
 .graph-node-piece-confusing.pending-source {
   background: #FFD166;
-  color: #EB1000;
+  color: #3F51B5;
 }
 
 #dependency-edge-list {
@@ -1250,6 +1340,14 @@ input, select {
   background: rgba(255, 255, 255, 0.08);
   border-radius: 6px;
   padding: 8px 12px;
+}
+
+#contributing-pieces-list .dependency-edge-row {
+  background: rgba(46, 125, 50, 0.25);
+}
+
+#confusing-pieces-list .dependency-edge-row {
+  background: rgba(235, 16, 0, 0.25);
 }
 
 .dependency-edge-row .remove-x {
@@ -1305,7 +1403,7 @@ input, select {
   top: 0;
   left: 0;
   height: 2px;
-  background: var(--cd-accent, #EB1000);
+  background: #9E9E9E;
   transform-origin: 0 50%;
   pointer-events: none;
   z-index: 9999;
@@ -1330,10 +1428,14 @@ input, select {
 
 /* --- participant-view.html: pre-presentation nav bar - no card background,
    just the Back/Next buttons floating on the page. --- */
-#pre-nav {
+#pre-nav, #reflection-step-nav {
   background: transparent;
   border: none;
   box-shadow: none;
+}
+
+#talk-abstract-display {
+  margin-bottom: 18px;
 }
 
 /* --- participant-view.html: sticky-note-style scratch space for the
@@ -1387,8 +1489,8 @@ input, select {
 }
 
 .reflection-subheading {
-  font-size: 12px;
-  opacity: 0.8;
+  font-size: 13px;
+  /* opacity: 0.8; */
   margin: 14px 0 6px;
 }
 
@@ -1401,22 +1503,106 @@ input, select {
    can tag a piece while still seeing what they're referencing. min-width: 0
    on the flex children keeps the horizontally-scrolling carousel from
    forcing the reference column (and the row) to overflow. --- */
-.pieces-layout {
+/* .pieces-layout {
   display: flex;
   gap: 24px;
   align-items: flex-start;
   flex-wrap: wrap;
   margin-top: 12px;
-}
+} */
 
 #save-piece-btn, #piece-picker-status {
   margin-bottom: 14px;
 }
 
-.pieces-tagging-col,
-.pieces-reference-col {
+.pieces-tagging-col {
   flex: 1 1 320px;
   min-width: 0;
+}
+
+/* Given more relative room than .pieces-tagging-col so the active-slide
+   preview image (drawn on to tag a region - see setupRegionDrawing()) is
+   large enough to circle a specific part of it with real precision. */
+.pieces-reference-col {
+  flex: 1.4 1 420px;
+  min-width: 0;
+}
+
+/* --- participant-view.html: large image of the currently-selected slide,
+   drawn on directly to tag a specific region (rather than only whole-slide
+   or transcript-excerpt tagging) - see setupRegionDrawing() in
+   participant-view.js. The svg overlay uses a 0-100 viewBox so path
+   coordinates (stored normalized 0-1 per point) map correctly regardless of
+   the image's actual rendered size. --- */
+.active-slide-wrap {
+  position: relative;
+  width: 100%;
+  margin-top: 12px;
+  border-radius: 6px;
+  overflow: hidden;
+  line-height: 0;
+}
+
+.active-slide-wrap img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.active-slide-wrap svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.region-draw-path {
+  fill: rgba(0, 0, 0, 0.25);
+  stroke: #222222;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Drawn but not yet saved (popup open, or note form open) - kept visible the
+   whole time instead of disappearing until Save is clicked. */
+.region-draft-path {
+  fill: rgba(0, 0, 0, 0.15);
+  stroke: #222222;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.region-saved-path {
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+/* Piece type is 'helping'/'confusing' (see js/participant-view.js); edit
+   action is 'cut'/'add' - both share this same .region-saved-path class. */
+.region-saved-path.helping {
+  fill: rgba(46, 125, 50, 0.25);
+  stroke: #2E7D32;
+}
+
+.region-saved-path.confusing {
+  fill: rgba(235, 16, 0, 0.25);
+  stroke: #EB1000;
+}
+
+.region-saved-path.cut {
+  fill: rgba(235, 16, 0, 0.25);
+  stroke: #EB1000;
+}
+
+.region-saved-path.add {
+  fill: rgba(63, 81, 181, 0.3);
+  stroke: #3F51B5;
 }
 
 .likert-row {
@@ -1461,13 +1647,19 @@ input, select {
   border-color: var(--cd-accent, #EB1000);
 }
 
+/* 3 equal-width columns (low endpoint / what "3" means / high endpoint),
+   each text-aligned within its own third so the middle label centers under
+   pill 3 regardless of how long the low/high label text is. */
 .likert-endpoints {
   display: flex;
-  justify-content: space-between;
   font-size: 11px;
   opacity: 0.7;
   margin-top: 6px;
   width: 212px;
+}
+
+.likert-endpoints span {
+  flex: 1;
 }
 
 .likert-endpoints span:first-child {
@@ -1478,11 +1670,19 @@ input, select {
   text-align: right;
 }
 
+.likert-endpoints span:not(:first-child):not(:last-child) {
+  text-align: center;
+}
+
 /* --- presenter-view.html: Simulate Audience module (mastery bars + expandable
    per-objective rows). Only ever rendered on presenter-view.html, so these
    reference the page's --cd-* theme variables directly rather than needing
    a separate dark/light pair like the shared classes above. --cd-success is
    the palette's first green - nothing else here needed a "positive" color. */
+
+#participant-count-status {
+  margin-bottom: 18px;
+}
 
 .mastery-bar {
   position: relative;
@@ -1814,7 +2014,7 @@ body.collect-data-page .slide-thumb {
   box-shadow: 0 1px 3px rgba(38, 37, 35, 0.18);
 }
 body.collect-data-page .slide-thumb.active {
-  border-color: var(--cd-accent);
+  border-color: #f18700;
 }
 
 body.collect-data-page #transcript-panel,

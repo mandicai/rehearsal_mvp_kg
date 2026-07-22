@@ -3,17 +3,21 @@
 <head>
 <meta charset="UTF-8">
 <title>Larry</title>
+<!-- Cache-busting: this static site has no build step to fingerprint asset
+     URLs, so local CSS/JS is fetched fresh every load via a timestamped
+     query string instead of relying on a hard-refresh after each edit. -->
+<script>window.CACHE_BUST = Date.now();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cabin+Sketch:wght@400;700&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/styles.css">
+<script>document.write('<link rel="stylesheet" href="/styles.css?t=' + window.CACHE_BUST + '">');</script>
 </head>
 <body class="collect-data-page">
 
 <div class="page-layout">
 <div class="main-column">
 
-<h1>Larry (For Rehearsing Educational Presentations)</h1>
+<h1>Presenter View</h1>
 
 <!-- carousel of slides + transcript panel, populated once upload succeeds.
      The panel doubles as the alignment review/edit UI (see presenter-view.js's
@@ -41,18 +45,18 @@
   </div>
 </div>
 
-<!-- 2. Learning objectives: presentation-wide, a section (drag-select range of slides), and per-slide -->
+<!-- 2. Takeaways: presentation-wide, a section (drag-select range of slides), and per-slide -->
 <div id="learning-objectives-module" class="module-card disabled">
-  <h2>2. Learning Objectives</h2>
+  <h2>2. Takeaways</h2>
 
   <div class="objectives-scope">
     <h3>Entire Presentation <span class="required-marker">Required</span></h3>
     <p style="font-size: 12px; opacity: 0.75; margin: 0 0 10px;">
-      What should the audience learn and take away after the entire presentation? At least one is required -
+      What key takeaway(s) should the audience leave with after the entire presentation? At least one is required -
       it's what the Simulate Audience module uses to assess overall, big-picture understanding.
     </p>
     <div class="audience-input-row">
-      <input type="text" id="presentation-objective-input" placeholder="Add a learning objective for the whole presentation">
+      <input type="text" id="presentation-objective-input" placeholder="Add a takeaway for the whole presentation">
       <button id="add-presentation-objective-btn" class="btn-primary">Add</button>
       <button id="suggest-presentation-objective-btn" class="btn-secondary">Suggest</button>
     </div>
@@ -68,7 +72,7 @@
     <div id="current-section-label" class="audience-empty-hint"></div>
     <div id="section-editor" style="display: none;">
       <div class="audience-input-row">
-        <input type="text" id="section-objective-input" placeholder="Add a learning objective for this section">
+        <input type="text" id="section-objective-input" placeholder="Add a takeaway for this section">
         <button id="add-section-objective-btn" class="btn-primary">Add</button>
         <button id="suggest-section-objective-btn" class="btn-secondary">Suggest</button>
       </div>
@@ -84,7 +88,7 @@
     <h3>Single Slide</h3>
     <div id="current-slide-label"></div>
     <div class="audience-input-row">
-      <input type="text" id="objective-input" placeholder="Add a learning objective for this slide">
+      <input type="text" id="objective-input" placeholder="Add a takeaway for this slide">
       <button id="add-objective-btn" class="btn-primary">Add</button>
       <button id="suggest-objective-btn" class="btn-secondary">Suggest</button>
     </div>
@@ -100,15 +104,15 @@
   <h2>3. Dependencies</h2>
 
   <div class="tab-row">
-    <button id="tab-objective-deps-btn" class="btn-secondary active" type="button">Learning Objective Dependencies</button>
+    <button id="tab-objective-deps-btn" class="btn-secondary active" type="button">Takeaway Dependencies</button>
     <button id="tab-slide-deps-btn" class="btn-secondary" type="button">Slide Dependencies</button>
   </div>
 
   <div id="objective-deps-panel" class="objectives-scope">
     <p style="font-size: 13px; opacity: 0.85; margin-top: 0;">
-      Drag from one objective node to another to mark the first as a critical prerequisite for the second.
+      Drag from one takeaway node to another to mark the first as a critical prerequisite for the second.
       The corresponding slide-to-slide dependencies (Slide Dependencies tab) are added automatically,
-      based on which slide(s) each objective belongs to.
+      based on which slide(s) each takeaway belongs to.
     </p>
     <div id="objective-dependency-graph-status" class="status-line"></div>
     <div id="objective-dependency-graph"></div>
@@ -117,7 +121,7 @@
 
   <div id="slide-deps-panel" class="objectives-scope" style="display: none;">
     <p style="font-size: 13px; opacity: 0.85; margin-top: 0;">
-      Auto-populated from the learning-objective links in the other tab; you can also mark a slide-to-slide
+      Auto-populated from the takeaway links in the other tab; you can also mark a slide-to-slide
       dependency directly here.
     </p>
     <button id="add-dependency-btn" class="btn-secondary">Add Dependency Edge</button>
@@ -131,15 +135,15 @@
 <div id="simulate-audience-module" class="module-card disabled">
   <h2>4. Simulate Audience</h2>
   <p style="font-size: 13px; opacity: 0.85; margin-top: 0;">
-    Simulates ~3 independent audience members answering an open-ended question for each learning
-    objective, at the point in the presentation where it first becomes assessable, and estimates how
+    Simulates ~3 independent audience members answering an open-ended question for each
+    takeaway, at the point in the presentation where it first becomes assessable, and estimates how
     understanding builds slide by slide (inspired by Bayesian Knowledge Tracing).
   </p>
   <button id="run-simulation-btn" class="btn-primary">Run Simulation</button>
   <span class="sim-info-wrap">
     <button id="sim-info-btn" class="sim-info-icon" type="button" aria-label="What do these bars mean?">i</button>
     <div id="sim-info-popup" class="sim-info-popup" style="display: none;">
-      This bar is a Bayesian-Knowledge-Tracing-style estimate of the probability that a member of this audience actually understood this objective by the time it was covered. It starts from a 30% prior, is updated by grading 3 simulated audience members' answers to a comprehension question grounded only in the transcript they'd have heard so far (no lookahead), and - if this objective has a prerequisite - is further reduced if that prerequisite wasn't well understood either.
+      This bar is a Bayesian-Knowledge-Tracing-style estimate of the probability that a member of this audience actually understood this takeaway by the time it was covered. It starts from a 30% prior, is updated by grading 3 simulated audience members' answers to a comprehension question grounded only in the transcript they'd have heard so far (no lookahead), and - if this takeaway has a prerequisite - is further reduced if that prerequisite wasn't well understood either.
     </div>
   </span>
   <div id="simulate-audience-status" class="status-line"></div>
@@ -202,9 +206,11 @@
 
 </div><!-- /.page-layout -->
 
-<script src="/js/helpers.js"></script>
-<script src="/js/presenter-view.js"></script>
-<script src="/js/simulate-audience.js"></script>
+<script>
+  document.write('<script src="/js/helpers.js?t=' + window.CACHE_BUST + '"><\/script>');
+  document.write('<script src="/js/presenter-view.js?t=' + window.CACHE_BUST + '"><\/script>');
+  document.write('<script src="/js/simulate-audience.js?t=' + window.CACHE_BUST + '"><\/script>');
+</script>
 
 </body>
 </html>

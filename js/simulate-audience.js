@@ -223,23 +223,23 @@ async function runSimulation() {
     return;
   }
   if (presentationObjectives.length === 0) {
-    setStatus('simulate-audience-status', 'Add at least one presentation-wide learning objective first - it\'s required to assess overall understanding.', true);
+    setStatus('simulate-audience-status', 'Add at least one presentation-wide takeaway first - it\'s required to assess overall understanding.', true);
     return;
   }
 
   const rawObjectiveNodes = getAllObjectiveNodesForAssessment();
   if (rawObjectiveNodes.length === 0) {
-    setStatus('simulate-audience-status', 'Add some learning objectives first - there is nothing to assess yet.', true);
+    setStatus('simulate-audience-status', 'Add some takeaways first - there is nothing to assess yet.', true);
     return;
   }
 
   const runBtn = document.getElementById('run-simulation-btn');
   runBtn.disabled = true;
   document.getElementById('simulation-objectives-list').innerHTML = '';
-  setStatus('simulate-audience-status', `Preparing slide images for ${rawObjectiveNodes.length} objective(s)...`);
+  setStatus('simulate-audience-status', `Preparing slide images for ${rawObjectiveNodes.length} takeaway(s)...`);
 
   const objectiveNodes = await Promise.all(rawObjectiveNodes.map(node => annotateObjectiveNodeForAssessment(node)));
-  setStatus('simulate-audience-status', `Assessing ${objectiveNodes.length} objective(s) (up to ${SIMULATION_CONCURRENCY} at a time)...`);
+  setStatus('simulate-audience-status', `Assessing ${objectiveNodes.length} takeaway(s) (up to ${SIMULATION_CONCURRENCY} at a time)...`);
 
   // 1. Parallel phase - independent per-objective LLM work.
   const settled = await runWithConcurrencyLimit(objectiveNodes, SIMULATION_CONCURRENCY, simulateObjective);
@@ -273,7 +273,7 @@ async function runSimulation() {
   const failedCount = objectiveNodes.filter(n => !n.assessment).length;
   setStatus(
     'simulate-audience-status',
-    failedCount > 0 ? `Simulation complete - ${failedCount} objective(s) failed, see details below.` : 'Simulation complete.',
+    failedCount > 0 ? `Simulation complete - ${failedCount} takeaway(s) failed, see details below.` : 'Simulation complete.',
     failedCount > 0
   );
   runBtn.disabled = false;
@@ -286,7 +286,7 @@ function buildSummaryRow(node) {
   const row = document.createElement('div');
   row.className = 'dependency-edge-row sim-alert-row';
 
-  const qualifier = isFoundational(node) ? ' is a prerequisite for other objectives.' : ' needs attention.';
+  const qualifier = isFoundational(node) ? ' is a prerequisite for other takeaways.' : ' needs attention.';
   const line = document.createElement('span');
   line.textContent = `${node.scopeLabel}: "${node.text}" (${Math.round(node.pKnow * 100)}% simulated mastery)${qualifier}`;
   row.appendChild(line);
@@ -323,7 +323,7 @@ function buildObjectiveRow(node) {
     const pct = Math.round(node.pKnow * 100);
     const bar = document.createElement('span');
     bar.className = 'mastery-bar';
-    bar.title = `${pct}% simulated probability this audience understood this objective (Bayesian Knowledge Tracing-style estimate - see the ⓘ above for details).`;
+    bar.title = `${pct}% simulated probability this audience understood this takeaway (Bayesian Knowledge Tracing-style estimate - see the ⓘ above for details).`;
     const fill = document.createElement('span');
     fill.className = `mastery-bar-fill ${node.pKnow < BKT_DEFAULTS.weakThreshold ? 'weak' : 'strong'}`;
     fill.style.width = `${pct}%`;
