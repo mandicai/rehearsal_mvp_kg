@@ -1,0 +1,206 @@
+[
+  {
+    "slide_index": 1,
+    "start_time": "00:00:00.000",
+    "end_time": "00:00:10.090",
+    "start_seconds": 0.0,
+    "end_seconds": 10.09,
+    "snapshot_image": "snapshots/slide_01.png",
+    "transcript": "So today, we are going to discuss the different parts of a flower.",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:00.000",
+        "end_time": "00:00:11.000",
+        "text": "So today, we are going to discuss the different parts of a flower."
+      }
+    ]
+  },
+  {
+    "slide_index": 2,
+    "start_time": "00:00:10.090",
+    "end_time": "00:00:22.250",
+    "start_seconds": 10.09,
+    "end_seconds": 22.25,
+    "snapshot_image": "snapshots/slide_02.png",
+    "transcript": "So what are flowers? Flowers are the visible part of the reproductive system of a plant. We're not going to be discussing the entire plant today, just the flower.",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:11.000",
+        "end_time": "00:00:12.000",
+        "text": "So what are flowers?"
+      },
+      {
+        "start_time": "00:00:12.000",
+        "end_time": "00:00:17.000",
+        "text": "Flowers are the visible part of the reproductive system of a plant."
+      },
+      {
+        "start_time": "00:00:17.000",
+        "end_time": "00:00:24.000",
+        "text": "We're not going to be discussing the entire plant today, just the flower."
+      }
+    ]
+  },
+  {
+    "slide_index": 3,
+    "start_time": "00:00:22.250",
+    "end_time": "00:00:31.660",
+    "start_seconds": 22.25,
+    "end_seconds": 31.66,
+    "snapshot_image": "snapshots/slide_03.png",
+    "transcript": "So the parts of the flower, there are many different parts of the flower that are serving different purposes.",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:24.000",
+        "end_time": "00:00:33.000",
+        "text": "So the parts of the flower, there are many different parts of the flower that are serving different purposes."
+      }
+    ]
+  },
+  {
+    "slide_index": 4,
+    "start_time": "00:00:31.660",
+    "end_time": "00:00:58.640",
+    "start_seconds": 31.66,
+    "end_seconds": 58.64,
+    "snapshot_image": "snapshots/slide_04.png",
+    "transcript": "And again, we're not going to be talking about the parts of the whole entire plant, just the flower. Can anyone tell me the different parts of the flowers if anyone knows any? No, that's okay, we're going to learn today, but no, okay. So there's the petal, the sepal, the stamen, and the pistil.",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:33.000",
+        "end_time": "00:00:40.000",
+        "text": "And again, we're not going to be talking about the parts of the whole entire plant, just the flower."
+      },
+      {
+        "start_time": "00:00:40.000",
+        "end_time": "00:00:46.000",
+        "text": "Can anyone tell me the different parts of the flowers if anyone knows any?"
+      },
+      {
+        "start_time": "00:00:46.000",
+        "end_time": "00:00:52.000",
+        "text": "No, that's okay, we're going to learn today, but no, okay."
+      },
+      {
+        "start_time": "00:00:52.000",
+        "end_time": "00:00:59.000",
+        "text": "So there's the petal, the sepal, the stamen, and the pistil."
+      }
+    ]
+  },
+  {
+    "slide_index": 5,
+    "start_time": "00:00:58.640",
+    "end_time": "00:01:13.920",
+    "start_seconds": 58.64,
+    "end_seconds": 73.92,
+    "snapshot_image": "snapshots/slide_05.png",
+    "transcript": "So the petal, the petal is the part of the flower that has the color, and it visually attracts people, insects, birds, and other animals that will help to disperse and create more flowers, essentially.",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:59.000",
+        "end_time": "00:01:14.000",
+        "text": "So the petal, the petal is the part of the flower that has the color, and it visually attracts people, insects, birds, and other animals that will help to disperse and create more flowers, essentially."
+      }
+    ]
+  },
+  {
+    "slide_index": 6,
+    "start_time": "00:01:13.920",
+    "end_time": "00:01:26.210",
+    "start_seconds": 73.92,
+    "end_seconds": 86.21,
+    "snapshot_image": "snapshots/slide_06.png",
+    "transcript": "Can anyone tell me any different colors of flowers that you have? So we have blue flowers, red flowers, orange flowers, and yellow flowers.",
+    "transcript_segments": [
+      {
+        "start_time": "00:01:14.000",
+        "end_time": "00:01:19.000",
+        "text": "Can anyone tell me any different colors of flowers that you have?"
+      },
+      {
+        "start_time": "00:01:19.000",
+        "end_time": "00:01:28.000",
+        "text": "So we have blue flowers, red flowers, orange flowers, and yellow flowers."
+      }
+    ]
+  },
+  {
+    "slide_index": 7,
+    "start_time": "00:01:26.210",
+    "end_time": "00:01:51.760",
+    "start_seconds": 86.21,
+    "end_seconds": 111.76,
+    "snapshot_image": "snapshots/slide_07.png",
+    "transcript": "So we have the stamen, and the stamen is the pollen producing part of the flower. There's two different parts to the stamen, there's the anther and the filament. And the stamens are produced as a pollen, if anyone has any pollen allergies, like I know I do. I am allergic to daisies, so I can blame the stamen for my daisy allergies.",
+    "transcript_segments": [
+      {
+        "start_time": "00:01:28.000",
+        "end_time": "00:01:32.000",
+        "text": "So we have the stamen, and the stamen is the pollen producing part of the flower."
+      },
+      {
+        "start_time": "00:01:32.000",
+        "end_time": "00:01:37.000",
+        "text": "There's two different parts to the stamen, there's the anther and the filament."
+      },
+      {
+        "start_time": "00:01:37.000",
+        "end_time": "00:01:44.000",
+        "text": "And the stamens are produced as a pollen, if anyone has any pollen allergies, like I know I do."
+      },
+      {
+        "start_time": "00:01:44.000",
+        "end_time": "00:01:52.000",
+        "text": "I am allergic to daisies, so I can blame the stamen for my daisy allergies."
+      }
+    ]
+  },
+  {
+    "slide_index": 8,
+    "start_time": "00:01:51.760",
+    "end_time": "00:02:05.850",
+    "start_seconds": 111.76,
+    "end_seconds": 125.85,
+    "snapshot_image": "snapshots/slide_08.png",
+    "transcript": "So now we have the sepal, and the sepal is the outer part of the flower. This is like the outer bud, and the bud happens right before the flower blooms, you have a little flower bud.",
+    "transcript_segments": [
+      {
+        "start_time": "00:01:52.000",
+        "end_time": "00:01:57.000",
+        "text": "So now we have the sepal, and the sepal is the outer part of the flower."
+      },
+      {
+        "start_time": "00:01:57.000",
+        "end_time": "00:02:08.000",
+        "text": "This is like the outer bud, and the bud happens right before the flower blooms, you have a little flower bud."
+      }
+    ]
+  },
+  {
+    "slide_index": 9,
+    "start_time": "00:02:05.850",
+    "end_time": "00:02:29.060",
+    "start_seconds": 125.85,
+    "end_seconds": 149.06,
+    "snapshot_image": "snapshots/slide_09.png",
+    "transcript": "And we have the pistil, and the pistil is the ovule, like the egg. The egg is known as the ovule, and then is the producing part of the egg, producing part of the flower. I really want you to keep in mind that the pistil is not the egg or the ovule of the flower, it produces the egg.",
+    "transcript_segments": [
+      {
+        "start_time": "00:02:08.000",
+        "end_time": "00:02:13.000",
+        "text": "And we have the pistil, and the pistil is the ovule, like the egg."
+      },
+      {
+        "start_time": "00:02:13.000",
+        "end_time": "00:02:20.000",
+        "text": "The egg is known as the ovule, and then is the producing part of the egg, producing part of the flower."
+      },
+      {
+        "start_time": "00:02:20.000",
+        "end_time": "00:02:30.000",
+        "text": "I really want you to keep in mind that the pistil is not the egg or the ovule of the flower, it produces the egg."
+      }
+    ]
+  }
+]

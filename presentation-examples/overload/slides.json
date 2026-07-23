@@ -1,0 +1,524 @@
+[
+  {
+    "slide_index": 1,
+    "start_time": "00:00:00.000",
+    "end_time": "00:00:04.000",
+    "start_seconds": 0.0,
+    "end_seconds": 4.0,
+    "snapshot_image": "snapshots/slide_01.png",
+    "transcript": "Rh if j\np | In Ay\n(FD PEAS | |,\nCb) FM Ers) Ls [al 5 BAI\nDy pa Pell fr) r SI om lie] | es\nBarcelona [Apri 1917, 2006 RA ADE re ToL LU ea\nC H | Association for\nS G Computing Machinery\nCOPYRIGHT 2026 ACM ‘Advancing Computing as a Science & Profession",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:00.000",
+        "end_time": "00:00:04.000",
+        "text": "Rh if j\np | In Ay\n(FD PEAS | |,\nCb) FM Ers) Ls [al 5 BAI\nDy pa Pell fr) r SI om lie] | es\nBarcelona [Apri 1917, 2006 RA ADE re ToL LU ea\nC H | Association for\nS G Computing Machinery\nCOPYRIGHT 2026 ACM ‘Advancing Computing as a Science & Profession"
+      }
+    ]
+  },
+  {
+    "slide_index": 2,
+    "start_time": "00:00:04.000",
+    "end_time": "00:00:29.000",
+    "start_seconds": 4.0,
+    "end_seconds": 29.0,
+    "snapshot_image": "snapshots/slide_02.png",
+    "transcript": "cu-26- sarcetons, Spain\nFrom Overload to Convergence\nSupporting Multi-lssue Human-Al Negotiation with\nBayesian Visualization\nMehul Parmar | Chaklam Silpasuwanchai | Asian Institute of Technology\nmehul.parmar@ait.asia chaklam@ait.asia Bangkok, Thailand",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:04.000",
+        "end_time": "00:00:29.000",
+        "text": "cu-26- sarcetons, Spain\nFrom Overload to Convergence\nSupporting Multi-lssue Human-Al Negotiation with\nBayesian Visualization\nMehul Parmar | Chaklam Silpasuwanchai | Asian Institute of Technology\nmehul.parmar@ait.asia chaklam@ait.asia Bangkok, Thailand"
+      }
+    ]
+  },
+  {
+    "slide_index": 3,
+    "start_time": "00:00:29.000",
+    "end_time": "00:00:32.000",
+    "start_seconds": 29.0,
+    "end_seconds": 32.0,
+    "snapshot_image": "snapshots/slide_03.png",
+    "transcript": "The Challenge: Al-Mediated\nNegotiation",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:29.000",
+        "end_time": "00:00:32.000",
+        "text": "The Challenge: Al-Mediated\nNegotiation"
+      }
+    ]
+  },
+  {
+    "slide_index": 4,
+    "start_time": "00:00:32.000",
+    "end_time": "00:00:45.000",
+    "start_seconds": 32.0,
+    "end_seconds": 45.0,
+    "snapshot_image": "snapshots/slide_04.png",
+    "transcript": "Introduction\nThe Challenge: Al-Mediated\nNegotiation\n‘The Rise of Al Negotiators\n‘Walmart's Pactum Al: Saves millions in procurement\nExpedia's Al chatbot: Rebooks flights and negotiates compensation\nKlarna's Al assistant : Settles payment disputes, negotiates repayment plans\n-)} Al Capabilities\nTrack multiple issues simultaneously\nProcess hundreds of counter-offers per second\nInfer preferences from bidding patterns\nEvaluate countless trade-offs instantly",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:32.000",
+        "end_time": "00:00:45.000",
+        "text": "Introduction\nThe Challenge: Al-Mediated\nNegotiation\n‘The Rise of Al Negotiators\n‘Walmart's Pactum Al: Saves millions in procurement\nExpedia's Al chatbot: Rebooks flights and negotiates compensation\nKlarna's Al assistant : Settles payment disputes, negotiates repayment plans\n-)} Al Capabilities\nTrack multiple issues simultaneously\nProcess hundreds of counter-offers per second\nInfer preferences from bidding patterns\nEvaluate countless trade-offs instantly"
+      }
+    ]
+  },
+  {
+    "slide_index": 5,
+    "start_time": "00:00:45.000",
+    "end_time": "00:01:05.000",
+    "start_seconds": 45.0,
+    "end_seconds": 65.0,
+    "snapshot_image": "snapshots/slide_05.png",
+    "transcript": "Introduction\n. @ Concrete Example: Property Rental\nThe Challenge: Al-Mediated\nNegotiation Monthly Rent Security Deposit\n$1,000 - $2,000 1-3 months\n‘The Rise of Al Negotiators\nWalmart's Pactum Al: Saves millions in procurement learelDuration! Pet Policy\nExpedia's Al chatbot: Rebooks flights and negotiates compensation 6-24 months Allowed/Not allowed\nKlarna’s Al assistant : Settles payment disputes, negotiates repayment plans\nThe Human Challenge: You might accept higher rent for a pet-friendly\n-)AI Capabilities longer lease. But tracking these interdependent trade-offs and inferring the\nTrack multiple issues simultaneously A\\'s preferences across countless combinations quickly exceeds human\nworking memory .\nProcess hundreds of counter-offers per second\nInfer preferences from bidding patterns\nEvaluate countless trade-offs instantly",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:45.000",
+        "end_time": "00:01:05.000",
+        "text": "Introduction\n. @ Concrete Example: Property Rental\nThe Challenge: Al-Mediated\nNegotiation Monthly Rent Security Deposit\n$1,000 - $2,000 1-3 months\n‘The Rise of Al Negotiators\nWalmart's Pactum Al: Saves millions in procurement learelDuration! Pet Policy\nExpedia's Al chatbot: Rebooks flights and negotiates compensation 6-24 months Allowed/Not allowed\nKlarna’s Al assistant : Settles payment disputes, negotiates repayment plans\nThe Human Challenge: You might accept higher rent for a pet-friendly\n-)AI Capabilities longer lease. But tracking these interdependent trade-offs and inferring the\nTrack multiple issues simultaneously A\\'s preferences across countless combinations quickly exceeds human\nworking memory .\nProcess hundreds of counter-offers per second\nInfer preferences from bidding patterns\nEvaluate countless trade-offs instantly"
+      }
+    ]
+  },
+  {
+    "slide_index": 6,
+    "start_time": "00:01:05.000",
+    "end_time": "00:01:18.000",
+    "start_seconds": 65.0,
+    "end_seconds": 78.0,
+    "snapshot_image": "snapshots/slide_06.png",
+    "transcript": "Introduction\n. @ Concrete Example: Property Rental\nThe Challenge: Al-Mediated\nNegotiation Monthly Rent Security Deposit\n$1,000 - $2,000 1-3 months\n‘The Rise of Al Negotiators\nWalmart's Pactum Al: Saves millions in procurement Lease Duration Pet Policy\nExpedia's Al chatbot: Rebooks flights and negotiates compensation 6-24 months Allowed/Not allowed\nKlarna’s Al assistant : Settles payment disputes, negotiates repayment plans\nThe Human Challenge: You might accept higher rent for a pet-friendly\n-)AI Capabilities longer lease. But tracking these interdependent trade-offs and inferring the\nTrack multiple issues simultaneously A's preferences across countless combinations quickly exceeds human\nworking memory .\nProcess hundreds of counter-offers per second\nInfer preferences from bidding patterns\nEvaluate countless trade-offs instantly\nA. The Missing Piece: We lack evidence on how humans fare when negotiating options'ssues +2 co\nmilf pokar seg Ine eaten WMT Combinations Working Memory Al Processing",
+    "transcript_segments": [
+      {
+        "start_time": "00:01:05.000",
+        "end_time": "00:01:18.000",
+        "text": "Introduction\n. @ Concrete Example: Property Rental\nThe Challenge: Al-Mediated\nNegotiation Monthly Rent Security Deposit\n$1,000 - $2,000 1-3 months\n‘The Rise of Al Negotiators\nWalmart's Pactum Al: Saves millions in procurement Lease Duration Pet Policy\nExpedia's Al chatbot: Rebooks flights and negotiates compensation 6-24 months Allowed/Not allowed\nKlarna’s Al assistant : Settles payment disputes, negotiates repayment plans\nThe Human Challenge: You might accept higher rent for a pet-friendly\n-)AI Capabilities longer lease. But tracking these interdependent trade-offs and inferring the\nTrack multiple issues simultaneously A's preferences across countless combinations quickly exceeds human\nworking memory .\nProcess hundreds of counter-offers per second\nInfer preferences from bidding patterns\nEvaluate countless trade-offs instantly\nA. The Missing Piece: We lack evidence on how humans fare when negotiating options'ssues +2 co\nmilf pokar seg Ine eaten WMT Combinations Working Memory Al Processing"
+      }
+    ]
+  },
+  {
+    "slide_index": 7,
+    "start_time": "00:01:18.000",
+    "end_time": "00:01:53.000",
+    "start_seconds": 78.0,
+    "end_seconds": 113.0,
+    "snapshot_image": "snapshots/slide_07.png",
+    "transcript": "Research Focus\nResearch Questions\nImpact of Dimensionality\nIn the absence of interface support, how does negotiating more issues at once affect human negotiators’ performance when interacting with\nAl negotiators?\n( Cognitive Load = Payoff Outcomes Efficiency\nRaz Decision Support Effectiveness\nCan an uncertainty-driven visualization tool reduce negotiation friction and improve human negotiators’ performance across these levels of\ndimensionality?\nBayesian Visualization = Agency Preservation & Fairness\nPrior Work Gap Key Asymmetry Our Approach\nHuman-Al negotiation studies focus on single-issue Al sustains processing across dimensions; human Systematic manipulation of dimensionality (1, 3, 5, 7\nor fixed multi-issue scenarios performance degrades issues)",
+    "transcript_segments": [
+      {
+        "start_time": "00:01:18.000",
+        "end_time": "00:01:53.000",
+        "text": "Research Focus\nResearch Questions\nImpact of Dimensionality\nIn the absence of interface support, how does negotiating more issues at once affect human negotiators’ performance when interacting with\nAl negotiators?\n( Cognitive Load = Payoff Outcomes Efficiency\nRaz Decision Support Effectiveness\nCan an uncertainty-driven visualization tool reduce negotiation friction and improve human negotiators’ performance across these levels of\ndimensionality?\nBayesian Visualization = Agency Preservation & Fairness\nPrior Work Gap Key Asymmetry Our Approach\nHuman-Al negotiation studies focus on single-issue Al sustains processing across dimensions; human Systematic manipulation of dimensionality (1, 3, 5, 7\nor fixed multi-issue scenarios performance degrades issues)"
+      }
+    ]
+  },
+  {
+    "slide_index": 8,
+    "start_time": "00:01:53.000",
+    "end_time": "00:02:23.000",
+    "start_seconds": 113.0,
+    "end_seconds": 143.0,
+    "snapshot_image": "snapshots/slide_08.png",
+    "transcript": "Methodology\nExperimental Design\nADesign @ Property Rental Scenario\n[2 | Interface 16 7)\nBaseline vs. Decision Support Total Issues. Options/Issue\n@ Dimensionality :\n1.3.5, 7 issues Participants always played tenant ; Al as landlord\n423 Within-subjects - N=32\n“Task Design Principles\nIntegrative Issues Equal Weighting ‘Asymmetric Payoffs",
+    "transcript_segments": [
+      {
+        "start_time": "00:01:53.000",
+        "end_time": "00:02:23.000",
+        "text": "Methodology\nExperimental Design\nADesign @ Property Rental Scenario\n[2 | Interface 16 7)\nBaseline vs. Decision Support Total Issues. Options/Issue\n@ Dimensionality :\n1.3.5, 7 issues Participants always played tenant ; Al as landlord\n423 Within-subjects - N=32\n“Task Design Principles\nIntegrative Issues Equal Weighting ‘Asymmetric Payoffs"
+      }
+    ]
+  },
+  {
+    "slide_index": 9,
+    "start_time": "00:02:23.000",
+    "end_time": "00:02:37.000",
+    "start_seconds": 143.0,
+    "end_seconds": 157.0,
+    "snapshot_image": "snapshots/slide_09.png",
+    "transcript": "Methodology\nExperimental Design\nDesign ‘Property Rental Scenario\n[2 | Interface 16 7\nBaseline vs, Decision Support wealiees rephiers\n@ Dimensionality .\n1,3,5,7 issues Participants always played tenant ; Al as landlord\n323 Within-subjects - N=32\n“Task Design Principles\nIntegrative Issues Equal Weighting ‘Asymmetric Payoffs,\n‘rade-offs across options create mutual value, not zero-sum Isolates issue count as independent variable Private matrices encourage exploration\nExample: \"Utilities Included\" Issue\nOption Human al Joint Note\nNone 5 95 100 Max Al\nInternet only 15 85 100\nIntemet + Water 30 80 110\nAll except electric 55 65 120 Middle\nAll utilities 80 50 130\nAll utilities + cleaning 100 35 135 JOINTOPT\nAll inclusive 110 20 130 Max Human\nNeither party can infer the joint optimum from thee private payoff alone, forcing exploration",
+    "transcript_segments": [
+      {
+        "start_time": "00:02:23.000",
+        "end_time": "00:02:37.000",
+        "text": "Methodology\nExperimental Design\nDesign ‘Property Rental Scenario\n[2 | Interface 16 7\nBaseline vs, Decision Support wealiees rephiers\n@ Dimensionality .\n1,3,5,7 issues Participants always played tenant ; Al as landlord\n323 Within-subjects - N=32\n“Task Design Principles\nIntegrative Issues Equal Weighting ‘Asymmetric Payoffs,\n‘rade-offs across options create mutual value, not zero-sum Isolates issue count as independent variable Private matrices encourage exploration\nExample: \"Utilities Included\" Issue\nOption Human al Joint Note\nNone 5 95 100 Max Al\nInternet only 15 85 100\nIntemet + Water 30 80 110\nAll except electric 55 65 120 Middle\nAll utilities 80 50 130\nAll utilities + cleaning 100 35 135 JOINTOPT\nAll inclusive 110 20 130 Max Human\nNeither party can infer the joint optimum from thee private payoff alone, forcing exploration"
+      }
+    ]
+  },
+  {
+    "slide_index": 10,
+    "start_time": "00:02:37.000",
+    "end_time": "00:02:45.000",
+    "start_seconds": 157.0,
+    "end_seconds": 165.0,
+    "snapshot_image": "snapshots/slide_10.png",
+    "transcript": "Methodology\nExperimental Design\nA Design Property Rental Scenario\nQ \"= 6 =\nDimensionality\nBD 3.5 7issu Participants always played tenant ; Al as landlord\nTask Design Principles\nIntegrative Issues Equal Weighting ‘Asymmetric Payoff\nExample: Utilities Included” Issue Pareto Optimal Options\nOption Human Al Joint Note 1 30 98 250\nNone 5 95 100 MaxAl go 1 EE Boo.\nInternet only 15 85 100 Bn ; i = 3\n7 = 5 1502\nInternet + Water 30 80 110 a. ; . = :\nAll except electric 55 65 120 Middle Ba . x 5 1008\nAll utilities 0 sc 130 2 g\nAll utilities + cleaning 100 35 135 JOINT OPT Eo? ” » 50\nAll inclusive 110 20 130 Max Human a t oe\n1 3 5 y\nsista pacy cx : : Sef e Dimensionalty (# of Issues)",
+    "transcript_segments": [
+      {
+        "start_time": "00:02:37.000",
+        "end_time": "00:02:45.000",
+        "text": "Methodology\nExperimental Design\nA Design Property Rental Scenario\nQ \"= 6 =\nDimensionality\nBD 3.5 7issu Participants always played tenant ; Al as landlord\nTask Design Principles\nIntegrative Issues Equal Weighting ‘Asymmetric Payoff\nExample: Utilities Included” Issue Pareto Optimal Options\nOption Human Al Joint Note 1 30 98 250\nNone 5 95 100 MaxAl go 1 EE Boo.\nInternet only 15 85 100 Bn ; i = 3\n7 = 5 1502\nInternet + Water 30 80 110 a. ; . = :\nAll except electric 55 65 120 Middle Ba . x 5 1008\nAll utilities 0 sc 130 2 g\nAll utilities + cleaning 100 35 135 JOINT OPT Eo? ” » 50\nAll inclusive 110 20 130 Max Human a t oe\n1 3 5 y\nsista pacy cx : : Sef e Dimensionalty (# of Issues)"
+      }
+    ]
+  },
+  {
+    "slide_index": 11,
+    "start_time": "00:02:45.000",
+    "end_time": "00:03:15.000",
+    "start_seconds": 165.0,
+    "end_seconds": 195.0,
+    "snapshot_image": "snapshots/slide_11.png",
+    "transcript": "Decision Support Tool: Bayesian Visualization",
+    "transcript_segments": [
+      {
+        "start_time": "00:02:45.000",
+        "end_time": "00:03:15.000",
+        "text": "Decision Support Tool: Bayesian Visualization"
+      }
+    ]
+  },
+  {
+    "slide_index": 12,
+    "start_time": "00:03:15.000",
+    "end_time": "00:04:08.000",
+    "start_seconds": 195.0,
+    "end_seconds": 248.0,
+    "snapshot_image": "snapshots/slide_12.png",
+    "transcript": "Solution\nDecision Support Tool: Bayesian Visualization\n§& Widget 1: Negotiation Horizon Grid l= Widget 2: Global Convergence Panel\nPurpose: Shows evolving Zone of Possible Agreement Width: Scope of negotiation space (uncertainty)\nVisual: Green intensity = likelihood of Al acceptance Position: Favorability of current ZOPA\nMechanism: Bayesian updating of preferences Color: Red—+Yellow—+Green gradient\n§ Bayesian Update Equation @ Key Design Principle\nPloption | evidence) = n x L x B x Plprior) x W The tool acts as a cognitive prosthesis —offloading mechanical burdens of tracking\nCombines Likelihood, ZOPA boundaries, Prior, and Consistency weights complexity while preserving strategic agency .",
+    "transcript_segments": [
+      {
+        "start_time": "00:03:15.000",
+        "end_time": "00:04:08.000",
+        "text": "Solution\nDecision Support Tool: Bayesian Visualization\n§& Widget 1: Negotiation Horizon Grid l= Widget 2: Global Convergence Panel\nPurpose: Shows evolving Zone of Possible Agreement Width: Scope of negotiation space (uncertainty)\nVisual: Green intensity = likelihood of Al acceptance Position: Favorability of current ZOPA\nMechanism: Bayesian updating of preferences Color: Red—+Yellow—+Green gradient\n§ Bayesian Update Equation @ Key Design Principle\nPloption | evidence) = n x L x B x Plprior) x W The tool acts as a cognitive prosthesis —offloading mechanical burdens of tracking\nCombines Likelihood, ZOPA boundaries, Prior, and Consistency weights complexity while preserving strategic agency ."
+      }
+    ]
+  },
+  {
+    "slide_index": 13,
+    "start_time": "00:04:08.000",
+    "end_time": "00:04:43.000",
+    "start_seconds": 248.0,
+    "end_seconds": 283.0,
+    "snapshot_image": "snapshots/slide_13.png",
+    "transcript": "Results - RQ1\nKey Finding 1: The Plateau-Cliff Effect\nTotal Human Payoff by Dimensionality Statistical Results\nBaseline Decision Support\n100 Interface Variant\n= mam Baseline —_— Comparison t-value Pjolm Cohen's d t-value — Pholm Cohen's d\n3 90) ges Decision Support 4 Ivs.3Issues -2.32 054 0.668 -0.758 1.00(ns.) —-0.194\nee ~~ = 3 vs. 5 Issues 7.54 <.001 1.12 0.899 1.00 (n.s.) 0.179\n‘6 80; 5vs.7Issues 6.82 <.001 _—(0.967 1470 1.00(ns.) 0.233\n& 70\n= _ =\n€ |__| [| interpretation\n= 50 + oad Bounded Integrative Window: Humans effectively manage trade-offs up to 3\nSs 40 issues\nfe} Combinatorial Overload: Beyond 3 issues, working memory capacity is\n30,0 exceeded\ni 3 5 7 Non-linear Collapse: Performance degradation is abrupt, not gradual\nDimensionality (# of Issues)\n° 3 +5% - 25%\nE condition shows sh",
+    "transcript_segments": [
+      {
+        "start_time": "00:04:08.000",
+        "end_time": "00:04:43.000",
+        "text": "Results - RQ1\nKey Finding 1: The Plateau-Cliff Effect\nTotal Human Payoff by Dimensionality Statistical Results\nBaseline Decision Support\n100 Interface Variant\n= mam Baseline —_— Comparison t-value Pjolm Cohen's d t-value — Pholm Cohen's d\n3 90) ges Decision Support 4 Ivs.3Issues -2.32 054 0.668 -0.758 1.00(ns.) —-0.194\nee ~~ = 3 vs. 5 Issues 7.54 <.001 1.12 0.899 1.00 (n.s.) 0.179\n‘6 80; 5vs.7Issues 6.82 <.001 _—(0.967 1470 1.00(ns.) 0.233\n& 70\n= _ =\n€ |__| [| interpretation\n= 50 + oad Bounded Integrative Window: Humans effectively manage trade-offs up to 3\nSs 40 issues\nfe} Combinatorial Overload: Beyond 3 issues, working memory capacity is\n30,0 exceeded\ni 3 5 7 Non-linear Collapse: Performance degradation is abrupt, not gradual\nDimensionality (# of Issues)\n° 3 +5% - 25%\nE condition shows sh"
+      }
+    ]
+  },
+  {
+    "slide_index": 14,
+    "start_time": "00:04:43.000",
+    "end_time": "00:05:05.000",
+    "start_seconds": 283.0,
+    "end_seconds": 305.0,
+    "snapshot_image": "snapshots/slide_14.png",
+    "transcript": "Results - RQ2\nKey Finding 2: Decision Support Mitigates Collapse\n@Statistical Results\nInterface x Dimensionality\nTotal Human Payoff — F(1.860, 57.675) = 11.48 p<.001 n,? = 0.270\nMi F (3, 93) = 20.04 p<.001 n= 0.393\nfagnitude\nSequence Entropy F (1.8, 66.989) = 7.40 p<.001 Np? = 0.193\nOkey Outcomes\nPayoff Preservation: No significant differences across dimensionalities in DS\ncondition\nNeutral Distribution: No value reallocation between parties\nAgency Preserved: Users retain full control over proposals",
+    "transcript_segments": [
+      {
+        "start_time": "00:04:43.000",
+        "end_time": "00:05:05.000",
+        "text": "Results - RQ2\nKey Finding 2: Decision Support Mitigates Collapse\n@Statistical Results\nInterface x Dimensionality\nTotal Human Payoff — F(1.860, 57.675) = 11.48 p<.001 n,? = 0.270\nMi F (3, 93) = 20.04 p<.001 n= 0.393\nfagnitude\nSequence Entropy F (1.8, 66.989) = 7.40 p<.001 Np? = 0.193\nOkey Outcomes\nPayoff Preservation: No significant differences across dimensionalities in DS\ncondition\nNeutral Distribution: No value reallocation between parties\nAgency Preserved: Users retain full control over proposals"
+      }
+    ]
+  },
+  {
+    "slide_index": 15,
+    "start_time": "00:05:05.000",
+    "end_time": "00:05:17.000",
+    "start_seconds": 305.0,
+    "end_seconds": 317.0,
+    "snapshot_image": "snapshots/slide_15.png",
+    "transcript": "Results - RQ2\nKey Finding 2: Decision Support Mitigates Collapse\nNetwork Plot\n2x4 ea e s ANOVA Baseline Decision Support\nInterface x Dimensionality sie @ @ @ —\nTe juman Payoff p<.001 0.2 ve e e ° ° e . . ° ° -\nSequence Entropy p<.001 0193 ‘ a ——.\nOkey Outcomes 2 ~~ e t ese\nPayoff Preservation: No significant differences across dimensionalities in DS ee\nNeutral Distribution: No value reallocation between parties\nAgency Preserved: Users retain full control over proposals",
+    "transcript_segments": [
+      {
+        "start_time": "00:05:05.000",
+        "end_time": "00:05:17.000",
+        "text": "Results - RQ2\nKey Finding 2: Decision Support Mitigates Collapse\nNetwork Plot\n2x4 ea e s ANOVA Baseline Decision Support\nInterface x Dimensionality sie @ @ @ —\nTe juman Payoff p<.001 0.2 ve e e ° ° e . . ° ° -\nSequence Entropy p<.001 0193 ‘ a ——.\nOkey Outcomes 2 ~~ e t ese\nPayoff Preservation: No significant differences across dimensionalities in DS ee\nNeutral Distribution: No value reallocation between parties\nAgency Preserved: Users retain full control over proposals"
+      }
+    ]
+  },
+  {
+    "slide_index": 16,
+    "start_time": "00:05:17.000",
+    "end_time": "00:05:27.000",
+    "start_seconds": 317.0,
+    "end_seconds": 327.0,
+    "snapshot_image": "snapshots/slide_16.png",
+    "transcript": "Results - Process Metrics\nEfficiency & Process Improvements\nTotal Turns to Agreement\nEi nm\nPEt) (of fat",
+    "transcript_segments": [
+      {
+        "start_time": "00:05:17.000",
+        "end_time": "00:05:27.000",
+        "text": "Results - Process Metrics\nEfficiency & Process Improvements\nTotal Turns to Agreement\nEi nm\nPEt) (of fat"
+      }
+    ]
+  },
+  {
+    "slide_index": 17,
+    "start_time": "00:05:27.000",
+    "end_time": "00:05:34.000",
+    "start_seconds": 327.0,
+    "end_seconds": 334.0,
+    "snapshot_image": "snapshots/slide_17.png",
+    "transcript": "Results - Process Metrics\nEfficiency & Process Improvements\nTotal Turns to Agreement First Keystroke Time (seconds)\n16 g-038 an1.69 B=-1.78 A=-2.69 45) ano.s3s 12.395 A9-5.095 9.455\noy Y 25)\n37° = £20 La\nan = gs =\nDimensionality (# of Issues) Dimensionality (# of Issues)",
+    "transcript_segments": [
+      {
+        "start_time": "00:05:27.000",
+        "end_time": "00:05:34.000",
+        "text": "Results - Process Metrics\nEfficiency & Process Improvements\nTotal Turns to Agreement First Keystroke Time (seconds)\n16 g-038 an1.69 B=-1.78 A=-2.69 45) ano.s3s 12.395 A9-5.095 9.455\noy Y 25)\n37° = £20 La\nan = gs =\nDimensionality (# of Issues) Dimensionality (# of Issues)"
+      }
+    ]
+  },
+  {
+    "slide_index": 18,
+    "start_time": "00:05:34.000",
+    "end_time": "00:05:40.000",
+    "start_seconds": 334.0,
+    "end_seconds": 340.0,
+    "snapshot_image": "snapshots/slide_18.png",
+    "transcript": "Results - Process Metrics\nEfficiency & Process Improvements\nTotal Turns to Agreement First Keystroke Time (seconds) Sequence Entropy\n16| pa038 a=-2.69 A=-1.78 A=-2.69 45) pe0.83s O=-2.395 A=-5.09sn-9.45s 24\ngn oO E30 218 ry =\n2 | g 25 9 1.6 | =\na\" ] £20 & = a Sia =\n4 = gr B12 ——\nDimensionality (# of Issues) Dimensionality (# of Issues) Dimensionality (# of Issues)",
+    "transcript_segments": [
+      {
+        "start_time": "00:05:34.000",
+        "end_time": "00:05:40.000",
+        "text": "Results - Process Metrics\nEfficiency & Process Improvements\nTotal Turns to Agreement First Keystroke Time (seconds) Sequence Entropy\n16| pa038 a=-2.69 A=-1.78 A=-2.69 45) pe0.83s O=-2.395 A=-5.09sn-9.45s 24\ngn oO E30 218 ry =\n2 | g 25 9 1.6 | =\na\" ] £20 & = a Sia =\n4 = gr B12 ——\nDimensionality (# of Issues) Dimensionality (# of Issues) Dimensionality (# of Issues)"
+      }
+    ]
+  },
+  {
+    "slide_index": 19,
+    "start_time": "00:05:40.000",
+    "end_time": "00:05:43.000",
+    "start_seconds": 340.0,
+    "end_seconds": 343.0,
+    "snapshot_image": "snapshots/slide_19.png",
+    "transcript": "Results - Process Metrics\nEfficiency & Process Improvements\nTotal Turns to Agreement First Keystroke Time (seconds) Sequence Entropy\n16) ano30 ann69 ani7a an2.069 45) geoa3s On229s An.098 An-9.45e 24\ngn ia EB C Be tT - =\n2 P| 9 25 a 16\n8 G15 s\nLl Far at iteaceVorant\n4 ce an mE Decision Support\ni 3 3 7 i 3 3 7 i 3 3 7\nDimensionality (# of Issues) Dimensionality (# of Issues) Dimensionality (# of Issues)\nCDF of concession magnitude\nZoe il 2os I\na a) 209 955075 100135150\nConcession Magnitude Concession Magnitude",
+    "transcript_segments": [
+      {
+        "start_time": "00:05:40.000",
+        "end_time": "00:05:43.000",
+        "text": "Results - Process Metrics\nEfficiency & Process Improvements\nTotal Turns to Agreement First Keystroke Time (seconds) Sequence Entropy\n16) ano30 ann69 ani7a an2.069 45) geoa3s On229s An.098 An-9.45e 24\ngn ia EB C Be tT - =\n2 P| 9 25 a 16\n8 G15 s\nLl Far at iteaceVorant\n4 ce an mE Decision Support\ni 3 3 7 i 3 3 7 i 3 3 7\nDimensionality (# of Issues) Dimensionality (# of Issues) Dimensionality (# of Issues)\nCDF of concession magnitude\nZoe il 2os I\na a) 209 955075 100135150\nConcession Magnitude Concession Magnitude"
+      }
+    ]
+  },
+  {
+    "slide_index": 20,
+    "start_time": "00:05:43.000",
+    "end_time": "00:05:54.000",
+    "start_seconds": 343.0,
+    "end_seconds": 354.0,
+    "snapshot_image": "snapshots/slide_20.png",
+    "transcript": "Results - Process Metrics\nTotal Turns to Agreement First Keystroke Time (seconds) Sequence Entropy\nen a gO E30 | | 18 a\nta a ¥ 25 916 | =\n= 10 g\nie g 2\nA 10 aay 10 Raceline\nes 0.8. ME Decision Support\ni 3 3 7 i 3 5 7 i 3 3 7\nDimensionality (# of Issues) Dimensionality (# of Issues) Dimensionality (# of Issues)\n(CDF of concession magnitude @ interpretation: Cognitive Prosthesis at Work\n10 a 10 et Structured Exploration: Tool stabilizes search patterns, reducing erratic behavior\nBes il ha J Reduced Deliberation: Less time needed to evaluate options and respond\n0.05 20 40 60 ‘80 0.0535 5075 -100 125150",
+    "transcript_segments": [
+      {
+        "start_time": "00:05:43.000",
+        "end_time": "00:05:54.000",
+        "text": "Results - Process Metrics\nTotal Turns to Agreement First Keystroke Time (seconds) Sequence Entropy\nen a gO E30 | | 18 a\nta a ¥ 25 916 | =\n= 10 g\nie g 2\nA 10 aay 10 Raceline\nes 0.8. ME Decision Support\ni 3 3 7 i 3 5 7 i 3 3 7\nDimensionality (# of Issues) Dimensionality (# of Issues) Dimensionality (# of Issues)\n(CDF of concession magnitude @ interpretation: Cognitive Prosthesis at Work\n10 a 10 et Structured Exploration: Tool stabilizes search patterns, reducing erratic behavior\nBes il ha J Reduced Deliberation: Less time needed to evaluate options and respond\n0.05 20 40 60 ‘80 0.0535 5075 -100 125150"
+      }
+    ]
+  },
+  {
+    "slide_index": 21,
+    "start_time": "00:05:54.000",
+    "end_time": "00:06:10.000",
+    "start_seconds": 354.0,
+    "end_seconds": 370.0,
+    "snapshot_image": "snapshots/slide_21.png",
+    "transcript": "Results - Subjective Experience\nCognitive Load & User Experience\nTotal Normalized chat duration NASA-TLX - Temporal Demand\n@ Notable Finding: The Expectations-Elevation Effect aa = = —————\nDecision Support yields longer chat duration but lower perceived Hd Sse\ntemporal demand —making trade-offs visible may recalibrate how Ad ta == Bf Ba\nusers perceive time pressure, allowing more thorough engagement. E10 . a —==\n30 7 3 5 7 7 ¥ 3 7",
+    "transcript_segments": [
+      {
+        "start_time": "00:05:54.000",
+        "end_time": "00:06:10.000",
+        "text": "Results - Subjective Experience\nCognitive Load & User Experience\nTotal Normalized chat duration NASA-TLX - Temporal Demand\n@ Notable Finding: The Expectations-Elevation Effect aa = = —————\nDecision Support yields longer chat duration but lower perceived Hd Sse\ntemporal demand —making trade-offs visible may recalibrate how Ad ta == Bf Ba\nusers perceive time pressure, allowing more thorough engagement. E10 . a —==\n30 7 3 5 7 7 ¥ 3 7"
+      }
+    ]
+  },
+  {
+    "slide_index": 22,
+    "start_time": "00:06:10.000",
+    "end_time": "00:06:34.000",
+    "start_seconds": 370.0,
+    "end_seconds": 394.0,
+    "snapshot_image": "snapshots/slide_22.png",
+    "transcript": "Results - Subjective Experience\nTotal Normalized chat duration NASA-TLX - Temporal Demand\n@ Notable Finding: The Expectations-Elevation Effect aa 7-235 es\nDecision Support yields longer chat duration but lower perceived iE Sy,\ntemporal demand —making trade-offs visible may recalibrate how Ad ta = ff Bee\nusers perceive time pressure, allowing more thorough engagement. E10 = a —= =\na 1 5 T 3 3 7\nDimensionaity (# of Issues) Dimensionality (# oflsues)\n‘(cognitive Load Reduction\nMental Demand: Significant reduction at higher dimensions Higher belief in achieving best outcome an cain\nTemporal Demand: Lower perceived time pressure More satisfied with negotiation approach ;\nEffort & Frustration: Both substantially decreased",
+    "transcript_segments": [
+      {
+        "start_time": "00:06:10.000",
+        "end_time": "00:06:34.000",
+        "text": "Results - Subjective Experience\nTotal Normalized chat duration NASA-TLX - Temporal Demand\n@ Notable Finding: The Expectations-Elevation Effect aa 7-235 es\nDecision Support yields longer chat duration but lower perceived iE Sy,\ntemporal demand —making trade-offs visible may recalibrate how Ad ta = ff Bee\nusers perceive time pressure, allowing more thorough engagement. E10 = a —= =\na 1 5 T 3 3 7\nDimensionaity (# of Issues) Dimensionality (# oflsues)\n‘(cognitive Load Reduction\nMental Demand: Significant reduction at higher dimensions Higher belief in achieving best outcome an cain\nTemporal Demand: Lower perceived time pressure More satisfied with negotiation approach ;\nEffort & Frustration: Both substantially decreased"
+      }
+    ]
+  },
+  {
+    "slide_index": 23,
+    "start_time": "00:06:34.000",
+    "end_time": "00:06:38.000",
+    "start_seconds": 394.0,
+    "end_seconds": 398.0,
+    "snapshot_image": "snapshots/slide_23.png",
+    "transcript": "Discussion\nDesign Principles for Human-Al Negotiation",
+    "transcript_segments": [
+      {
+        "start_time": "00:06:34.000",
+        "end_time": "00:06:38.000",
+        "text": "Discussion\nDesign Principles for Human-Al Negotiation"
+      }
+    ]
+  },
+  {
+    "slide_index": 24,
+    "start_time": "00:06:38.000",
+    "end_time": "00:06:45.000",
+    "start_seconds": 398.0,
+    "end_seconds": 405.0,
+    "snapshot_image": "snapshots/slide_24.png",
+    "transcript": "Discussion\nDesign Principles for Human-Al Negotiation\n1 | Adaptive Prosthesis\nEmploy minimal support for simpler negotiations ; trigger richer cues only after\ndetecting the integrative threshold (beyond 3 issues) to prevent selective collapse.\n‘$3 issues: Basic >3 issues: Rich",
+    "transcript_segments": [
+      {
+        "start_time": "00:06:38.000",
+        "end_time": "00:06:45.000",
+        "text": "Discussion\nDesign Principles for Human-Al Negotiation\n1 | Adaptive Prosthesis\nEmploy minimal support for simpler negotiations ; trigger richer cues only after\ndetecting the integrative threshold (beyond 3 issues) to prevent selective collapse.\n‘$3 issues: Basic >3 issues: Rich"
+      }
+    ]
+  },
+  {
+    "slide_index": 25,
+    "start_time": "00:06:45.000",
+    "end_time": "00:06:56.000",
+    "start_seconds": 405.0,
+    "end_seconds": 416.0,
+    "snapshot_image": "snapshots/slide_25.png",
+    "transcript": "Discussion\nDesign Principles for Human-Al Negotiation\n1 | Adaptive Prosthesis (2 Dual-Channel Offloading\nSeparate spatial tracking from temporal monitoring . The Horizon Grid handles\nEmploy minimal support for simpler negotiations ; trigger richer cues only after “which options are acceptable”; the Convergence Panel handles \"how close are we\ndetecting the integrative threshold (beyond 3 issues) to prevent selective collapse. to agreement.”\nB lf\n‘S3issues: Basic | >3 issues: Rich Spatial Temporal",
+    "transcript_segments": [
+      {
+        "start_time": "00:06:45.000",
+        "end_time": "00:06:56.000",
+        "text": "Discussion\nDesign Principles for Human-Al Negotiation\n1 | Adaptive Prosthesis (2 Dual-Channel Offloading\nSeparate spatial tracking from temporal monitoring . The Horizon Grid handles\nEmploy minimal support for simpler negotiations ; trigger richer cues only after “which options are acceptable”; the Convergence Panel handles \"how close are we\ndetecting the integrative threshold (beyond 3 issues) to prevent selective collapse. to agreement.”\nB lf\n‘S3issues: Basic | >3 issues: Rich Spatial Temporal"
+      }
+    ]
+  },
+  {
+    "slide_index": 26,
+    "start_time": "00:06:56.000",
+    "end_time": "00:07:00.000",
+    "start_seconds": 416.0,
+    "end_seconds": 420.0,
+    "snapshot_image": "snapshots/slide_26.png",
+    "transcript": "Discussion\nDesign Principles for Human-Al Negotiation\n1 | Adaptive Prosthesis B Dual-Channel Offloading\nSeparate spatial tracking from temporal monitoring . The Horizon Grid handles\nEmploy minimal support for simpler negotiations ; trigger richer cues only after \"which options are acceptable’; the Convergence Panel handles \"how close are we\ndetecting the integrative threshold (beyond 3 issues) to prevent selective collapse. to agreement.”\nB =\n3 issues: Basic | { >3issues: Rich Spatial Temporal\neB Prosthetic, Not Prescriptive\nReduce friction while preserving outcomes . Highlight that \"both parties keep\nproposing low-value options” rather than suggesting “offer $1200 rent.”\n66 Guide, don't dictate",
+    "transcript_segments": [
+      {
+        "start_time": "00:06:56.000",
+        "end_time": "00:07:00.000",
+        "text": "Discussion\nDesign Principles for Human-Al Negotiation\n1 | Adaptive Prosthesis B Dual-Channel Offloading\nSeparate spatial tracking from temporal monitoring . The Horizon Grid handles\nEmploy minimal support for simpler negotiations ; trigger richer cues only after \"which options are acceptable’; the Convergence Panel handles \"how close are we\ndetecting the integrative threshold (beyond 3 issues) to prevent selective collapse. to agreement.”\nB =\n3 issues: Basic | { >3issues: Rich Spatial Temporal\neB Prosthetic, Not Prescriptive\nReduce friction while preserving outcomes . Highlight that \"both parties keep\nproposing low-value options” rather than suggesting “offer $1200 rent.”\n66 Guide, don't dictate"
+      }
+    ]
+  },
+  {
+    "slide_index": 27,
+    "start_time": "00:07:00.000",
+    "end_time": "00:07:04.000",
+    "start_seconds": 420.0,
+    "end_seconds": 424.0,
+    "snapshot_image": "snapshots/slide_27.png",
+    "transcript": "Discussion\nDesign Principles for Human-Al Negotiation\n1 | Adaptive Prosthesis 8 Dual-Channel Offloading\nSeparate spatial tracking from temporal monitoring . The Horizon Grid handles\nEmploy minimal support for simpler negotiations ; trigger richer cues only after \"which options are acceptable’; the Convergence Panel handles \"how close are we\ndetecting the integrative threshold (beyond 3 issues) to prevent selective collapse. to agreement.”\nB =\n<Bissues: Basic | { »3issues: Rich Spatial Temporal\n3 | Prosthetic, Not Prescriptive 4 | Fairness Through Waste Removal\nRecescaltrict onsale! presen ng cutcom exis ight inet ct parties lea Focus on removing inefficiencies (showing which proposals were already rejected)\nProposing low-value options” rather than suggesting “offer $1200 rent. rather than redistributing gains. Users accept such assistance as fair support.\n66 Guide, don't dictate Vv Remove waste X No redistribution",
+    "transcript_segments": [
+      {
+        "start_time": "00:07:00.000",
+        "end_time": "00:07:04.000",
+        "text": "Discussion\nDesign Principles for Human-Al Negotiation\n1 | Adaptive Prosthesis 8 Dual-Channel Offloading\nSeparate spatial tracking from temporal monitoring . The Horizon Grid handles\nEmploy minimal support for simpler negotiations ; trigger richer cues only after \"which options are acceptable’; the Convergence Panel handles \"how close are we\ndetecting the integrative threshold (beyond 3 issues) to prevent selective collapse. to agreement.”\nB =\n<Bissues: Basic | { »3issues: Rich Spatial Temporal\n3 | Prosthetic, Not Prescriptive 4 | Fairness Through Waste Removal\nRecescaltrict onsale! presen ng cutcom exis ight inet ct parties lea Focus on removing inefficiencies (showing which proposals were already rejected)\nProposing low-value options” rather than suggesting “offer $1200 rent. rather than redistributing gains. Users accept such assistance as fair support.\n66 Guide, don't dictate Vv Remove waste X No redistribution"
+      }
+    ]
+  },
+  {
+    "slide_index": 28,
+    "start_time": "00:07:04.000",
+    "end_time": "00:07:08.000",
+    "start_seconds": 424.0,
+    "end_seconds": 428.0,
+    "snapshot_image": "snapshots/slide_28.png",
+    "transcript": "Discussion\nDesign Principles for Human-Al Negotiation\n1 | Adaptive Prosthesis @ Dual-Channel Offloading\nSeparate spatial tracking from temporal monitoring . The Horizon Grid handles\nEmploy minimal support for simpler negotiations ; trigger richer cues only after “which options are acceptable’; the Convergence Panel handles \"how close are we\ndetecting the integrative threshold (beyond 3 issues) to prevent selective collapse. to agreement.”\nB &\n‘<Bissues: Basic | { >3 issues: Rich Spatial Temporal\n3 | Prosthetic, Not Prescriptive 4 | Fairness Through Waste Removal\nPeni G Re ntlope ei ae Seb babes eee SSG Focus on removing inefficiencies (showing which proposals were already rejected)\nProposing low-value options” rather than suggesting \"offer $1200 rent. rather than redistributing gains. Users accept such assistance as fair support.\nGES Cae sen Y Remove waste) X No redistribution\n@ key Insight: Support becomes acceptable when it removes structural bottlenecks without steering final allocations. Our stable payoffs (SUS=81.02) confirm this\napproach preserves agency.",
+    "transcript_segments": [
+      {
+        "start_time": "00:07:04.000",
+        "end_time": "00:07:08.000",
+        "text": "Discussion\nDesign Principles for Human-Al Negotiation\n1 | Adaptive Prosthesis @ Dual-Channel Offloading\nSeparate spatial tracking from temporal monitoring . The Horizon Grid handles\nEmploy minimal support for simpler negotiations ; trigger richer cues only after “which options are acceptable’; the Convergence Panel handles \"how close are we\ndetecting the integrative threshold (beyond 3 issues) to prevent selective collapse. to agreement.”\nB &\n‘<Bissues: Basic | { >3 issues: Rich Spatial Temporal\n3 | Prosthetic, Not Prescriptive 4 | Fairness Through Waste Removal\nPeni G Re ntlope ei ae Seb babes eee SSG Focus on removing inefficiencies (showing which proposals were already rejected)\nProposing low-value options” rather than suggesting \"offer $1200 rent. rather than redistributing gains. Users accept such assistance as fair support.\nGES Cae sen Y Remove waste) X No redistribution\n@ key Insight: Support becomes acceptable when it removes structural bottlenecks without steering final allocations. Our stable payoffs (SUS=81.02) confirm this\napproach preserves agency."
+      }
+    ]
+  },
+  {
+    "slide_index": 29,
+    "start_time": "00:07:08.000",
+    "end_time": "00:07:12.000",
+    "start_seconds": 428.0,
+    "end_seconds": 432.0,
+    "snapshot_image": "snapshots/slide_29.png",
+    "transcript": "Contributions\nThree Key Contributions to HCI",
+    "transcript_segments": [
+      {
+        "start_time": "00:07:08.000",
+        "end_time": "00:07:12.000",
+        "text": "Contributions\nThree Key Contributions to HCI"
+      }
+    ]
+  },
+  {
+    "slide_index": 30,
+    "start_time": "00:07:12.000",
+    "end_time": "00:07:18.000",
+    "start_seconds": 432.0,
+    "end_seconds": 438.0,
+    "snapshot_image": "snapshots/slide_30.png",
+    "transcript": "Contributions\nThree Key Contributions to HCI\nEmpirical Characterization\nWe delineate the plateau-cliff phenomenon in\nhuman-Al negotiation, extending theories of\nbounded rationality to multi-issue Al contexts.\nY Identified 3-issue threshold\nY Non-linear performance collapse",
+    "transcript_segments": [
+      {
+        "start_time": "00:07:12.000",
+        "end_time": "00:07:18.000",
+        "text": "Contributions\nThree Key Contributions to HCI\nEmpirical Characterization\nWe delineate the plateau-cliff phenomenon in\nhuman-Al negotiation, extending theories of\nbounded rationality to multi-issue Al contexts.\nY Identified 3-issue threshold\nY Non-linear performance collapse"
+      }
+    ]
+  },
+  {
+    "slide_index": 31,
+    "start_time": "00:07:18.000",
+    "end_time": "00:07:29.000",
+    "start_seconds": 438.0,
+    "end_seconds": 449.0,
+    "snapshot_image": "snapshots/slide_31.png",
+    "transcript": "Contributions\nThree Key Contributions to HCI\nEmpirical Characterization an Design Pattern\nWe delineate the plateau-cliff phenomenon in Our interface presents a reusable design pattern for\nhuman-Al negotiation, extending theories of cognitive offloading by visualizing uncertainty in two\nbounded rationality to multi-issue Al contexts. complementary ways.\nVY Identified 3-issue threshold Horizon Grid (spatial)\nY Non-linear performance collapse (Convergence Panel (temporal)",
+    "transcript_segments": [
+      {
+        "start_time": "00:07:18.000",
+        "end_time": "00:07:29.000",
+        "text": "Contributions\nThree Key Contributions to HCI\nEmpirical Characterization an Design Pattern\nWe delineate the plateau-cliff phenomenon in Our interface presents a reusable design pattern for\nhuman-Al negotiation, extending theories of cognitive offloading by visualizing uncertainty in two\nbounded rationality to multi-issue Al contexts. complementary ways.\nVY Identified 3-issue threshold Horizon Grid (spatial)\nY Non-linear performance collapse (Convergence Panel (temporal)"
+      }
+    ]
+  },
+  {
+    "slide_index": 32,
+    "start_time": "00:07:29.000",
+    "end_time": "00:07:45.000",
+    "start_seconds": 449.0,
+    "end_seconds": 465.0,
+    "snapshot_image": "snapshots/slide_32.png",
+    "transcript": "Contributions\nEmpirical Characterization an Design Pattern oO Cognitive Harmony\nWe delineate the plateau-cliff phenomenon in Our interface presents a reusable design pattern for A design-oriented theoretical lens for augmentative\nhuman-Al negotiation, extending theories of cognitive offloading by visualizing uncertainty in two interventions that reduce wasted effort without\nbounded rationality to multi-issue Al contexts. complementary ways. reallocating surplus.\n¥ Identified 3-issue threshold ® Horizon Grid (spatial) & Preserve fairness\nY Non-linear performance collapse E Convergence Panel (temporal) W Maintain agency",
+    "transcript_segments": [
+      {
+        "start_time": "00:07:29.000",
+        "end_time": "00:07:45.000",
+        "text": "Contributions\nEmpirical Characterization an Design Pattern oO Cognitive Harmony\nWe delineate the plateau-cliff phenomenon in Our interface presents a reusable design pattern for A design-oriented theoretical lens for augmentative\nhuman-Al negotiation, extending theories of cognitive offloading by visualizing uncertainty in two interventions that reduce wasted effort without\nbounded rationality to multi-issue Al contexts. complementary ways. reallocating surplus.\n¥ Identified 3-issue threshold ® Horizon Grid (spatial) & Preserve fairness\nY Non-linear performance collapse E Convergence Panel (temporal) W Maintain agency"
+      }
+    ]
+  },
+  {
+    "slide_index": 33,
+    "start_time": "00:07:45.000",
+    "end_time": "00:08:09.802",
+    "start_seconds": 465.0,
+    "end_seconds": 489.802,
+    "snapshot_image": "snapshots/slide_33.png",
+    "transcript": "",
+    "transcript_segments": []
+  }
+]

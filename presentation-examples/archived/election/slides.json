@@ -1,0 +1,597 @@
+[
+  {
+    "slide_index": 1,
+    "start_time": "00:00:00.000",
+    "end_time": "00:00:10.006",
+    "start_seconds": 0,
+    "end_seconds": 10.006,
+    "snapshot_image": "snapshots/slide_01.png",
+    "transcript": "Hello Today I'm going to be presenting a research presentation on designing election dashboards for trust",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:00.000",
+        "end_time": "00:00:06.900",
+        "text": "Hello! Today I'm going to be presenting a research presentation on designing"
+      },
+      {
+        "start_time": "00:00:06.900",
+        "end_time": "00:00:14.060",
+        "text": "election dashboards for trust. In this presentation I'll first go through the"
+      }
+    ]
+  },
+  {
+    "slide_index": 2,
+    "start_time": "00:00:10.006",
+    "end_time": "00:00:23.727",
+    "start_seconds": 10.006,
+    "end_seconds": 23.727,
+    "snapshot_image": "snapshots/slide_02.png",
+    "transcript": "In this presentation I'll first go through the background and problem then talk through the design and study execution and finally go through the findings and insights from the study",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:14.060",
+        "end_time": "00:00:18.820",
+        "text": "background and problem, then talk through the design and study execution, and"
+      },
+      {
+        "start_time": "00:00:18.820",
+        "end_time": "00:00:25.800",
+        "text": "finally go through the findings and insights from the study. So starting with"
+      }
+    ]
+  },
+  {
+    "slide_index": 3,
+    "start_time": "00:00:23.727",
+    "end_time": "00:00:27.163",
+    "start_seconds": 23.727,
+    "end_seconds": 27.163,
+    "snapshot_image": "snapshots/slide_03.png",
+    "transcript": "So starting with background and problem",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:25.800",
+        "end_time": "00:00:33.000",
+        "text": "background and problem. Why this study matters. Live results are inherently"
+      }
+    ]
+  },
+  {
+    "slide_index": 4,
+    "start_time": "00:00:27.163",
+    "end_time": "00:01:08.300",
+    "start_seconds": 27.163,
+    "end_seconds": 68.3,
+    "snapshot_image": "snapshots/slide_04.png",
+    "transcript": "Why this study matters Live results are inherently incomplete So in the U S vote totals update in batches as jurisdictions report over time and early leads can be misleading because many ballots remain uncounted Partial counts invite misreadings so visible visible shifts in trends can look suspicious without process context and in 2020 some late shifts were wrongly framed as fraud signals Finally with this research tests can a dashboard that emphasizes progress and uncertainty improve trust",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:33.000",
+        "end_time": "00:00:39.140",
+        "text": "incomplete. So in the U.S. vote totals update in batches as jurisdictions"
+      },
+      {
+        "start_time": "00:00:39.140",
+        "end_time": "00:00:43.640",
+        "text": "report over time, and early leads can be misleading because many ballots remain"
+      },
+      {
+        "start_time": "00:00:43.740",
+        "end_time": "00:00:50.760",
+        "text": "uncounted. Partial counts invite misreadings, so visible visible shifts in"
+      },
+      {
+        "start_time": "00:00:50.760",
+        "end_time": "00:00:55.460",
+        "text": "trends can look suspicious without process context, and in 2020 some late"
+      },
+      {
+        "start_time": "00:00:55.460",
+        "end_time": "00:01:00.940",
+        "text": "shifts were wrongly framed as fraud signals. Finally, with this research"
+      },
+      {
+        "start_time": "00:01:00.940",
+        "end_time": "00:01:06.300",
+        "text": "tests, can a dashboard that emphasizes progress and uncertainty improve trust?"
+      }
+    ]
+  },
+  {
+    "slide_index": 5,
+    "start_time": "00:01:08.300",
+    "end_time": "00:01:50.303",
+    "start_seconds": 68.3,
+    "end_seconds": 110.303,
+    "snapshot_image": "snapshots/slide_05.png",
+    "transcript": "A little bit of U S context So in the U S we have a decentralized administration Elections are run by local jurisdictions not a national office and rules differ across states so results arrive at different speeds How results reach the public is that newsrooms do not count votes but they publish reported tallies and organizations like the Associated Press aggregate local vote reports Y patterns can look odd so as vote batches arrive leads can shift without wrongdoing and election night numbers are unofficial until certification",
+    "transcript_segments": [
+      {
+        "start_time": "00:01:09.880",
+        "end_time": "00:01:15.480",
+        "text": "A little bit of U.S. context. So in the U.S. we have a decentralized administration."
+      },
+      {
+        "start_time": "00:01:16.360",
+        "end_time": "00:01:21.580",
+        "text": "Elections are run by local jurisdictions, not a national office, and rules differ"
+      },
+      {
+        "start_time": "00:01:21.580",
+        "end_time": "00:01:27.820",
+        "text": "across states, so results arrive at different speeds. How results reach the"
+      },
+      {
+        "start_time": "00:01:27.820",
+        "end_time": "00:01:32.100",
+        "text": "public is that newsrooms do not count votes, but they publish reported tallies,"
+      },
+      {
+        "start_time": "00:01:32.860",
+        "end_time": "00:01:39.160",
+        "text": "and organizations like the Associated Press aggregate local vote reports. Y"
+      },
+      {
+        "start_time": "00:01:39.160",
+        "end_time": "00:01:43.820",
+        "text": "patterns can look odd, so as vote batches arrive, leads can shift without"
+      },
+      {
+        "start_time": "00:01:43.820",
+        "end_time": "00:01:52.520",
+        "text": "wrongdoing, and election night numbers are unofficial until certification. So"
+      }
+    ]
+  },
+  {
+    "slide_index": 6,
+    "start_time": "00:01:50.303",
+    "end_time": "00:02:29.958",
+    "start_seconds": 110.303,
+    "end_seconds": 149.958,
+    "snapshot_image": "snapshots/slide_06.png",
+    "transcript": "So the problem that was addressed in this study was confronting the problem of misread patterns in live vote counts So in 2020 late shifts in some states were cited as fraud but reporting delays and ballot processing can create real swings in vote counts Even though partial data feels final viewers often treat early vote early totals as stable trends but that encourages overconfidence and suspicion when numbers change This leads to the design question for the study can dashboards set better expectations as results arrive over time",
+    "transcript_segments": [
+      {
+        "start_time": "00:01:52.520",
+        "end_time": "00:01:57.440",
+        "text": "the problem that was addressed in this study was confronting the problem of"
+      },
+      {
+        "start_time": "00:01:57.440",
+        "end_time": "00:02:02.480",
+        "text": "misread patterns in live vote counts. So in 2020, late shifts in some states were"
+      },
+      {
+        "start_time": "00:02:02.480",
+        "end_time": "00:02:07.280",
+        "text": "cited as fraud, but reporting delays and ballot processing can create real swings"
+      },
+      {
+        "start_time": "00:02:07.340",
+        "end_time": "00:02:13.140",
+        "text": "in vote counts. Even though partial data feels final, viewers often treat early"
+      },
+      {
+        "start_time": "00:02:13.140",
+        "end_time": "00:02:17.840",
+        "text": "vote early totals as stable trends, but that encourages"
+      },
+      {
+        "start_time": "00:02:17.980",
+        "end_time": "00:02:23.400",
+        "text": "overconfidence and suspicion when numbers change. This leads to the design"
+      },
+      {
+        "start_time": "00:02:23.400",
+        "end_time": "00:02:27.460",
+        "text": "question for the study, can dashboards set better expectations as results"
+      },
+      {
+        "start_time": "00:02:27.460",
+        "end_time": "00:02:37.520",
+        "text": "arrive over time? Moving on to the design and study execution. So the design"
+      }
+    ]
+  },
+  {
+    "slide_index": 7,
+    "start_time": "00:02:29.958",
+    "end_time": "00:02:35.369",
+    "start_seconds": 149.958,
+    "end_seconds": 155.369,
+    "snapshot_image": "snapshots/slide_07.png",
+    "transcript": "Moving on to the design and study execution",
+    "transcript_segments": [
+      {
+        "start_time": "00:02:29.958",
+        "end_time": "00:02:35.369",
+        "text": "Moving on to the design and study execution"
+      }
+    ]
+  },
+  {
+    "slide_index": 8,
+    "start_time": "00:02:35.369",
+    "end_time": "00:03:17.481",
+    "start_seconds": 155.369,
+    "end_seconds": 197.481,
+    "snapshot_image": "snapshots/slide_08.png",
+    "transcript": "So the design strategy for this study was to teach the process not the race So the dashboard focused on how counts evolve not only who leads It treated live results as an unfolding process audiences can learn The three main design goals were to make it clear that reported votes are still partial to show that apparent trends can shift as more votes arrive and to link visible shifts to counting procedures not assumed wrongdoing This dashboard also assumed viewers enter with a mental forecast of the outcome and as new batches report viewers revise expectations over the night",
+    "transcript_segments": [
+      {
+        "start_time": "00:02:37.520",
+        "end_time": "00:02:42.780",
+        "text": "strategy for this study was to teach the process, not the race. So the dashboard"
+      },
+      {
+        "start_time": "00:02:42.780",
+        "end_time": "00:02:47.860",
+        "text": "focused on how counts evolve, not only who leads. It treated live results as an"
+      },
+      {
+        "start_time": "00:02:47.860",
+        "end_time": "00:02:52.940",
+        "text": "unfolding process audiences can learn. The three main design goals were to make"
+      },
+      {
+        "start_time": "00:02:52.940",
+        "end_time": "00:02:57.680",
+        "text": "it clear that reported votes are still partial, to show that apparent trends can"
+      },
+      {
+        "start_time": "00:02:57.680",
+        "end_time": "00:03:02.200",
+        "text": "shift as more votes arrive, and to link visible shifts to counting procedures,"
+      },
+      {
+        "start_time": "00:03:02.400",
+        "end_time": "00:03:08.960",
+        "text": "not assumed wrongdoing. This dashboard also assumed viewers enter with a mental"
+      },
+      {
+        "start_time": "00:03:08.960",
+        "end_time": "00:03:13.480",
+        "text": "forecast of the outcome, and as new batches report, viewers revise"
+      },
+      {
+        "start_time": "00:03:13.740",
+        "end_time": "00:03:21.720",
+        "text": "expectations over the night. The dashboard added a couple things, like"
+      }
+    ]
+  },
+  {
+    "slide_index": 9,
+    "start_time": "00:03:17.481",
+    "end_time": "00:04:00.941",
+    "start_seconds": 197.481,
+    "end_seconds": 240.941,
+    "snapshot_image": "snapshots/slide_09.png",
+    "transcript": "The dashboard added a couple things like making partial results obvious A large progress bar on the dashboard emphasized votes counted versus votes outstanding County maps also showed remaining votes not just two leads The dashboard showed what could happen next so live forecasts on the dashboard previewed possible paths for vote share over time and a second forecast showed expected pace of counting for days Lastly the dashboard explained shifts without drama so short text linked flips and surges to counting procedures and the goal was to reduce fraud assumptions from normal patterns in vote counts",
+    "transcript_segments": [
+      {
+        "start_time": "00:03:21.720",
+        "end_time": "00:03:26.860",
+        "text": "making partial results obvious. A large progress bar on the dashboard emphasized"
+      },
+      {
+        "start_time": "00:03:26.860",
+        "end_time": "00:03:31.380",
+        "text": "votes counted versus votes outstanding. County maps also showed remaining votes,"
+      },
+      {
+        "start_time": "00:03:31.640",
+        "end_time": "00:03:37.300",
+        "text": "not just two leads. The dashboard showed what could happen next, so live forecasts"
+      },
+      {
+        "start_time": "00:03:37.300",
+        "end_time": "00:03:41.600",
+        "text": "on the dashboard previewed possible paths for vote share over time, and a"
+      },
+      {
+        "start_time": "00:03:41.600",
+        "end_time": "00:03:46.980",
+        "text": "second forecast showed expected pace of counting for days. Lastly, the dashboard"
+      },
+      {
+        "start_time": "00:03:46.980",
+        "end_time": "00:03:52.340",
+        "text": "explained shifts without drama, so short text linked flips and"
+      },
+      {
+        "start_time": "00:03:52.340",
+        "end_time": "00:03:56.760",
+        "text": "surges to counting procedures, and the goal was to reduce fraud assumptions"
+      },
+      {
+        "start_time": "00:03:56.760",
+        "end_time": "00:04:05.920",
+        "text": "from normal patterns in vote counts. How the study ran, the study was a real"
+      }
+    ]
+  },
+  {
+    "slide_index": 10,
+    "start_time": "00:04:00.941",
+    "end_time": "00:04:39.040",
+    "start_seconds": 240.941,
+    "end_seconds": 279.04,
+    "snapshot_image": "snapshots/slide_10.png",
+    "transcript": "How the study ran the study was a real election deployment and the dashboard ran live during the 2024 US presidential count It used real time results from the Associated Press 795 US adults were recruited and assigned a dashboard version and 308 eventually visited at least one swing state results page Surveys were collected before during and after election night and usage logs plus 16 post election semi structured interviews captured the lived experience of these participants",
+    "transcript_segments": [
+      {
+        "start_time": "00:04:05.920",
+        "end_time": "00:04:11.200",
+        "text": "election deployment, and the dashboard ran live during the 2024 US presidential"
+      },
+      {
+        "start_time": "00:04:10.980",
+        "end_time": "00:04:18.300",
+        "text": "count. It used real-time results from the Associated Press. 795 US adults were"
+      },
+      {
+        "start_time": "00:04:18.300",
+        "end_time": "00:04:23.960",
+        "text": "recruited and assigned a dashboard version, and 308 eventually visited at"
+      },
+      {
+        "start_time": "00:04:23.960",
+        "end_time": "00:04:28.880",
+        "text": "least one swing state results page. Surveys were collected before, during, and"
+      },
+      {
+        "start_time": "00:04:28.880",
+        "end_time": "00:04:33.720",
+        "text": "after election night, and usage logs plus 16 post-election semi-structured"
+      },
+      {
+        "start_time": "00:04:33.720",
+        "end_time": "00:04:41.900",
+        "text": "interviews captured the lived experience of these participants. Finally, I'll talk"
+      }
+    ]
+  },
+  {
+    "slide_index": 11,
+    "start_time": "00:04:39.040",
+    "end_time": "00:04:45.531",
+    "start_seconds": 279.04,
+    "end_seconds": 285.531,
+    "snapshot_image": "snapshots/slide_11.png",
+    "transcript": "Finally I'll talk about the findings and insights from this study",
+    "transcript_segments": [
+      {
+        "start_time": "00:04:41.900",
+        "end_time": "00:04:49.200",
+        "text": "about the findings and insights from this study. The survey suggests confidence"
+      }
+    ]
+  },
+  {
+    "slide_index": 12,
+    "start_time": "00:04:45.531",
+    "end_time": "00:05:26.298",
+    "start_seconds": 285.531,
+    "end_seconds": 326.298,
+    "snapshot_image": "snapshots/slide_12.png",
+    "transcript": "The survey suggests confidence in counting so specifically confidence from seeing the live forecast This was linked to a small rise in confidence but the size of the change was modest and not a dramatic shift Regarding fraud perceptions forecasts were linked to slightly lower agreement that spikes imply fraud This matters because partial counts can look suspicious without context Regarding the role of explanations the short text explanations alone showed no clear measurable survey effect",
+    "transcript_segments": [
+      {
+        "start_time": "00:04:49.380",
+        "end_time": "00:04:55.220",
+        "text": "in counting, so specifically confidence from seeing the live forecast. This was"
+      },
+      {
+        "start_time": "00:04:55.220",
+        "end_time": "00:04:59.760",
+        "text": "linked to a small rise in confidence, but the size of the change was modest and"
+      },
+      {
+        "start_time": "00:04:59.760",
+        "end_time": "00:05:06.580",
+        "text": "not a dramatic shift. Regarding fraud perceptions, forecasts were linked to"
+      },
+      {
+        "start_time": "00:05:06.580",
+        "end_time": "00:05:11.940",
+        "text": "slightly lower agreement that spikes imply fraud. This matters because partial"
+      },
+      {
+        "start_time": "00:05:11.940",
+        "end_time": "00:05:16.880",
+        "text": "counts can look suspicious without context. Regarding the role of"
+      },
+      {
+        "start_time": "00:05:16.880",
+        "end_time": "00:05:22.220",
+        "text": "explanations, the short text explanations alone showed no clear measurable survey"
+      },
+      {
+        "start_time": "00:05:22.220",
+        "end_time": "00:05:32.980",
+        "text": "effect. Moving on to our interviews, our interviews revealed from the 16"
+      }
+    ]
+  },
+  {
+    "slide_index": 13,
+    "start_time": "00:05:26.298",
+    "end_time": "00:06:22.382",
+    "start_seconds": 326.298,
+    "end_seconds": 382.382,
+    "snapshot_image": "snapshots/slide_13.png",
+    "transcript": "Moving on to our interviews our interviews revealed from the 16 participants that the dashboard was a calm place to check results Participants treated it as a neutral numbers first reference point They also used it to confirm what they were hearing elsewhere Participants liked checking updates on their own schedule and appreciated the agency that they were afforded over media hype The minimalist display of the dashboard felt less dramatic than broadcast and cable TV coverage of live elections Lastly regarding the forecast they were trusted but not always found useful so many participants found early forecasts too wide to guide expectations in terms of the uncertainty intervals but later the forecast often matched what seemed already obvious",
+    "transcript_segments": [
+      {
+        "start_time": "00:05:32.980",
+        "end_time": "00:05:38.200",
+        "text": "participants that the dashboard was a calm place to check results. Participants"
+      },
+      {
+        "start_time": "00:05:38.200",
+        "end_time": "00:05:43.020",
+        "text": "treated it as a neutral, numbers-first reference point. They also used it to"
+      },
+      {
+        "start_time": "00:05:43.020",
+        "end_time": "00:05:48.140",
+        "text": "confirm what they were hearing elsewhere. Participants liked checking updates on"
+      },
+      {
+        "start_time": "00:05:48.140",
+        "end_time": "00:05:53.580",
+        "text": "their own schedule and appreciated the agency that they were afforded over"
+      },
+      {
+        "start_time": "00:05:53.580",
+        "end_time": "00:05:58.460",
+        "text": "media hype. The minimalist display of the dashboard felt less dramatic than"
+      },
+      {
+        "start_time": "00:05:58.460",
+        "end_time": "00:06:04.760",
+        "text": "broadcast and cable TV coverage of live elections. Lastly, regarding the forecast,"
+      },
+      {
+        "start_time": "00:06:04.920",
+        "end_time": "00:06:09.340",
+        "text": "they were trusted but not always found useful, so many participants found early"
+      },
+      {
+        "start_time": "00:06:09.340",
+        "end_time": "00:06:14.920",
+        "text": "forecasts too wide to guide expectations in terms of the uncertainty intervals,"
+      },
+      {
+        "start_time": "00:06:14.920",
+        "end_time": "00:06:25.260",
+        "text": "but later the forecast often matched what seemed already obvious. This suggests"
+      }
+    ]
+  },
+  {
+    "slide_index": 14,
+    "start_time": "00:06:22.382",
+    "end_time": "00:07:11.911",
+    "start_seconds": 382.382,
+    "end_seconds": 431.911,
+    "snapshot_image": "snapshots/slide_14.png",
+    "transcript": "This suggests that forecasts can be tricky so uncertainty can feel unhelpful because early forecasts were often very wide signaling we still don't know as the main message and some viewers understood that message but found it unsatisfying Certainty can feel unnecessary so later forecasts sometimes match what vote totals already suggested like which candidate was going to win but once the likely winner felt obvious forecasts added little new value as perceived by participants So all of this results in a design balancing act where forecasts seem most useful when they gave a clear signal but trustworthy forecasts often aligned with observed trends and media",
+    "transcript_segments": [
+      {
+        "start_time": "00:06:25.260",
+        "end_time": "00:06:30.880",
+        "text": "that forecasts can be tricky, so uncertainty can feel unhelpful because"
+      },
+      {
+        "start_time": "00:06:30.880",
+        "end_time": "00:06:35.000",
+        "text": "early forecasts were often very wide, signaling we still don't know as the"
+      },
+      {
+        "start_time": "00:06:35.000",
+        "end_time": "00:06:39.320",
+        "text": "main message, and some viewers understood that message but found it unsatisfying."
+      },
+      {
+        "start_time": "00:06:40.700",
+        "end_time": "00:06:45.720",
+        "text": "Certainty can feel unnecessary, so later forecasts sometimes match what vote"
+      },
+      {
+        "start_time": "00:06:45.720",
+        "end_time": "00:06:49.860",
+        "text": "totals already suggested, like which candidate was going to win, but once the"
+      },
+      {
+        "start_time": "00:06:49.860",
+        "end_time": "00:06:54.880",
+        "text": "likely winner felt obvious, forecasts added little new value, as perceived by"
+      },
+      {
+        "start_time": "00:06:54.740",
+        "end_time": "00:07:01.720",
+        "text": "participants. So all of this results in a design balancing act where forecasts"
+      },
+      {
+        "start_time": "00:07:01.720",
+        "end_time": "00:07:06.980",
+        "text": "seem most useful when they gave a clear signal, but trustworthy forecasts often"
+      },
+      {
+        "start_time": "00:07:06.980",
+        "end_time": "00:07:09.980",
+        "text": "aligned with observed trends and media."
+      }
+    ]
+  },
+  {
+    "slide_index": 15,
+    "start_time": "00:07:11.911",
+    "end_time": "00:08:13.124",
+    "start_seconds": 431.911,
+    "end_seconds": 493.124,
+    "snapshot_image": "snapshots/slide_15.png",
+    "transcript": "So some takeaways for this study and its findings beyond the US leading with what is unknown So one takeaway is to make partial data and remaining work visible before drawing conclusions when showing a event that is in progress or data that is in progress treating early patterns as tentative and explaining why they might shift could be valuable Another takeaway is to design for real audiences so assuming viewers bring prior beliefs emotions and other media narratives to their viewing and to support agency by letting people check results on their own terms And finally one more takeaway is that trust is more than just accuracy A calm just the data tone can reduce perceived hype and bias and forecasts ultimately must balance uncertainty clarity and perceived usefulness among viewers",
+    "transcript_segments": [
+      {
+        "start_time": "00:07:13.900",
+        "end_time": "00:07:20.620",
+        "text": "So some takeaways for this study and its findings beyond the US, leading with what"
+      },
+      {
+        "start_time": "00:07:20.620",
+        "end_time": "00:07:25.960",
+        "text": "is unknown. So one takeaway is to make partial data and remaining work visible"
+      },
+      {
+        "start_time": "00:07:25.960",
+        "end_time": "00:07:31.600",
+        "text": "before drawing conclusions when showing a event that is in progress or data that is"
+      },
+      {
+        "start_time": "00:07:31.600",
+        "end_time": "00:07:36.440",
+        "text": "in progress, treating early patterns as tentative and explaining why they might"
+      },
+      {
+        "start_time": "00:07:36.440",
+        "end_time": "00:07:43.140",
+        "text": "shift could be valuable. Another takeaway is to design for real audiences, so"
+      },
+      {
+        "start_time": "00:07:43.140",
+        "end_time": "00:07:47.500",
+        "text": "assuming viewers bring prior beliefs, emotions, and other media narratives to"
+      },
+      {
+        "start_time": "00:07:47.500",
+        "end_time": "00:07:51.980",
+        "text": "their viewing, and to support agency by letting people check results on their own"
+      },
+      {
+        "start_time": "00:07:51.340",
+        "end_time": "00:07:58.680",
+        "text": "terms. And finally, one more takeaway is that trust is more than just accuracy. A"
+      },
+      {
+        "start_time": "00:07:58.680",
+        "end_time": "00:08:03.780",
+        "text": "calm, just-the-data tone can reduce perceived hype and bias, and forecasts"
+      },
+      {
+        "start_time": "00:08:03.780",
+        "end_time": "00:08:09.160",
+        "text": "ultimately must balance uncertainty, clarity, and perceived usefulness among"
+      },
+      {
+        "start_time": "00:08:09.160",
+        "end_time": "00:08:09.580",
+        "text": "viewers."
+      }
+    ]
+  }
+]

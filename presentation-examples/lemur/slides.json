@@ -1,0 +1,322 @@
+[
+  {
+    "slide_index": 1,
+    "start_time": "00:00:00.000",
+    "end_time": "00:00:04.000",
+    "start_seconds": 0.0,
+    "end_seconds": 4.0,
+    "snapshot_image": "snapshots/slide_01.png",
+    "transcript": "JSSIGCHI ttt\nonae nek ines css Se",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:00.000",
+        "end_time": "00:00:04.000",
+        "text": "JSSIGCHI ttt\nonae nek ines css Se"
+      }
+    ]
+  },
+  {
+    "slide_index": 2,
+    "start_time": "00:00:04.000",
+    "end_time": "00:00:15.000",
+    "start_seconds": 4.0,
+    "end_seconds": 15.0,
+    "snapshot_image": "snapshots/slide_02.png",
+    "transcript": "CreatureConnect: Exploring Shared Control of\nMultimodal Interaction By People and Lemurs\n“a ae Ns a a é aN z\nRe lillies V7\nJiaqi Wang, Stephen Brewster, Ilyena Hirskyj-Douglas\nThe University of Glasgow\nj.wang.12@research.gla.ac.uk\nHe 2 CH026",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:04.000",
+        "end_time": "00:00:15.000",
+        "text": "CreatureConnect: Exploring Shared Control of\nMultimodal Interaction By People and Lemurs\n“a ae Ns a a é aN z\nRe lillies V7\nJiaqi Wang, Stephen Brewster, Ilyena Hirskyj-Douglas\nThe University of Glasgow\nj.wang.12@research.gla.ac.uk\nHe 2 CH026"
+      }
+    ]
+  },
+  {
+    "slide_index": 3,
+    "start_time": "00:00:15.000",
+    "end_time": "00:01:14.000",
+    "start_seconds": 15.0,
+    "end_seconds": 74.0,
+    "snapshot_image": "snapshots/slide_03.png",
+    "transcript": "Motivation | CreatureConnect: Shared Control\nWang et al., CHI’26\n@ Problem:\nZoo animal enrichment and visitor education are\noften in conflict.\n=] Gap:\n=| Existing technologies usually serve either animals or\nvisitors, rarely both, and have rarely examined how\ndifferent shared-control allocations shape\ninteraction.",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:15.000",
+        "end_time": "00:01:14.000",
+        "text": "Motivation | CreatureConnect: Shared Control\nWang et al., CHI’26\n@ Problem:\nZoo animal enrichment and visitor education are\noften in conflict.\n=] Gap:\n=| Existing technologies usually serve either animals or\nvisitors, rarely both, and have rarely examined how\ndifferent shared-control allocations shape\ninteraction."
+      }
+    ]
+  },
+  {
+    "slide_index": 4,
+    "start_time": "00:01:14.000",
+    "end_time": "00:01:44.000",
+    "start_seconds": 74.0,
+    "end_seconds": 104.0,
+    "snapshot_image": "snapshots/slide_04.png",
+    "transcript": ". CreatureConnect: Shared Control\nResearch Questions Wang et al, CHI'26\n1 s % i) men\nTe cee pees IL RQ1: How does lemur and visitor\n- Ar fee. oe a interaction with CreatureConnect\nee DTN reflect the environment control\nY | \\o\n= ‘mL Gears e afforded: lemur-only, visitor-only,\nLemur-Visitor Interaction through CreatureConnect shared, or none?\nba 4 ) o> mom (BR): Ss a RQ2: How does CreatureConnect\nPigs y a \"F + = — affect visitors' engagement,\niy \\i *); = or %’ education, empathy, and overall\nVisitor Engagement, Education, Empathy, and Experience zoo experience?\nHow do different control allocations impact\nboth lemurs and visitors?",
+    "transcript_segments": [
+      {
+        "start_time": "00:01:14.000",
+        "end_time": "00:01:44.000",
+        "text": ". CreatureConnect: Shared Control\nResearch Questions Wang et al, CHI'26\n1 s % i) men\nTe cee pees IL RQ1: How does lemur and visitor\n- Ar fee. oe a interaction with CreatureConnect\nee DTN reflect the environment control\nY | \\o\n= ‘mL Gears e afforded: lemur-only, visitor-only,\nLemur-Visitor Interaction through CreatureConnect shared, or none?\nba 4 ) o> mom (BR): Ss a RQ2: How does CreatureConnect\nPigs y a \"F + = — affect visitors' engagement,\niy \\i *); = or %’ education, empathy, and overall\nVisitor Engagement, Education, Empathy, and Experience zoo experience?\nHow do different control allocations impact\nboth lemurs and visitors?"
+      }
+    ]
+  },
+  {
+    "slide_index": 5,
+    "start_time": "00:01:44.000",
+    "end_time": "00:02:28.000",
+    "start_seconds": 104.0,
+    "end_seconds": 148.0,
+    "snapshot_image": "snapshots/slide_05.png",
+    "transcript": "System Design: Components Sa negra ease\na eee\neT i NS\n* The left two images show details of the lemur device.\n- The right image shows the visitor device, mirroring the lemur system but using a\ntouchscreen instead of infrared sensors, with no servo-controlled scent lids.",
+    "transcript_segments": [
+      {
+        "start_time": "00:01:44.000",
+        "end_time": "00:02:28.000",
+        "text": "System Design: Components Sa negra ease\na eee\neT i NS\n* The left two images show details of the lemur device.\n- The right image shows the visitor device, mirroring the lemur system but using a\ntouchscreen instead of infrared sensors, with no servo-controlled scent lids."
+      }
+    ]
+  },
+  {
+    "slide_index": 6,
+    "start_time": "00:02:28.000",
+    "end_time": "00:03:14.000",
+    "start_seconds": 148.0,
+    "end_seconds": 194.0,
+    "snapshot_image": "snapshots/slide_06.png",
+    "transcript": "(pas, . . CreatureConnect: Shared Control\nSystem Design: Interaction Logic Wang et al., CHI’26\nLeq Se A. Lemur proximity or visitor\n“ering” i y cadet. i : tap activates stimuli.\nGi oa, ® B. Visitors control intensity\nin QO j] via touchscreen.\nA B . *,\nC. Lemurs control intensity\nvia proximity.\nD. If the lemur leaves and\nA KA the visitor is inactive for 10\nA dr) i seconds or closes the\n: 5 interface, the system resets.",
+    "transcript_segments": [
+      {
+        "start_time": "00:02:28.000",
+        "end_time": "00:03:14.000",
+        "text": "(pas, . . CreatureConnect: Shared Control\nSystem Design: Interaction Logic Wang et al., CHI’26\nLeq Se A. Lemur proximity or visitor\n“ering” i y cadet. i : tap activates stimuli.\nGi oa, ® B. Visitors control intensity\nin QO j] via touchscreen.\nA B . *,\nC. Lemurs control intensity\nvia proximity.\nD. If the lemur leaves and\nA KA the visitor is inactive for 10\nA dr) i seconds or closes the\n: 5 interface, the system resets."
+      }
+    ]
+  },
+  {
+    "slide_index": 7,
+    "start_time": "00:03:14.000",
+    "end_time": "00:03:28.000",
+    "start_seconds": 194.0,
+    "end_seconds": 208.0,
+    "snapshot_image": "snapshots/slide_07.png",
+    "transcript": "System Design: Stimuli and Intensity carn Weare cess\nUniversity CreatureConnect. Visual (brightness, cd/m?)\nB yalscot oe Wang etal.,CHI'26 Low: 100-200\nMedium: 200-300\nHigh: 300-400\nWe chose three audios: Audio (volume, dB)\nRainforest ambience Low: 55-65\nElectronic pop Medium: 66-80\nLullabie High: 81-95\nOlfactory (fan airflow, %)\nLow: 25-40%\nMedium: 41-70%\nHigh: 71%-100%",
+    "transcript_segments": [
+      {
+        "start_time": "00:03:14.000",
+        "end_time": "00:03:28.000",
+        "text": "System Design: Stimuli and Intensity carn Weare cess\nUniversity CreatureConnect. Visual (brightness, cd/m?)\nB yalscot oe Wang etal.,CHI'26 Low: 100-200\nMedium: 200-300\nHigh: 300-400\nWe chose three audios: Audio (volume, dB)\nRainforest ambience Low: 55-65\nElectronic pop Medium: 66-80\nLullabie High: 81-95\nOlfactory (fan airflow, %)\nLow: 25-40%\nMedium: 41-70%\nHigh: 71%-100%"
+      }
+    ]
+  },
+  {
+    "slide_index": 8,
+    "start_time": "00:03:28.000",
+    "end_time": "00:03:41.000",
+    "start_seconds": 208.0,
+    "end_seconds": 221.0,
+    "snapshot_image": "snapshots/slide_08.png",
+    "transcript": "System Design: Stimuli and Intensity ana siy Ds\naa Uinenuay CreatureConnect. Visual (brightness, cd/m?)\nBye oe Wang etal.,CHI'26 Low: 100-200\nMedium: 200-300\nHigh: 300-400\nAudio (volume, dB)\nRainforest ambience Low: 55-65\nMedium: 66-80\nHigh: 81-95\nOlfactory (fan airflow, %)\n@) tow: 25-40%\nMedium: 41-70%\nHigh: 71%-100%",
+    "transcript_segments": [
+      {
+        "start_time": "00:03:28.000",
+        "end_time": "00:03:41.000",
+        "text": "System Design: Stimuli and Intensity ana siy Ds\naa Uinenuay CreatureConnect. Visual (brightness, cd/m?)\nBye oe Wang etal.,CHI'26 Low: 100-200\nMedium: 200-300\nHigh: 300-400\nAudio (volume, dB)\nRainforest ambience Low: 55-65\nMedium: 66-80\nHigh: 81-95\nOlfactory (fan airflow, %)\n@) tow: 25-40%\nMedium: 41-70%\nHigh: 71%-100%"
+      }
+    ]
+  },
+  {
+    "slide_index": 9,
+    "start_time": "00:03:41.000",
+    "end_time": "00:04:03.000",
+    "start_seconds": 221.0,
+    "end_seconds": 243.0,
+    "snapshot_image": "snapshots/slide_09.png",
+    "transcript": "A University CreatureConnect. Visual (brightness, cd/m?)\nBy ae Wang etal., CHI'26 Low: 100-200\nMedium: 200-300\nThree dried smells selected after lemur testing High: 300-400\nAudio (volume, dB)\nMy Low: 55-65\nMedium: 66-80\nHigh: 81-95\nOlfactory (fan airflow, %)\nMango Apple Lavender Low: 25-40%\nMedium: 41-70%\nHigh: 71%-100%",
+    "transcript_segments": [
+      {
+        "start_time": "00:03:41.000",
+        "end_time": "00:04:03.000",
+        "text": "A University CreatureConnect. Visual (brightness, cd/m?)\nBy ae Wang etal., CHI'26 Low: 100-200\nMedium: 200-300\nThree dried smells selected after lemur testing High: 300-400\nAudio (volume, dB)\nMy Low: 55-65\nMedium: 66-80\nHigh: 81-95\nOlfactory (fan airflow, %)\nMango Apple Lavender Low: 25-40%\nMedium: 41-70%\nHigh: 71%-100%"
+      }
+    ]
+  },
+  {
+    "slide_index": 10,
+    "start_time": "00:04:03.000",
+    "end_time": "00:04:30.000",
+    "start_seconds": 243.0,
+    "end_seconds": 270.0,
+    "snapshot_image": "snapshots/slide_10.png",
+    "transcript": "System Design: Stimuli and Intensity Se intr ieslnge i\na] University Sx neg Visual (brightness, cd/m?)\nx ofGlasgow ES Weirton Low: 100-200\nMedium: 200-300\n5 yy B) High: 300-400\n—— - en >, Se = \"Audio (volume, dB)\nSS I pa a RE SI) Low: 55-65\nod et Medium: 66-80\ni High: 81-95\nz= Olfactory (fan airflow, %)\nLow: 25-40%\nUnderwater Schools of Fish Medium: 41-70%\nHigh: 71%-100%",
+    "transcript_segments": [
+      {
+        "start_time": "00:04:03.000",
+        "end_time": "00:04:30.000",
+        "text": "System Design: Stimuli and Intensity Se intr ieslnge i\na] University Sx neg Visual (brightness, cd/m?)\nx ofGlasgow ES Weirton Low: 100-200\nMedium: 200-300\n5 yy B) High: 300-400\n—— - en >, Se = \"Audio (volume, dB)\nSS I pa a RE SI) Low: 55-65\nod et Medium: 66-80\ni High: 81-95\nz= Olfactory (fan airflow, %)\nLow: 25-40%\nUnderwater Schools of Fish Medium: 41-70%\nHigh: 71%-100%"
+      }
+    ]
+  },
+  {
+    "slide_index": 11,
+    "start_time": "00:04:30.000",
+    "end_time": "00:04:54.000",
+    "start_seconds": 270.0,
+    "end_seconds": 294.0,
+    "snapshot_image": "snapshots/slide_11.png",
+    "transcript": "Method: Participants aa ers\na aa ie wiz\nRed-ruffed lemurs, a critically endangered species\nZoo visitors to the lemur enclosure, including children\nThree experienced zookeepers",
+    "transcript_segments": [
+      {
+        "start_time": "00:04:30.000",
+        "end_time": "00:04:54.000",
+        "text": "Method: Participants aa ers\na aa ie wiz\nRed-ruffed lemurs, a critically endangered species\nZoo visitors to the lemur enclosure, including children\nThree experienced zookeepers"
+      }
+    ]
+  },
+  {
+    "slide_index": 12,
+    "start_time": "00:04:54.000",
+    "end_time": "00:05:55.000",
+    "start_seconds": 294.0,
+    "end_seconds": 355.0,
+    "snapshot_image": "snapshots/slide_12.png",
+    "transcript": "7 . CreatureConnect: Shared Control\nMethod: Details Wang et al., CHI'26\n7 < > “gies ps E a Sa = FI\n> Oo aL eat\n: RX. (ar | = Rise |) a he\nSas\na Na 4 > Bim ey. ES}\nLemur space-use data: Lemur device-use data: interaction’s frequency, its duration, and intensity preference\nuse frequency, use duration, and . . 7\nnumber of lemurs present in the area Visitor device-use data: engagement frequency, duration, and intensity preference\n* 20-day study with baseline, visitor-only, lemur-only, shared control, and no control.\n- We collected: device logs, CCTV data capturing lemur engagement, visitor\nengagement, visitors' questionnaire responses, and interviews with zookeepers.",
+    "transcript_segments": [
+      {
+        "start_time": "00:04:54.000",
+        "end_time": "00:05:55.000",
+        "text": "7 . CreatureConnect: Shared Control\nMethod: Details Wang et al., CHI'26\n7 < > “gies ps E a Sa = FI\n> Oo aL eat\n: RX. (ar | = Rise |) a he\nSas\na Na 4 > Bim ey. ES}\nLemur space-use data: Lemur device-use data: interaction’s frequency, its duration, and intensity preference\nuse frequency, use duration, and . . 7\nnumber of lemurs present in the area Visitor device-use data: engagement frequency, duration, and intensity preference\n* 20-day study with baseline, visitor-only, lemur-only, shared control, and no control.\n- We collected: device logs, CCTV data capturing lemur engagement, visitor\nengagement, visitors' questionnaire responses, and interviews with zookeepers."
+      }
+    ]
+  },
+  {
+    "slide_index": 13,
+    "start_time": "00:05:55.000",
+    "end_time": "00:06:49.000",
+    "start_seconds": 355.0,
+    "end_seconds": 409.0,
+    "snapshot_image": "snapshots/slide_13.png",
+    "transcript": "° : . . CreatureConnect: Shared Control\nAnalysis and Results: Lemur interaction (RQ1) Wanget al., CHI’26\niif University a CreatureConnect . .\nZofGlasgow Mure 541 interactions\n394 min total duration\n. Technology increased\nA Lemur Using engagement\nthe Technology\nLowest use in lemur-only\nHigh video and scent,\nmedium audio",
+    "transcript_segments": [
+      {
+        "start_time": "00:05:55.000",
+        "end_time": "00:06:49.000",
+        "text": "° : . . CreatureConnect: Shared Control\nAnalysis and Results: Lemur interaction (RQ1) Wanget al., CHI’26\niif University a CreatureConnect . .\nZofGlasgow Mure 541 interactions\n394 min total duration\n. Technology increased\nA Lemur Using engagement\nthe Technology\nLowest use in lemur-only\nHigh video and scent,\nmedium audio"
+      }
+    ]
+  },
+  {
+    "slide_index": 14,
+    "start_time": "00:06:49.000",
+    "end_time": "00:07:20.000",
+    "start_seconds": 409.0,
+    "end_seconds": 440.0,
+    "snapshot_image": "snapshots/slide_14.png",
+    "transcript": "° : . . CreatureConnect: Shared Control\nAnalysis and Results: Lemur interaction (RQ1) Wanget al, CHI’26\nfeta) University CreatureConnect . .\n& of Glasgow Pd Werke imei 541 interactions\n394 min total duration\n. Technology increased\nA Lemur Using engagement\nthe Technology\nLowest use in lemur-only\nHigh video and scent,\nmedium audio",
+    "transcript_segments": [
+      {
+        "start_time": "00:06:49.000",
+        "end_time": "00:07:20.000",
+        "text": "° : . . CreatureConnect: Shared Control\nAnalysis and Results: Lemur interaction (RQ1) Wanget al, CHI’26\nfeta) University CreatureConnect . .\n& of Glasgow Pd Werke imei 541 interactions\n394 min total duration\n. Technology increased\nA Lemur Using engagement\nthe Technology\nLowest use in lemur-only\nHigh video and scent,\nmedium audio"
+      }
+    ]
+  },
+  {
+    "slide_index": 15,
+    "start_time": "00:07:20.000",
+    "end_time": "00:07:53.000",
+    "start_seconds": 440.0,
+    "end_seconds": 473.0,
+    "snapshot_image": "snapshots/slide_15.png",
+    "transcript": ". . Vier . * CreatureConnect: Shared Control\nAnalysis and Results: Visitor interaction (RQ1) Wanget al., CHI’26\nay University Sd CreatureConnect\nof Glasgow CS Wang et al., CHI’ 26\nVisitors’ Device\nInteraction Mechanism 1,719 visitor-system\ninteractions\nVisitor most often set\nintensity to high across\naudio, video, and scent",
+    "transcript_segments": [
+      {
+        "start_time": "00:07:20.000",
+        "end_time": "00:07:53.000",
+        "text": ". . Vier . * CreatureConnect: Shared Control\nAnalysis and Results: Visitor interaction (RQ1) Wanget al., CHI’26\nay University Sd CreatureConnect\nof Glasgow CS Wang et al., CHI’ 26\nVisitors’ Device\nInteraction Mechanism 1,719 visitor-system\ninteractions\nVisitor most often set\nintensity to high across\naudio, video, and scent"
+      }
+    ]
+  },
+  {
+    "slide_index": 16,
+    "start_time": "00:07:53.000",
+    "end_time": "00:08:08.000",
+    "start_seconds": 473.0,
+    "end_seconds": 488.0,
+    "snapshot_image": "snapshots/slide_16.png",
+    "transcript": ". . Viel . * CreatureConnect: Shared Control\nAnalysis and Results: Visitor interaction (RQ1) Wanget al, CHI’26\n@ University & CreatureConnect\nof Glasgow Wang et al., CHI’ 26\nVisitors’ Device -\nInteraction Mechanism 1,719 visitor-system\ninteractions\nVisitor most often set\nintensity to high across\naudio, video, and scent",
+    "transcript_segments": [
+      {
+        "start_time": "00:07:53.000",
+        "end_time": "00:08:08.000",
+        "text": ". . Viel . * CreatureConnect: Shared Control\nAnalysis and Results: Visitor interaction (RQ1) Wanget al, CHI’26\n@ University & CreatureConnect\nof Glasgow Wang et al., CHI’ 26\nVisitors’ Device -\nInteraction Mechanism 1,719 visitor-system\ninteractions\nVisitor most often set\nintensity to high across\naudio, video, and scent"
+      }
+    ]
+  },
+  {
+    "slide_index": 17,
+    "start_time": "00:08:08.000",
+    "end_time": "00:08:25.000",
+    "start_seconds": 488.0,
+    "end_seconds": 505.0,
+    "snapshot_image": "snapshots/slide_17.png",
+    "transcript": "7 nae Cc Ci : Shared Control\nAnalysis and Results: Visitor 4 Measures (RQ2) Te alee anemia\nCC‘ =—_ Beh? 7 7 SS i WW it me 8\nay pe ~ i { fe\n\\ 11 even Hi!\" | i\n- Observed 16,139 visitors at the lemur enclosure, and collected 696 questionnaires.\n* Technology significantly increased visitor engagement, education, empathy, and\noverall experience compared to baseline.\n* Shared control consistently produced the strongest effects.",
+    "transcript_segments": [
+      {
+        "start_time": "00:08:08.000",
+        "end_time": "00:08:25.000",
+        "text": "7 nae Cc Ci : Shared Control\nAnalysis and Results: Visitor 4 Measures (RQ2) Te alee anemia\nCC‘ =—_ Beh? 7 7 SS i WW it me 8\nay pe ~ i { fe\n\\ 11 even Hi!\" | i\n- Observed 16,139 visitors at the lemur enclosure, and collected 696 questionnaires.\n* Technology significantly increased visitor engagement, education, empathy, and\noverall experience compared to baseline.\n* Shared control consistently produced the strongest effects."
+      }
+    ]
+  },
+  {
+    "slide_index": 18,
+    "start_time": "00:08:25.000",
+    "end_time": "00:09:27.000",
+    "start_seconds": 505.0,
+    "end_seconds": 567.0,
+    "snapshot_image": "snapshots/slide_18.png",
+    "transcript": ". . . CreatureConnect: Shared Control\nComparison with Our Previous Study Wang et al, CHI'26\nMETHODOLOGY COMPARISON\nSensorySafari (CHI 2025, previous study, separate technologies)\nIndependent devices; parallel human and lemur interactions\nCreatureConnect (CHI 2026, current study, connected-system)\nSynchronous devices; shared cross-species control\nRESULTS\nMore management-related talk in educational conversation assessment.\nMore social and empathy-related talk in educational conversation assessment.\nHigher visitor experience ratings.\nLonger lemur interaction duration per activation event.",
+    "transcript_segments": [
+      {
+        "start_time": "00:08:25.000",
+        "end_time": "00:09:27.000",
+        "text": ". . . CreatureConnect: Shared Control\nComparison with Our Previous Study Wang et al, CHI'26\nMETHODOLOGY COMPARISON\nSensorySafari (CHI 2025, previous study, separate technologies)\nIndependent devices; parallel human and lemur interactions\nCreatureConnect (CHI 2026, current study, connected-system)\nSynchronous devices; shared cross-species control\nRESULTS\nMore management-related talk in educational conversation assessment.\nMore social and empathy-related talk in educational conversation assessment.\nHigher visitor experience ratings.\nLonger lemur interaction duration per activation event."
+      }
+    ]
+  },
+  {
+    "slide_index": 19,
+    "start_time": "00:09:27.000",
+    "end_time": "00:09:49.000",
+    "start_seconds": 567.0,
+    "end_seconds": 589.0,
+    "snapshot_image": "snapshots/slide_19.png",
+    "transcript": "CreatureConnect: Shared Control\nDiscussion | Wang et al., CHI’26\n- Our results challenge the assumption in ACI that giving animals\nmore control necessarily leads to greater engagement. Instead, we\nfound that the dynamics and negotiation of control between\nspecies shape the outcomes of animal engagement.\n* Our findings extend HCI by framing technology not merely as a tool,\nbut as a mediator of cross-species collaboration, highlighting\nperceptual diversity and dynamically shared control as design\nresources rather than constraints.",
+    "transcript_segments": [
+      {
+        "start_time": "00:09:27.000",
+        "end_time": "00:09:49.000",
+        "text": "CreatureConnect: Shared Control\nDiscussion | Wang et al., CHI’26\n- Our results challenge the assumption in ACI that giving animals\nmore control necessarily leads to greater engagement. Instead, we\nfound that the dynamics and negotiation of control between\nspecies shape the outcomes of animal engagement.\n* Our findings extend HCI by framing technology not merely as a tool,\nbut as a mediator of cross-species collaboration, highlighting\nperceptual diversity and dynamically shared control as design\nresources rather than constraints."
+      }
+    ]
+  },
+  {
+    "slide_index": 20,
+    "start_time": "00:09:49.000",
+    "end_time": "00:09:55.545",
+    "start_seconds": 589.0,
+    "end_seconds": 595.545,
+    "snapshot_image": "snapshots/slide_20.png",
+    "transcript": "Sz AP\nThanks for Listening re es CH 26 a\nA novel cross-species control system that challenges the ACI assumption\nthat more animal control increases engagement, and advances HCI by\npositioning technology as a mediator of cross-species interaction.\nJiaqi Wang, Stephen Brewster, Ilyena Hirskyj-Douglas\nThe University of Glasgow\nj.wang.12@research.gla.ac.uk",
+    "transcript_segments": [
+      {
+        "start_time": "00:09:49.000",
+        "end_time": "00:09:55.545",
+        "text": "Sz AP\nThanks for Listening re es CH 26 a\nA novel cross-species control system that challenges the ACI assumption\nthat more animal control increases engagement, and advances HCI by\npositioning technology as a mediator of cross-species interaction.\nJiaqi Wang, Stephen Brewster, Ilyena Hirskyj-Douglas\nThe University of Glasgow\nj.wang.12@research.gla.ac.uk"
+      }
+    ]
+  }
+]

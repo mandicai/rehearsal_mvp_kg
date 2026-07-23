@@ -1,5 +1,5 @@
-snapshots/
-slides.json
+# snapshots/
+# slides.json
 .DS_Store
 prompts.md
 system-build.ai

@@ -1,0 +1,1153 @@
+[
+  {
+    "slide_index": 1,
+    "start_time": "00:00:00.000",
+    "end_time": "00:00:04.000",
+    "start_seconds": 0.0,
+    "end_seconds": 4.0,
+    "snapshot_image": "snapshots/slide_01.png",
+    "transcript": "",
+    "transcript_segments": []
+  },
+  {
+    "slide_index": 2,
+    "start_time": "00:00:04.000",
+    "end_time": "00:00:07.000",
+    "start_seconds": 4.0,
+    "end_seconds": 7.0,
+    "snapshot_image": "snapshots/slide_02.png",
+    "transcript": "",
+    "transcript_segments": []
+  },
+  {
+    "slide_index": 3,
+    "start_time": "00:00:07.000",
+    "end_time": "00:00:23.000",
+    "start_seconds": 7.0,
+    "end_seconds": 23.0,
+    "snapshot_image": "snapshots/slide_03.png",
+    "transcript": "Knowledge workers now spend over half their day in meetings, and a third admit they are multitasking just to keep pace. Remote work has made this more common. Although multitasking can come at a cost of lost attention and fatigue, when managed effectively it can boost productivity.",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:07.500",
+        "end_time": "00:00:15.387",
+        "text": "Knowledge workers now spend over half their day in meetings, and a third admit they are multitasking just to keep pace."
+      },
+      {
+        "start_time": "00:00:15.387",
+        "end_time": "00:00:18.015",
+        "text": "Remote work has made this more common."
+      },
+      {
+        "start_time": "00:00:18.015",
+        "end_time": "00:00:25.151",
+        "text": "Although multitasking can come at a cost of lost attention and fatigue, when managed effectively it can boost productivity."
+      }
+    ]
+  },
+  {
+    "slide_index": 4,
+    "start_time": "00:00:23.000",
+    "end_time": "00:00:31.000",
+    "start_seconds": 23.0,
+    "end_seconds": 31.0,
+    "snapshot_image": "snapshots/slide_04.png",
+    "transcript": "Yet today's collaboration tools treat participation as binary: either you're fully present or completely absent.",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:25.151",
+        "end_time": "00:00:30.784",
+        "text": "Yet today's collaboration tools treat participation as binary: either you're fully present or completely absent."
+      }
+    ]
+  },
+  {
+    "slide_index": 5,
+    "start_time": "00:00:31.000",
+    "end_time": "00:00:42.000",
+    "start_seconds": 31.0,
+    "end_seconds": 42.0,
+    "snapshot_image": "snapshots/slide_05.png",
+    "transcript": "In our work, we challenge this assumption and introduce a new paradigm: partial participation, a way to meaningfully contribute to a meeting when full presence is not feasible.",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:30.784",
+        "end_time": "00:00:39.046",
+        "text": "In our work, we challenge this assumption and introduce a new paradigm: partial participation, a way to meaningfully contribute to a meeting"
+      },
+      {
+        "start_time": "00:00:39.046",
+        "end_time": "00:00:41.876",
+        "text": "when full presence is not feasible."
+      }
+    ]
+  },
+  {
+    "slide_index": 6,
+    "start_time": "00:00:42.000",
+    "end_time": "00:00:58.000",
+    "start_seconds": 42.0,
+    "end_seconds": 58.0,
+    "snapshot_image": "snapshots/slide_06.png",
+    "transcript": "Partial participation is a mode of engagement in which a remote collaborator remains aware of the meeting through AI-mediated updates, selectively engages with relevant content, and intervenes at meaningful moments via an intelligent agent.",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:41.876",
+        "end_time": "00:00:57.912",
+        "text": "Partial participation is a mode of engagement in which a remote collaborator remains aware of the meeting through AI-mediated updates, selectively engages with relevant content, and intervenes at meaningful moments via an intelligent agent."
+      }
+    ]
+  },
+  {
+    "slide_index": 7,
+    "start_time": "00:00:58.000",
+    "end_time": "00:01:09.000",
+    "start_seconds": 58.0,
+    "end_seconds": 69.0,
+    "snapshot_image": "snapshots/slide_07.png",
+    "transcript": "Rather than demanding continuous attention or full co-presence, this approach supports dynamic shifts along a spectrum of involvement, from absent to partially engaged to fully present.",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:57.912",
+        "end_time": "00:01:10.175",
+        "text": "Rather than demanding continuous attention or full co-presence, this approach supports dynamic shifts along a spectrum of involvement, from absent to partially engaged to fully present."
+      }
+    ]
+  },
+  {
+    "slide_index": 8,
+    "start_time": "00:01:09.000",
+    "end_time": "00:01:31.000",
+    "start_seconds": 69.0,
+    "end_seconds": 91.0,
+    "snapshot_image": "snapshots/slide_08.png",
+    "transcript": "Partial participation allows users to stay contextually informed through summarized updates, respond to questions when their input is needed, and contribute asynchronously without sustaining focus. By mediating awareness and interaction through an AI agent, this model preserves agency and social presence while reducing attentional burden.",
+    "transcript_segments": [
+      {
+        "start_time": "00:01:10.175",
+        "end_time": "00:01:20.541",
+        "text": "Partial participation allows users to stay contextually informed through summarized updates, respond to questions when their input is needed, and contribute asynchronously without sustaining focus."
+      },
+      {
+        "start_time": "00:01:20.541",
+        "end_time": "00:01:28.835",
+        "text": "By mediating awareness and interaction through an AI agent, this model preserves agency and social presence while reducing attentional burden."
+      }
+    ]
+  },
+  {
+    "slide_index": 9,
+    "start_time": "00:01:31.000",
+    "end_time": "00:01:38.000",
+    "start_seconds": 91.0,
+    "end_seconds": 98.0,
+    "snapshot_image": "snapshots/slide_09.png",
+    "transcript": "To explore this, we built ProxyMe, a prototype that uses an AI agent as your proxy in meetings.",
+    "transcript_segments": [
+      {
+        "start_time": "00:01:28.835",
+        "end_time": "00:01:36.298",
+        "text": "To explore this, we built ProxyMe, a prototype that uses an AI agent as your proxy in meetings."
+      }
+    ]
+  },
+  {
+    "slide_index": 10,
+    "start_time": "00:01:38.000",
+    "end_time": "00:01:41.000",
+    "start_seconds": 98.0,
+    "end_seconds": 101.0,
+    "snapshot_image": "snapshots/slide_10.png",
+    "transcript": "Imagine a scenario where John is double-booked, and he joins Meeting A",
+    "transcript_segments": [
+      {
+        "start_time": "00:01:36.298",
+        "end_time": "00:01:41.274",
+        "text": "Imagine a scenario where John is double-booked, and he joins Meeting A"
+      }
+    ]
+  },
+  {
+    "slide_index": 11,
+    "start_time": "00:01:41.000",
+    "end_time": "00:01:42.000",
+    "start_seconds": 101.0,
+    "end_seconds": 102.0,
+    "snapshot_image": "snapshots/slide_11.png",
+    "transcript": "",
+    "transcript_segments": []
+  },
+  {
+    "slide_index": 12,
+    "start_time": "00:01:42.000",
+    "end_time": "00:01:43.000",
+    "start_seconds": 102.0,
+    "end_seconds": 103.0,
+    "snapshot_image": "snapshots/slide_12.png",
+    "transcript": "",
+    "transcript_segments": []
+  },
+  {
+    "slide_index": 13,
+    "start_time": "00:01:43.000",
+    "end_time": "00:02:01.000",
+    "start_seconds": 103.0,
+    "end_seconds": 121.0,
+    "snapshot_image": "snapshots/slide_13.png",
+    "transcript": "on his laptop and attends Meeting B via ProxyMe on his mobile. As Meeting B progresses, he receives LLM-summarized real-time updates. He can monitor the discussion, see who is talking, and understand the key points. Then, when a collaborator asks for John's input, his AI agent defers the decision to him.",
+    "transcript_segments": [
+      {
+        "start_time": "00:01:41.274",
+        "end_time": "00:01:46.042",
+        "text": "on his laptop and attends Meeting B via ProxyMe on his mobile."
+      },
+      {
+        "start_time": "00:01:46.042",
+        "end_time": "00:01:49.618",
+        "text": "As Meeting B progresses, he receives LLM-summarized real-time updates."
+      },
+      {
+        "start_time": "00:01:49.618",
+        "end_time": "00:01:55.180",
+        "text": "He can monitor the discussion, see who is talking, and understand the key points."
+      },
+      {
+        "start_time": "00:01:55.180",
+        "end_time": "00:02:01.537",
+        "text": "Then, when a collaborator asks for John's input, his AI agent defers the decision to him."
+      }
+    ]
+  },
+  {
+    "slide_index": 14,
+    "start_time": "00:02:01.000",
+    "end_time": "00:02:06.000",
+    "start_seconds": 121.0,
+    "end_seconds": 126.0,
+    "snapshot_image": "snapshots/slide_14.png",
+    "transcript": "",
+    "transcript_segments": []
+  },
+  {
+    "slide_index": 15,
+    "start_time": "00:02:06.000",
+    "end_time": "00:02:19.000",
+    "start_seconds": 126.0,
+    "end_seconds": 139.0,
+    "snapshot_image": "snapshots/slide_15.png",
+    "transcript": "Instead of being absent, John gets a clear question and can respond either by selecting quick AI-generated options or typing his own custom response. With a tap, John's agent relays his input back to the meeting, allowing him to contribute meaningfully without breaking focus on Meeting A.",
+    "transcript_segments": [
+      {
+        "start_time": "00:02:01.537",
+        "end_time": "00:02:11.072",
+        "text": "Instead of being absent, John gets a clear question and can respond either by selecting quick AI-generated options or typing his own custom response."
+      },
+      {
+        "start_time": "00:02:11.072",
+        "end_time": "00:02:19.041",
+        "text": "With a tap, John's agent relays his input back to the meeting, allowing him to contribute meaningfully without breaking focus on Meeting A."
+      }
+    ]
+  },
+  {
+    "slide_index": 16,
+    "start_time": "00:02:19.000",
+    "end_time": "00:02:46.000",
+    "start_seconds": 139.0,
+    "end_seconds": 166.0,
+    "snapshot_image": "snapshots/slide_16.png",
+    "transcript": "ProxyMe runs as a web app with a React frontend and a Flask backend connected to a PostgreSQL database. The backend receives cumulative transcript segments from a meeting platform and uses an LLM to generate either short meeting updates or deferrals, then sends these messages back to the user interface in near real time. This creates a live feedback loop between the meeting, the agent, and the user, supporting continuous engagement.",
+    "transcript_segments": [
+      {
+        "start_time": "00:02:19.041",
+        "end_time": "00:02:25.625",
+        "text": "ProxyMe runs as a web app with a React frontend and a Flask backend connected to a PostgreSQL database."
+      },
+      {
+        "start_time": "00:02:25.625",
+        "end_time": "00:02:37.752",
+        "text": "The backend receives cumulative transcript segments from a meeting platform and uses an LLM to generate either short meeting updates or deferrals, then sends these messages back to the user interface in near real time."
+      },
+      {
+        "start_time": "00:02:37.752",
+        "end_time": "00:02:40.870",
+        "text": "This creates a live feedback loop between the meeting,"
+      },
+      {
+        "start_time": "00:02:40.870",
+        "end_time": "00:02:44.538",
+        "text": "the agent, and the user, supporting continuous engagement."
+      }
+    ]
+  },
+  {
+    "slide_index": 17,
+    "start_time": "00:02:46.000",
+    "end_time": "00:02:54.000",
+    "start_seconds": 166.0,
+    "end_seconds": 174.0,
+    "snapshot_image": "snapshots/slide_17.png",
+    "transcript": "To better understand the user experience of partial participation, we conducted a mixed-methods study with 24 participants in a simulated multitasking scenario.",
+    "transcript_segments": [
+      {
+        "start_time": "00:02:44.538",
+        "end_time": "00:02:54.623",
+        "text": "To better understand the user experience of partial participation, we conducted a mixed-methods study with 24 participants in a simulated multitasking scenario."
+      }
+    ]
+  },
+  {
+    "slide_index": 18,
+    "start_time": "00:02:54.000",
+    "end_time": "00:02:58.000",
+    "start_seconds": 174.0,
+    "end_seconds": 178.0,
+    "snapshot_image": "snapshots/slide_18.png",
+    "transcript": "",
+    "transcript_segments": []
+  },
+  {
+    "slide_index": 19,
+    "start_time": "00:02:58.000",
+    "end_time": "00:03:03.000",
+    "start_seconds": 178.0,
+    "end_seconds": 183.0,
+    "snapshot_image": "snapshots/slide_19.png",
+    "transcript": "Participants had to watch a video lecture as their primary task while simultaneously monitoring a meeting using ProxyMe as their secondary task.",
+    "transcript_segments": [
+      {
+        "start_time": "00:02:54.623",
+        "end_time": "00:03:04.709",
+        "text": "Participants had to watch a video lecture as their primary task while simultaneously monitoring a meeting using ProxyMe as their secondary task."
+      }
+    ]
+  },
+  {
+    "slide_index": 20,
+    "start_time": "00:03:03.000",
+    "end_time": "00:03:09.000",
+    "start_seconds": 183.0,
+    "end_seconds": 189.0,
+    "snapshot_image": "snapshots/slide_20.png",
+    "transcript": "This simulates a real-life scenario where the participant works on an unrelated task",
+    "transcript_segments": [
+      {
+        "start_time": "00:03:04.709",
+        "end_time": "00:03:10.668",
+        "text": "This simulates a real-life scenario where the participant works on an unrelated task"
+      }
+    ]
+  },
+  {
+    "slide_index": 21,
+    "start_time": "00:03:09.000",
+    "end_time": "00:03:12.000",
+    "start_seconds": 189.0,
+    "end_seconds": 192.0,
+    "snapshot_image": "snapshots/slide_21.png",
+    "transcript": "",
+    "transcript_segments": []
+  },
+  {
+    "slide_index": 22,
+    "start_time": "00:03:12.000",
+    "end_time": "00:03:15.000",
+    "start_seconds": 192.0,
+    "end_seconds": 195.0,
+    "snapshot_image": "snapshots/slide_22.png",
+    "transcript": "while trying to keep up and contribute to the meeting.",
+    "transcript_segments": [
+      {
+        "start_time": "00:03:10.668",
+        "end_time": "00:03:14.641",
+        "text": "while trying to keep up and contribute to the meeting."
+      }
+    ]
+  },
+  {
+    "slide_index": 23,
+    "start_time": "00:03:15.000",
+    "end_time": "00:03:19.000",
+    "start_seconds": 195.0,
+    "end_seconds": 199.0,
+    "snapshot_image": "snapshots/slide_23.png",
+    "transcript": "We tested two key factors.",
+    "transcript_segments": [
+      {
+        "start_time": "00:03:14.641",
+        "end_time": "00:03:16.628",
+        "text": "We tested two key factors."
+      }
+    ]
+  },
+  {
+    "slide_index": 24,
+    "start_time": "00:03:19.000",
+    "end_time": "00:03:24.000",
+    "start_seconds": 199.0,
+    "end_seconds": 204.0,
+    "snapshot_image": "snapshots/slide_24.png",
+    "transcript": "For update style, we compared high-frequency brief updates against infrequent detailed summaries.",
+    "transcript_segments": [
+      {
+        "start_time": "00:03:16.628",
+        "end_time": "00:03:21.395",
+        "text": "For update style, we compared high-frequency brief updates against infrequent detailed summaries."
+      }
+    ]
+  },
+  {
+    "slide_index": 25,
+    "start_time": "00:03:24.000",
+    "end_time": "00:03:28.000",
+    "start_seconds": 204.0,
+    "end_seconds": 208.0,
+    "snapshot_image": "snapshots/slide_25.png",
+    "transcript": "For response style, we compared multiple-choice options against manual text input for agent-deferred responses.",
+    "transcript_segments": [
+      {
+        "start_time": "00:03:21.395",
+        "end_time": "00:03:26.958",
+        "text": "For response style, we compared multiple-choice options against manual text input for agent-deferred responses."
+      }
+    ]
+  },
+  {
+    "slide_index": 26,
+    "start_time": "00:03:28.000",
+    "end_time": "00:03:43.000",
+    "start_seconds": 208.0,
+    "end_seconds": 223.0,
+    "snapshot_image": "snapshots/slide_26.png",
+    "transcript": "We measured mental workload, social presence, and comprehension of content from both tasks. We also conducted structured interviews at the end of all rounds to gather participants' experiences, especially how they perceived the agent's updates and deferrals.",
+    "transcript_segments": [
+      {
+        "start_time": "00:03:26.958",
+        "end_time": "00:03:32.123",
+        "text": "We measured mental workload, social presence, and comprehension of content from both tasks."
+      },
+      {
+        "start_time": "00:03:32.123",
+        "end_time": "00:03:40.466",
+        "text": "We also conducted structured interviews at the end of all rounds to gather participants' experiences, especially how they perceived the agent's"
+      },
+      {
+        "start_time": "00:03:40.466",
+        "end_time": "00:03:41.800",
+        "text": "updates and deferrals."
+      }
+    ]
+  },
+  {
+    "slide_index": 27,
+    "start_time": "00:03:43.000",
+    "end_time": "00:03:54.000",
+    "start_seconds": 223.0,
+    "end_seconds": 234.0,
+    "snapshot_image": "snapshots/slide_27.png",
+    "transcript": "Now let's go through our key findings from the study and what they mean for designing partial participation in meetings. First, partial participation is cognitively demanding.",
+    "transcript_segments": [
+      {
+        "start_time": "00:03:41.800",
+        "end_time": "00:03:50.695",
+        "text": "Now let's go through our key findings from the study and what they mean for designing partial participation in meetings."
+      },
+      {
+        "start_time": "00:03:50.695",
+        "end_time": "00:03:53.364",
+        "text": "First, partial participation is cognitively demanding."
+      }
+    ]
+  },
+  {
+    "slide_index": 28,
+    "start_time": "00:03:54.000",
+    "end_time": "00:03:58.000",
+    "start_seconds": 234.0,
+    "end_seconds": 238.0,
+    "snapshot_image": "snapshots/slide_28.png",
+    "transcript": "Participants reported moderate-to-high mental workload across conditions.",
+    "transcript_segments": [
+      {
+        "start_time": "00:03:53.364",
+        "end_time": "00:03:56.477",
+        "text": "Participants reported moderate-to-high mental workload across conditions."
+      }
+    ]
+  },
+  {
+    "slide_index": 29,
+    "start_time": "00:03:58.000",
+    "end_time": "00:04:04.000",
+    "start_seconds": 238.0,
+    "end_seconds": 244.0,
+    "snapshot_image": "snapshots/slide_29.png",
+    "transcript": "Comprehension quiz performance was generally good, but that performance masked the effort required to maintain it.",
+    "transcript_segments": [
+      {
+        "start_time": "00:03:56.477",
+        "end_time": "00:04:03.593",
+        "text": "Comprehension quiz performance was generally good, but that performance masked the effort required to maintain it."
+      }
+    ]
+  },
+  {
+    "slide_index": 30,
+    "start_time": "00:04:04.000",
+    "end_time": "00:04:18.000",
+    "start_seconds": 244.0,
+    "end_seconds": 258.0,
+    "snapshot_image": "snapshots/slide_30.png",
+    "transcript": "Interviews revealed that maintaining this performance required constant task switching, especially with frequent brief updates. Participants described difficulty both acquiring and retaining information due to repeated reorientation. The takeaway is that systems should reduce switching costs.",
+    "transcript_segments": [
+      {
+        "start_time": "00:04:03.593",
+        "end_time": "00:04:10.264",
+        "text": "Interviews revealed that maintaining this performance required constant task switching, especially with frequent brief updates."
+      },
+      {
+        "start_time": "00:04:10.264",
+        "end_time": "00:04:15.765",
+        "text": "Participants described difficulty both acquiring and retaining information due to repeated reorientation."
+      },
+      {
+        "start_time": "00:04:15.765",
+        "end_time": "00:04:19.891",
+        "text": "The takeaway is that systems should reduce switching costs."
+      }
+    ]
+  },
+  {
+    "slide_index": 31,
+    "start_time": "00:04:18.000",
+    "end_time": "00:04:25.000",
+    "start_seconds": 258.0,
+    "end_seconds": 265.0,
+    "snapshot_image": "snapshots/slide_31.png",
+    "transcript": "",
+    "transcript_segments": []
+  },
+  {
+    "slide_index": 32,
+    "start_time": "00:04:25.000",
+    "end_time": "00:04:32.000",
+    "start_seconds": 265.0,
+    "end_seconds": 272.0,
+    "snapshot_image": "snapshots/slide_32.png",
+    "transcript": "Design strategies include minimizing device switching, signaling urgency to guide attention, and providing markers that help users quickly resume where they left off.",
+    "transcript_segments": [
+      {
+        "start_time": "00:04:19.891",
+        "end_time": "00:04:30.435",
+        "text": "Design strategies include minimizing device switching, signaling urgency to guide attention, and providing markers that help users quickly resume where they left off."
+      }
+    ]
+  },
+  {
+    "slide_index": 33,
+    "start_time": "00:04:32.000",
+    "end_time": "00:04:39.000",
+    "start_seconds": 272.0,
+    "end_seconds": 279.0,
+    "snapshot_image": "snapshots/slide_33.png",
+    "transcript": "Customization of update frequency and response style also helps users manage their own switching burden. Second, presence depends on both real-time",
+    "transcript_segments": [
+      {
+        "start_time": "00:04:30.435",
+        "end_time": "00:04:37.311",
+        "text": "Customization of update frequency and response style also helps users manage their own switching burden."
+      },
+      {
+        "start_time": "00:04:37.311",
+        "end_time": "00:04:40.062",
+        "text": "Second, presence depends on both real-time"
+      }
+    ]
+  },
+  {
+    "slide_index": 34,
+    "start_time": "00:04:39.000",
+    "end_time": "00:04:43.000",
+    "start_seconds": 279.0,
+    "end_seconds": 283.0,
+    "snapshot_image": "snapshots/slide_34.png",
+    "transcript": "comprehension and social acknowledgement.",
+    "transcript_segments": [
+      {
+        "start_time": "00:04:40.062",
+        "end_time": "00:04:41.841",
+        "text": "comprehension and social acknowledgement."
+      }
+    ]
+  },
+  {
+    "slide_index": 35,
+    "start_time": "00:04:43.000",
+    "end_time": "00:04:50.000",
+    "start_seconds": 283.0,
+    "end_seconds": 290.0,
+    "snapshot_image": "snapshots/slide_35.png",
+    "transcript": "Quantitatively, participants experienced moderate levels of social presence across all conditions.",
+    "transcript_segments": [
+      {
+        "start_time": "00:04:41.841",
+        "end_time": "00:04:46.733",
+        "text": "Quantitatively, participants experienced moderate levels of social presence across all conditions."
+      }
+    ]
+  },
+  {
+    "slide_index": 36,
+    "start_time": "00:04:50.000",
+    "end_time": "00:05:05.000",
+    "start_seconds": 290.0,
+    "end_seconds": 305.0,
+    "snapshot_image": "snapshots/slide_36.png",
+    "transcript": "Participants felt more present when updates arrived frequently enough to maintain continuity, while long gaps led to confusion and disengagement. Presence was also strengthened when participants were explicitly prompted for input and could see their contributions reflected in the meeting.",
+    "transcript_segments": [
+      {
+        "start_time": "00:04:46.733",
+        "end_time": "00:04:55.628",
+        "text": "Participants felt more present when updates arrived frequently enough to maintain continuity, while long gaps led to confusion and disengagement."
+      },
+      {
+        "start_time": "00:04:55.628",
+        "end_time": "00:05:04.523",
+        "text": "Presence was also strengthened when participants were explicitly prompted for input and could see their contributions reflected in the meeting."
+      }
+    ]
+  },
+  {
+    "slide_index": 37,
+    "start_time": "00:05:05.000",
+    "end_time": "00:05:10.000",
+    "start_seconds": 305.0,
+    "end_seconds": 310.0,
+    "snapshot_image": "snapshots/slide_37.png",
+    "transcript": "This suggests that continuity and responsiveness are critical. Beyond text summaries, future",
+    "transcript_segments": [
+      {
+        "start_time": "00:05:04.523",
+        "end_time": "00:05:08.081",
+        "text": "This suggests that continuity and responsiveness are critical."
+      },
+      {
+        "start_time": "00:05:08.081",
+        "end_time": "00:05:09.860",
+        "text": "Beyond text summaries, future"
+      }
+    ]
+  },
+  {
+    "slide_index": 38,
+    "start_time": "00:05:10.000",
+    "end_time": "00:05:20.000",
+    "start_seconds": 310.0,
+    "end_seconds": 320.0,
+    "snapshot_image": "snapshots/slide_38.png",
+    "transcript": "systems could use richer cues such as reactions, tone indicators, or live audio to convey social and emotional context.",
+    "transcript_segments": [
+      {
+        "start_time": "00:05:09.860",
+        "end_time": "00:05:18.706",
+        "text": "systems could use richer cues such as reactions, tone indicators, or live audio to convey social and emotional context."
+      }
+    ]
+  },
+  {
+    "slide_index": 39,
+    "start_time": "00:05:20.000",
+    "end_time": "00:05:24.000",
+    "start_seconds": 320.0,
+    "end_seconds": 324.0,
+    "snapshot_image": "snapshots/slide_39.png",
+    "transcript": "Third, there is no single optimal configuration.",
+    "transcript_segments": [
+      {
+        "start_time": "00:05:18.706",
+        "end_time": "00:05:21.965",
+        "text": "Third, there is no single optimal configuration."
+      }
+    ]
+  },
+  {
+    "slide_index": 40,
+    "start_time": "00:05:24.000",
+    "end_time": "00:06:00.000",
+    "start_seconds": 324.0,
+    "end_seconds": 360.0,
+    "snapshot_image": "snapshots/slide_40.png",
+    "transcript": "Across all dependent variables, we saw no clear single winner, but large variance between participants and contexts. We observed clear trade-offs. Frequent low-detail updates increased presence but also workload, while infrequent detailed updates reduced disruption but weakened engagement. Similarly, multiple-choice responses were fast but limiting, while text input offered agency at a higher effort cost. Participants valued these trade-offs differently. Importantly, participant experiences also shifted with meeting relevance and topic familiarity. This suggests that we should treat partial participation as a spectrum.",
+    "transcript_segments": [
+      {
+        "start_time": "00:05:21.965",
+        "end_time": "00:05:29.881",
+        "text": "Across all dependent variables, we saw no clear single winner, but large variance between participants and contexts."
+      },
+      {
+        "start_time": "00:05:29.881",
+        "end_time": "00:05:31.743",
+        "text": "We observed clear trade-offs."
+      },
+      {
+        "start_time": "00:05:31.743",
+        "end_time": "00:05:39.658",
+        "text": "Frequent low-detail updates increased presence but also workload, while infrequent detailed updates reduced disruption but weakened engagement."
+      },
+      {
+        "start_time": "00:05:39.658",
+        "end_time": "00:05:42.876",
+        "text": "Similarly, multiple-choice responses were fast but limiting,"
+      },
+      {
+        "start_time": "00:05:42.876",
+        "end_time": "00:05:49.617",
+        "text": "while text input offered agency at a higher effort cost."
+      },
+      {
+        "start_time": "00:05:49.617",
+        "end_time": "00:05:52.988",
+        "text": "Participants valued these trade-offs differently."
+      },
+      {
+        "start_time": "00:05:52.988",
+        "end_time": "00:05:56.633",
+        "text": "Importantly, participant experiences also shifted with meeting relevance and topic familiarity."
+      },
+      {
+        "start_time": "00:05:56.633",
+        "end_time": "00:06:00.278",
+        "text": "This suggests that we should treat partial participation as a spectrum."
+      }
+    ]
+  },
+  {
+    "slide_index": 41,
+    "start_time": "00:06:00.000",
+    "end_time": "00:06:12.000",
+    "start_seconds": 360.0,
+    "end_seconds": 372.0,
+    "snapshot_image": "snapshots/slide_41.png",
+    "transcript": "Systems should allow users to flexibly adjust how and when they engage, rather than locking them into fixed modes.",
+    "transcript_segments": [
+      {
+        "start_time": "00:06:00.278",
+        "end_time": "00:06:07.430",
+        "text": "Systems should allow users to flexibly adjust how and when they engage,"
+      },
+      {
+        "start_time": "00:06:07.430",
+        "end_time": "00:06:11.045",
+        "text": "rather than locking them into fixed modes."
+      }
+    ]
+  },
+  {
+    "slide_index": 42,
+    "start_time": "00:06:12.000",
+    "end_time": "00:06:15.000",
+    "start_seconds": 372.0,
+    "end_seconds": 375.0,
+    "snapshot_image": "snapshots/slide_42.png",
+    "transcript": "Fourth, trust limits adoption. Participants",
+    "transcript_segments": [
+      {
+        "start_time": "00:06:11.045",
+        "end_time": "00:06:13.111",
+        "text": "Fourth, trust limits adoption."
+      },
+      {
+        "start_time": "00:06:13.111",
+        "end_time": "00:06:13.628",
+        "text": "Participants"
+      }
+    ]
+  },
+  {
+    "slide_index": 43,
+    "start_time": "00:06:15.000",
+    "end_time": "00:06:28.000",
+    "start_seconds": 375.0,
+    "end_seconds": 388.0,
+    "snapshot_image": "snapshots/slide_43.png",
+    "transcript": "were comfortable delegating to an agent in low-stakes or observational meetings, but hesitant in high-stakes contexts. Concerns focused on misrepresentation and how delegation might be perceived socially. This highlights the need for transparency, user control,",
+    "transcript_segments": [
+      {
+        "start_time": "00:06:13.628",
+        "end_time": "00:06:17.919",
+        "text": "were comfortable delegating to an agent in low-stakes or observational meetings,"
+      },
+      {
+        "start_time": "00:06:17.919",
+        "end_time": "00:06:20.369",
+        "text": "but hesitant in high-stakes contexts."
+      },
+      {
+        "start_time": "00:06:20.369",
+        "end_time": "00:06:23.799",
+        "text": "Concerns focused on misrepresentation and how delegation"
+      },
+      {
+        "start_time": "00:06:23.799",
+        "end_time": "00:06:25.626",
+        "text": "might be perceived socially."
+      },
+      {
+        "start_time": "00:06:25.626",
+        "end_time": "00:06:29.282",
+        "text": "This highlights the need for transparency, user control,"
+      }
+    ]
+  },
+  {
+    "slide_index": 44,
+    "start_time": "00:06:28.000",
+    "end_time": "00:06:36.000",
+    "start_seconds": 388.0,
+    "end_seconds": 396.0,
+    "snapshot_image": "snapshots/slide_44.png",
+    "transcript": "and mechanisms to review, correct, or retract agent actions. Fifth,",
+    "transcript_segments": [
+      {
+        "start_time": "00:06:29.282",
+        "end_time": "00:06:33.787",
+        "text": "and mechanisms to review, correct, or retract agent actions."
+      },
+      {
+        "start_time": "00:06:33.787",
+        "end_time": "00:06:34.288",
+        "text": "Fifth,"
+      }
+    ]
+  },
+  {
+    "slide_index": 45,
+    "start_time": "00:06:36.000",
+    "end_time": "00:06:42.000",
+    "start_seconds": 396.0,
+    "end_seconds": 402.0,
+    "snapshot_image": "snapshots/slide_45.png",
+    "transcript": "partial participation represents a distinct middle ground between synchronous and asynchronous work.",
+    "transcript_segments": [
+      {
+        "start_time": "00:06:34.288",
+        "end_time": "00:06:39.294",
+        "text": "partial participation represents a distinct middle ground between synchronous and asynchronous work."
+      }
+    ]
+  },
+  {
+    "slide_index": 46,
+    "start_time": "00:06:42.000",
+    "end_time": "00:06:52.000",
+    "start_seconds": 402.0,
+    "end_seconds": 412.0,
+    "snapshot_image": "snapshots/slide_46.png",
+    "transcript": "It enables semi-synchronous contribution, reducing reliance on post-meeting catch-up, but introduces new challenges around divided attention and mediated presence.",
+    "transcript_segments": [
+      {
+        "start_time": "00:06:40.168",
+        "end_time": "00:06:44.777",
+        "text": "It enables semi-synchronous contribution, reducing reliance on post-meeting catch-up,"
+      },
+      {
+        "start_time": "00:06:45.333",
+        "end_time": "00:06:49.465",
+        "text": "but introduces new challenges around divided attention and mediated presence."
+      }
+    ]
+  },
+  {
+    "slide_index": 47,
+    "start_time": "00:06:52.000",
+    "end_time": "00:07:04.000",
+    "start_seconds": 412.0,
+    "end_seconds": 424.0,
+    "snapshot_image": "snapshots/slide_47.png",
+    "transcript": "Rather than replacing existing tools, partial participation should integrate with them, supporting fluid transitions between levels of engagement and giving users control over how present they want to be.",
+    "transcript_segments": [
+      {
+        "start_time": "00:06:50.418",
+        "end_time": "00:06:55.186",
+        "text": "Rather than replacing existing tools, partial participation should integrate with them,"
+      },
+      {
+        "start_time": "00:06:55.186",
+        "end_time": "00:07:00.033",
+        "text": "supporting fluid transitions between levels of engagement and giving users control over"
+      },
+      {
+        "start_time": "00:07:00.033",
+        "end_time": "00:07:02.480",
+        "text": "how present they want to be."
+      }
+    ]
+  },
+  {
+    "slide_index": 48,
+    "start_time": "00:07:04.000",
+    "end_time": "00:07:28.000",
+    "start_seconds": 424.0,
+    "end_seconds": 448.0,
+    "snapshot_image": "snapshots/slide_48.png",
+    "transcript": "Finally, our findings also raise broader questions about productivity culture. Prior work shows that multitasking and technology overload can reduce well-being and contribute to exhaustion even when workers have autonomy. While partial participation tools increase flexibility, they may also introduce a new expectation that workers should remain partially available at all times. We do not position partial participation as a cure for meeting",
+    "transcript_segments": [
+      {
+        "start_time": "00:07:02.480",
+        "end_time": "00:07:06.152",
+        "text": "Finally, our findings also raise broader questions about productivity"
+      },
+      {
+        "start_time": "00:07:06.152",
+        "end_time": "00:07:06.592",
+        "text": "culture."
+      },
+      {
+        "start_time": "00:07:06.592",
+        "end_time": "00:07:11.873",
+        "text": "Prior work shows that multitasking and technology overload can reduce well-being and"
+      },
+      {
+        "start_time": "00:07:11.873",
+        "end_time": "00:07:15.740",
+        "text": "contribute to exhaustion even when workers have autonomy."
+      },
+      {
+        "start_time": "00:07:15.740",
+        "end_time": "00:07:17.673",
+        "text": "While partial participation tools"
+      },
+      {
+        "start_time": "00:07:17.673",
+        "end_time": "00:07:22.918",
+        "text": "increase flexibility, they may also introduce a new expectation that workers should remain"
+      },
+      {
+        "start_time": "00:07:22.918",
+        "end_time": "00:07:24.731",
+        "text": "partially available at all times."
+      },
+      {
+        "start_time": "00:07:24.731",
+        "end_time": "00:07:28.719",
+        "text": "We do not position partial participation as a cure for meeting"
+      }
+    ]
+  },
+  {
+    "slide_index": 49,
+    "start_time": "00:07:28.000",
+    "end_time": "00:07:55.000",
+    "start_seconds": 448.0,
+    "end_seconds": 475.0,
+    "snapshot_image": "snapshots/slide_49.png",
+    "transcript": "overload or structural workplace pressures. Instead, we see ProxyMe as a design probe that exposes both opportunities and risks. This raises a broader question for HCI: How can systems enhance flexibility while protecting autonomy? And should we focus solely on improving productivity, or also design to support healthy boundaries and intentional disengagement?",
+    "transcript_segments": [
+      {
+        "start_time": "00:07:28.719",
+        "end_time": "00:07:31.023",
+        "text": "overload or structural workplace pressures."
+      },
+      {
+        "start_time": "00:07:31.023",
+        "end_time": "00:07:35.632",
+        "text": "Instead, we see ProxyMe as a design probe that exposes"
+      },
+      {
+        "start_time": "00:07:35.632",
+        "end_time": "00:07:37.412",
+        "text": "both opportunities and risks."
+      },
+      {
+        "start_time": "00:07:37.412",
+        "end_time": "00:07:42.306",
+        "text": "This raises a broader question for HCI: How can systems enhance"
+      },
+      {
+        "start_time": "00:07:42.306",
+        "end_time": "00:07:44.240",
+        "text": "flexibility while protecting autonomy?"
+      },
+      {
+        "start_time": "00:07:44.240",
+        "end_time": "00:07:48.107",
+        "text": "And should we focus solely on improving productivity,"
+      },
+      {
+        "start_time": "00:07:48.187",
+        "end_time": "00:07:52.080",
+        "text": "or also design to support healthy boundaries and intentional disengagement?"
+      }
+    ]
+  },
+  {
+    "slide_index": 50,
+    "start_time": "00:07:55.000",
+    "end_time": "00:07:57.000",
+    "start_seconds": 475.0,
+    "end_seconds": 477.0,
+    "snapshot_image": "snapshots/slide_50.png",
+    "transcript": "Our study focused on the absentee's perspective of partial participation using simulated",
+    "transcript_segments": [
+      {
+        "start_time": "00:07:53.828",
+        "end_time": "00:07:58.993",
+        "text": "Our study focused on the absentee's perspective of partial participation using simulated"
+      }
+    ]
+  },
+  {
+    "slide_index": 51,
+    "start_time": "00:07:57.000",
+    "end_time": "00:08:22.000",
+    "start_seconds": 477.0,
+    "end_seconds": 502.0,
+    "snapshot_image": "snapshots/slide_51.png",
+    "transcript": "meetings with fixed transcripts. This controlled setup ensured consistent experiences across participants but limited realism. Future work should explore in-the-wild studies to understand how partial participation systems perform in authentic team settings and how other attendees perceive the presence of AI proxies. We also examined only one mode of multitasking:",
+    "transcript_segments": [
+      {
+        "start_time": "00:07:58.993",
+        "end_time": "00:08:01.006",
+        "text": "meetings with fixed transcripts."
+      },
+      {
+        "start_time": "00:08:01.006",
+        "end_time": "00:08:05.032",
+        "text": "This controlled setup ensured consistent experiences across participants"
+      },
+      {
+        "start_time": "00:08:05.032",
+        "end_time": "00:08:06.423",
+        "text": "but limited realism."
+      },
+      {
+        "start_time": "00:08:06.423",
+        "end_time": "00:08:10.595",
+        "text": "Future work should explore in-the-wild studies to understand how"
+      },
+      {
+        "start_time": "00:08:10.595",
+        "end_time": "00:08:15.998",
+        "text": "partial participation systems perform in authentic team settings and how other attendees"
+      },
+      {
+        "start_time": "00:08:15.998",
+        "end_time": "00:08:18.722",
+        "text": "perceive the presence of AI proxies."
+      },
+      {
+        "start_time": "00:08:18.722",
+        "end_time": "00:08:22.355",
+        "text": "We also examined only one mode of multitasking:"
+      }
+    ]
+  },
+  {
+    "slide_index": 52,
+    "start_time": "00:08:22.000",
+    "end_time": "00:08:46.000",
+    "start_seconds": 502.0,
+    "end_seconds": 526.0,
+    "snapshot_image": "snapshots/slide_52.png",
+    "transcript": "following a meeting while doing a demanding task. Participants, however, envisioned using the system in lighter contexts like commuting or casual activities. Future studies could vary task modality and cognitive load to examine how different multitasking conditions shape user behavior and experience with partial participation. To conclude, this research makes three main contributions.",
+    "transcript_segments": [
+      {
+        "start_time": "00:08:22.355",
+        "end_time": "00:08:25.364",
+        "text": "following a meeting while doing a demanding task."
+      },
+      {
+        "start_time": "00:08:25.364",
+        "end_time": "00:08:27.997",
+        "text": "Participants, however, envisioned using the system in"
+      },
+      {
+        "start_time": "00:08:27.997",
+        "end_time": "00:08:31.805",
+        "text": "lighter contexts like commuting or casual activities."
+      },
+      {
+        "start_time": "00:08:31.805",
+        "end_time": "00:08:35.069",
+        "text": "Future studies could vary task modality"
+      },
+      {
+        "start_time": "00:08:35.069",
+        "end_time": "00:08:40.552",
+        "text": "and cognitive load to examine how different multitasking conditions shape user behavior and"
+      },
+      {
+        "start_time": "00:08:40.552",
+        "end_time": "00:08:42.644",
+        "text": "experience with partial participation."
+      },
+      {
+        "start_time": "00:08:42.644",
+        "end_time": "00:08:46.829",
+        "text": "To conclude, this research makes three main contributions."
+      }
+    ]
+  },
+  {
+    "slide_index": 53,
+    "start_time": "00:08:46.000",
+    "end_time": "00:09:16.000",
+    "start_seconds": 526.0,
+    "end_seconds": 556.0,
+    "snapshot_image": "snapshots/slide_53.png",
+    "transcript": "First, we introduce partial participation as a new way of collaborating in meetings. Second, we present ProxyMe, a prototype that operationalizes this concept by supporting multitasking, non-continuous meeting participation. Third, through our study, we show how system configurations influence involvement, agency, and mental workload, highlighting the trade-offs users navigate. Ultimately, this work moves us toward a future of collaboration that is flexible,",
+    "transcript_segments": [
+      {
+        "start_time": "00:08:46.829",
+        "end_time": "00:08:52.658",
+        "text": "First, we introduce partial participation as a new way of collaborating in meetings."
+      },
+      {
+        "start_time": "00:08:52.658",
+        "end_time": "00:08:53.106",
+        "text": "Second,"
+      },
+      {
+        "start_time": "00:08:53.106",
+        "end_time": "00:08:59.384",
+        "text": "we present ProxyMe, a prototype that operationalizes this concept by supporting multitasking,"
+      },
+      {
+        "start_time": "00:08:59.384",
+        "end_time": "00:09:00.993",
+        "text": "non-continuous meeting participation."
+      },
+      {
+        "start_time": "00:09:00.993",
+        "end_time": "00:09:05.820",
+        "text": "Third, through our study, we show how system configurations"
+      },
+      {
+        "start_time": "00:09:05.820",
+        "end_time": "00:09:11.780",
+        "text": "influence involvement, agency, and mental workload, highlighting the trade-offs users navigate."
+      },
+      {
+        "start_time": "00:09:13.290",
+        "end_time": "00:09:18.216",
+        "text": "Ultimately, this work moves us toward a future of collaboration that is flexible,"
+      }
+    ]
+  },
+  {
+    "slide_index": 54,
+    "start_time": "00:09:16.000",
+    "end_time": "00:09:26.242",
+    "start_seconds": 556.0,
+    "end_seconds": 566.242,
+    "snapshot_image": "snapshots/slide_54.png",
+    "transcript": "human-centered, and no longer defined by being in or out of the meeting.",
+    "transcript_segments": [
+      {
+        "start_time": "00:09:18.216",
+        "end_time": "00:09:26.242",
+        "text": "human-centered, and no longer defined by being in or out of the meeting."
+      }
+    ]
+  }
+]

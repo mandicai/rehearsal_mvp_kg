@@ -1,0 +1,147 @@
+[
+  {
+    "slide_index": 1,
+    "start_time": "00:00:00.000",
+    "end_time": "00:00:18.000",
+    "start_seconds": 0.0,
+    "end_seconds": 18.0,
+    "snapshot_image": "snapshots/slide_01.png",
+    "transcript": "Hi everyone. Today I’m going to talk about how huskies can be trained as service dogs. I’ll start by defining service dogs, then discuss why huskies present both opportunities and challenges for this kind of work.",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:00.000",
+        "end_time": "00:00:08.000",
+        "text": "Hi everyone. Today I’m going to talk about how huskies can be trained as service dogs."
+      },
+      {
+        "start_time": "00:00:08.000",
+        "end_time": "00:00:18.000",
+        "text": "I’ll start by defining service dogs, then discuss why huskies present both opportunities and challenges for this kind of work."
+      }
+    ]
+  },
+  {
+    "slide_index": 2,
+    "start_time": "00:00:18.000",
+    "end_time": "00:01:15.000",
+    "start_seconds": 18.0,
+    "end_seconds": 75.0,
+    "snapshot_image": "snapshots/slide_02.png",
+    "transcript": "First, what makes a dog a service dog? A service dog can be any breed or size. The defining feature is individual training to perform a task directly related to a person’s disability. The dog does not have to graduate from a professional program, and it is not required to wear a vest or other visible identification. This distinction is important because service dogs are different from emotional support or comfort animals. Emotional support may be valuable, but comfort by itself is not a trained disability-related task. So when we evaluate whether a husky could become a service dog, the main question is whether the individual dog can reliably perform the needed task and behave appropriately in public.",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:18.000",
+        "end_time": "00:00:31.000",
+        "text": "First, what makes a dog a service dog? A service dog can be any breed or size. The defining feature is individual training to perform a task directly related to a person’s disability."
+      },
+      {
+        "start_time": "00:00:31.000",
+        "end_time": "00:00:44.000",
+        "text": "The dog does not have to graduate from a professional program, and it is not required to wear a vest or other visible identification."
+      },
+      {
+        "start_time": "00:00:44.000",
+        "end_time": "00:00:57.000",
+        "text": "This distinction is important because service dogs are different from emotional support or comfort animals. Emotional support may be valuable, but comfort by itself is not a trained disability-related task."
+      },
+      {
+        "start_time": "00:00:57.000",
+        "end_time": "00:01:15.000",
+        "text": "So when we evaluate whether a husky could become a service dog, the main question is whether the individual dog can reliably perform the needed task and behave appropriately in public."
+      }
+    ]
+  },
+  {
+    "slide_index": 3,
+    "start_time": "00:01:15.000",
+    "end_time": "00:02:10.000",
+    "start_seconds": 75.0,
+    "end_seconds": 130.0,
+    "snapshot_image": "snapshots/slide_03.png",
+    "transcript": "Service-dog tasks vary according to the handler’s needs. For a wheelchair user, a dog might retrieve a dropped object or bring an item that is out of reach. A dog supporting someone with depression might provide a trained medication reminder at a particular time or in response to a cue. For a person with PTSD, a dog could interrupt a developing episode or perform a trained alert behavior, such as touching or licking the handler’s hand. Some dogs are trained to respond to seizures by alerting, seeking help, creating space, or remaining close while the person recovers. These examples show why task training must be specific and repeatable.",
+    "transcript_segments": [
+      {
+        "start_time": "00:01:15.000",
+        "end_time": "00:01:28.000",
+        "text": "Service-dog tasks vary according to the handler’s needs. For a wheelchair user, a dog might retrieve a dropped object or bring an item that is out of reach."
+      },
+      {
+        "start_time": "00:01:28.000",
+        "end_time": "00:01:41.000",
+        "text": "A dog supporting someone with depression might provide a trained medication reminder at a particular time or in response to a cue."
+      },
+      {
+        "start_time": "00:01:41.000",
+        "end_time": "00:01:55.000",
+        "text": "For a person with PTSD, a dog could interrupt a developing episode or perform a trained alert behavior, such as touching or licking the handler’s hand."
+      },
+      {
+        "start_time": "00:01:55.000",
+        "end_time": "00:02:10.000",
+        "text": "Some dogs are trained to respond to seizures by alerting, seeking help, creating space, or remaining close while the person recovers. These examples show why task training must be specific and repeatable."
+      }
+    ]
+  },
+  {
+    "slide_index": 4,
+    "start_time": "00:02:10.000",
+    "end_time": "00:02:32.000",
+    "start_seconds": 130.0,
+    "end_seconds": 152.0,
+    "snapshot_image": "snapshots/slide_04.png",
+    "transcript": "The reason I’m focusing on huskies is personal: I have one, and I’m interested in whether she could be trained for service work. But that question has to be answered based on the individual dog’s temperament, health, motivation, and ability to work consistently—not just on breed or affection.",
+    "transcript_segments": [
+      {
+        "start_time": "00:02:10.000",
+        "end_time": "00:02:20.000",
+        "text": "The reason I’m focusing on huskies is personal: I have one, and I’m interested in whether she could be trained for service work."
+      },
+      {
+        "start_time": "00:02:20.000",
+        "end_time": "00:02:32.000",
+        "text": "But that question has to be answered based on the individual dog’s temperament, health, motivation, and ability to work consistently—not just on breed or affection."
+      }
+    ]
+  },
+  {
+    "slide_index": 5,
+    "start_time": "00:02:32.000",
+    "end_time": "00:04:00.000",
+    "start_seconds": 152.0,
+    "end_seconds": 240.0,
+    "snapshot_image": "snapshots/slide_05.png",
+    "transcript": "Huskies have several qualities that can help with training. They are intelligent, social, athletic, and often very engaged with their environment. At the same time, they are famously independent. Many are vocal, easily excited, strongly motivated to run, and skilled at escaping. Those traits do not automatically disqualify a husky, but they make consistency especially important. Before advanced task work, the dog needs strong foundations: focus around distractions, loose-leash walking, recall, settling quietly, ignoring food and other dogs, and remaining calm in public. Training should use clear criteria and positive reinforcement, with short, regular sessions and rewards the dog genuinely values. Exercise and mental enrichment also matter because a high-energy dog may struggle to concentrate when those needs are unmet. Once public-access behavior is reliable, training can focus on a specific disability-related task, such as retrieving an item, providing an alert, or assisting with another well-defined need. Progress should be evaluated honestly. Some huskies may thrive in service work, while others may be better suited to a different role. The key is reliability, welfare, and a good match between the dog and the handler’s needs.",
+    "transcript_segments": [
+      {
+        "start_time": "00:02:32.000",
+        "end_time": "00:02:46.000",
+        "text": "Huskies have several qualities that can help with training. They are intelligent, social, athletic, and often very engaged with their environment."
+      },
+      {
+        "start_time": "00:02:46.000",
+        "end_time": "00:03:01.000",
+        "text": "At the same time, they are famously independent. Many are vocal, easily excited, strongly motivated to run, and skilled at escaping. Those traits do not automatically disqualify a husky, but they make consistency especially important."
+      },
+      {
+        "start_time": "00:03:01.000",
+        "end_time": "00:03:18.000",
+        "text": "Before advanced task work, the dog needs strong foundations: focus around distractions, loose-leash walking, recall, settling quietly, ignoring food and other dogs, and remaining calm in public."
+      },
+      {
+        "start_time": "00:03:18.000",
+        "end_time": "00:03:33.000",
+        "text": "Training should use clear criteria and positive reinforcement, with short, regular sessions and rewards the dog genuinely values. Exercise and mental enrichment also matter because a high-energy dog may struggle to concentrate when those needs are unmet."
+      },
+      {
+        "start_time": "00:03:33.000",
+        "end_time": "00:03:47.000",
+        "text": "Once public-access behavior is reliable, training can focus on a specific disability-related task, such as retrieving an item, providing an alert, or assisting with another well-defined need."
+      },
+      {
+        "start_time": "00:03:47.000",
+        "end_time": "00:04:00.000",
+        "text": "Progress should be evaluated honestly. Some huskies may thrive in service work, while others may be better suited to a different role. The key is reliability, welfare, and a good match between the dog and the handler’s needs."
+      }
+    ]
+  }
+]

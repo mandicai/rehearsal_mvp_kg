@@ -1,0 +1,578 @@
+[
+  {
+    "slide_index": 1,
+    "start_time": "00:00:00.000",
+    "end_time": "00:00:04.000",
+    "start_seconds": 0.0,
+    "end_seconds": 4.0,
+    "snapshot_image": "snapshots/slide_01.png",
+    "transcript": "E| Ee] 4y ‘\\ 4,\nHEY PI A/ wpe iW\nOnes B dies ic 5 re meee i] Me\nyy hs +\nMAGEE DL ues neh Ao Sl\nS C H | Association for\nS Computing Machinery\nCOPYRIGHT 2026 ACM Advancing Computing as a Sclence & Profession",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:00.000",
+        "end_time": "00:00:04.000",
+        "text": "E| Ee] 4y ‘\\ 4,\nHEY PI A/ wpe iW\nOnes B dies ic 5 re meee i] Me\nyy hs +\nMAGEE DL ues neh Ao Sl\nS C H | Association for\nS Computing Machinery\nCOPYRIGHT 2026 ACM Advancing Computing as a Sclence & Profession"
+      }
+    ]
+  },
+  {
+    "slide_index": 2,
+    "start_time": "00:00:04.000",
+    "end_time": "00:00:12.000",
+    "start_seconds": 4.0,
+    "end_seconds": 12.0,
+    "snapshot_image": "snapshots/slide_02.png",
+    "transcript": "@ LEXARA\nA User-Centered Toolkit for Evaluating\nLarge Language Models for Conversational Visual Analytics\nii Test Cases - Metrics ‘® Interactive Tool",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:04.000",
+        "end_time": "00:00:12.000",
+        "text": "@ LEXARA\nA User-Centered Toolkit for Evaluating\nLarge Language Models for Conversational Visual Analytics\nii Test Cases - Metrics ‘® Interactive Tool"
+      }
+    ]
+  },
+  {
+    "slide_index": 3,
+    "start_time": "00:00:12.000",
+    "end_time": "00:00:32.000",
+    "start_seconds": 12.0,
+    "end_seconds": 32.0,
+    "snapshot_image": "snapshots/slide_03.png",
+    "transcript": "Why Evaluating CVA is Hard: Multi-Format Outputs Across Multi-Turn Conversations\n= ChatGPT @\nBist ctaen",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:12.000",
+        "end_time": "00:00:32.000",
+        "text": "Why Evaluating CVA is Hard: Multi-Format Outputs Across Multi-Turn Conversations\n= ChatGPT @\nBist ctaen"
+      }
+    ]
+  },
+  {
+    "slide_index": 4,
+    "start_time": "00:00:32.000",
+    "end_time": "00:00:39.000",
+    "start_seconds": 32.0,
+    "end_seconds": 39.0,
+    "snapshot_image": "snapshots/slide_04.png",
+    "transcript": "Why Evaluating CVA is Hard: Existing Methods Miss Nuance and are Inaccessible\nBenchmarking requires\nprogramming expertise, and\noften do not support multi-\nformat, multi-turn evaluation",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:32.000",
+        "end_time": "00:00:39.000",
+        "text": "Why Evaluating CVA is Hard: Existing Methods Miss Nuance and are Inaccessible\nBenchmarking requires\nprogramming expertise, and\noften do not support multi-\nformat, multi-turn evaluation"
+      }
+    ]
+  },
+  {
+    "slide_index": 5,
+    "start_time": "00:00:39.000",
+    "end_time": "00:00:43.000",
+    "start_seconds": 39.0,
+    "end_seconds": 43.0,
+    "snapshot_image": "snapshots/slide_05.png",
+    "transcript": "Why Evaluating CVA is Hard: Existing Methods Miss Nuance and are Inaccessible\nBenchmarking requires Test cases overlook real-world\nprogramming expertise, and complexities like ambiguity of utterances,\noften do not support multi- multi-turn nature of conversations and\nformat, multi-turn evaluation coverage across domains\ney PE the number of faculty\n<Quantity> on x-axis\nand <Region> on y-axis.",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:39.000",
+        "end_time": "00:00:43.000",
+        "text": "Why Evaluating CVA is Hard: Existing Methods Miss Nuance and are Inaccessible\nBenchmarking requires Test cases overlook real-world\nprogramming expertise, and complexities like ambiguity of utterances,\noften do not support multi- multi-turn nature of conversations and\nformat, multi-turn evaluation coverage across domains\ney PE the number of faculty\n<Quantity> on x-axis\nand <Region> on y-axis."
+      }
+    ]
+  },
+  {
+    "slide_index": 6,
+    "start_time": "00:00:43.000",
+    "end_time": "00:00:49.000",
+    "start_seconds": 43.0,
+    "end_seconds": 49.0,
+    "snapshot_image": "snapshots/slide_06.png",
+    "transcript": "Why Evaluating CVA is Hard: Existing Methods Miss Nuance and are Inaccessible\nBenchmarking requires Test cases overlook real-world Evaluation Metrics lack interpretability\nprogramming expertise, and complexities like ambiguity of utterances, and the ability to evaluate multi-\noften do not support multi- multi-turn nature of conversations and format, multi-turn outputs\nformat, multi-turn evaluation coverage across domains Geet ig\nAccuracy (Fi, Precision, Recall)\npe BLEU, ROUGE\noases ao Speed (ms)\nseo ae the number of faculty\nVisual Analytics Metrics\na> ——————\n<Quantity> on x-axis | > cr",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:43.000",
+        "end_time": "00:00:49.000",
+        "text": "Why Evaluating CVA is Hard: Existing Methods Miss Nuance and are Inaccessible\nBenchmarking requires Test cases overlook real-world Evaluation Metrics lack interpretability\nprogramming expertise, and complexities like ambiguity of utterances, and the ability to evaluate multi-\noften do not support multi- multi-turn nature of conversations and format, multi-turn outputs\nformat, multi-turn evaluation coverage across domains Geet ig\nAccuracy (Fi, Precision, Recall)\npe BLEU, ROUGE\noases ao Speed (ms)\nseo ae the number of faculty\nVisual Analytics Metrics\na> ——————\n<Quantity> on x-axis | > cr"
+      }
+    ]
+  },
+  {
+    "slide_index": 7,
+    "start_time": "00:00:49.000",
+    "end_time": "00:01:02.000",
+    "start_seconds": 49.0,
+    "end_seconds": 62.0,
+    "snapshot_image": "snapshots/slide_07.png",
+    "transcript": "Current Evaluation Approach: Practitioners Rely on Ad-Hoc Comparisons\na User utterance: “Create an interactive visualization showing Profit distribution across States”\nTableau Agent: A CVA Tool GPT5 Claude Sonnet 4",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:49.000",
+        "end_time": "00:01:02.000",
+        "text": "Current Evaluation Approach: Practitioners Rely on Ad-Hoc Comparisons\na User utterance: “Create an interactive visualization showing Profit distribution across States”\nTableau Agent: A CVA Tool GPT5 Claude Sonnet 4"
+      }
+    ]
+  },
+  {
+    "slide_index": 8,
+    "start_time": "00:01:02.000",
+    "end_time": "00:01:08.000",
+    "start_seconds": 62.0,
+    "end_seconds": 68.0,
+    "snapshot_image": "snapshots/slide_08.png",
+    "transcript": "Our Research Questions\nRQ1: What characterizes practitioners’ real-world usage of LLM-based CVA?",
+    "transcript_segments": [
+      {
+        "start_time": "00:01:02.000",
+        "end_time": "00:01:08.000",
+        "text": "Our Research Questions\nRQ1: What characterizes practitioners’ real-world usage of LLM-based CVA?"
+      }
+    ]
+  },
+  {
+    "slide_index": 9,
+    "start_time": "00:01:08.000",
+    "end_time": "00:01:12.000",
+    "start_seconds": 68.0,
+    "end_seconds": 72.0,
+    "snapshot_image": "snapshots/slide_09.png",
+    "transcript": "Our Research Questions\nRQ1: What characterizes practitioners’ real-world usage of LLM-based CVA?\nRQ2: What evaluation criteria do practitioners apply when assessing CVA system outputs?",
+    "transcript_segments": [
+      {
+        "start_time": "00:01:08.000",
+        "end_time": "00:01:12.000",
+        "text": "Our Research Questions\nRQ1: What characterizes practitioners’ real-world usage of LLM-based CVA?\nRQ2: What evaluation criteria do practitioners apply when assessing CVA system outputs?"
+      }
+    ]
+  },
+  {
+    "slide_index": 10,
+    "start_time": "00:01:12.000",
+    "end_time": "00:01:18.000",
+    "start_seconds": 72.0,
+    "end_seconds": 78.0,
+    "snapshot_image": "snapshots/slide_10.png",
+    "transcript": "Our Research Questions\nRQ1: What characterizes practitioners’ real-world usage of LLM-based CVA?\nRQ2: What evaluation criteria do practitioners apply when assessing CVA system outputs?\nRQ3: How do CVA practitioners currently evaluate CVA interactions?\nWhat challenges do they face in their current evaluation workflows, and\nHow do existing evaluation tools address these challenges?",
+    "transcript_segments": [
+      {
+        "start_time": "00:01:12.000",
+        "end_time": "00:01:18.000",
+        "text": "Our Research Questions\nRQ1: What characterizes practitioners’ real-world usage of LLM-based CVA?\nRQ2: What evaluation criteria do practitioners apply when assessing CVA system outputs?\nRQ3: How do CVA practitioners currently evaluate CVA interactions?\nWhat challenges do they face in their current evaluation workflows, and\nHow do existing evaluation tools address these challenges?"
+      }
+    ]
+  },
+  {
+    "slide_index": 11,
+    "start_time": "00:01:18.000",
+    "end_time": "00:01:25.000",
+    "start_seconds": 78.0,
+    "end_seconds": 85.0,
+    "snapshot_image": "snapshots/slide_11.png",
+    "transcript": "Formative Studies with 38 Practitioners\n=— =:\nL i\n@ > i\noI) \\\n- —asan may\n22 CVA Tool Developers 16 End-Users\nEngineers, Product Managers, Designers Data Professionals from Finance, Education,\nHealthcare, Technology Domains\nSemi-Structured Interviews Semi-Structured Interviews\n® Application Logs\nHuman-in-the-loop Evaluation Survey",
+    "transcript_segments": [
+      {
+        "start_time": "00:01:18.000",
+        "end_time": "00:01:25.000",
+        "text": "Formative Studies with 38 Practitioners\n=— =:\nL i\n@ > i\noI) \\\n- —asan may\n22 CVA Tool Developers 16 End-Users\nEngineers, Product Managers, Designers Data Professionals from Finance, Education,\nHealthcare, Technology Domains\nSemi-Structured Interviews Semi-Structured Interviews\n® Application Logs\nHuman-in-the-loop Evaluation Survey"
+      }
+    ]
+  },
+  {
+    "slide_index": 12,
+    "start_time": "00:01:25.000",
+    "end_time": "00:01:30.000",
+    "start_seconds": 85.0,
+    "end_seconds": 90.0,
+    "snapshot_image": "snapshots/slide_12.png",
+    "transcript": "Formative Studies with 38 Practitioners Gave us Insights On:\nReal-World Use Cases\nEvaluation Criteria\nEvaluation Workflows, Needs and Challenges",
+    "transcript_segments": [
+      {
+        "start_time": "00:01:25.000",
+        "end_time": "00:01:30.000",
+        "text": "Formative Studies with 38 Practitioners Gave us Insights On:\nReal-World Use Cases\nEvaluation Criteria\nEvaluation Workflows, Needs and Challenges"
+      }
+    ]
+  },
+  {
+    "slide_index": 13,
+    "start_time": "00:01:30.000",
+    "end_time": "00:01:38.000",
+    "start_seconds": 90.0,
+    "end_seconds": 98.0,
+    "snapshot_image": "snapshots/slide_13.png",
+    "transcript": "Practitioners’ Insights: @) LEXARA f\nUser-Centered 1 oolkit for Evaluating Large Language Models\nfor Conversational Visual Analytics\nReal-World Use Cases est Cases Refle q Real-World CVA Conversations\nEvaluation Criteria ® Nuanced Interpretable User-Centered Evaluation Metrics\nEvaluation Workflows, Needs and Challenges x eractive Evalua tion Tool",
+    "transcript_segments": [
+      {
+        "start_time": "00:01:30.000",
+        "end_time": "00:01:38.000",
+        "text": "Practitioners’ Insights: @) LEXARA f\nUser-Centered 1 oolkit for Evaluating Large Language Models\nfor Conversational Visual Analytics\nReal-World Use Cases est Cases Refle q Real-World CVA Conversations\nEvaluation Criteria ® Nuanced Interpretable User-Centered Evaluation Metrics\nEvaluation Workflows, Needs and Challenges x eractive Evalua tion Tool"
+      }
+    ]
+  },
+  {
+    "slide_index": 14,
+    "start_time": "00:01:38.000",
+    "end_time": "00:01:50.000",
+    "start_seconds": 98.0,
+    "end_seconds": 110.0,
+    "snapshot_image": "snapshots/slide_14.png",
+    "transcript": "LEXARA Toolkit,\nTest Cases Reflecting Real-World CVA Conversations: 80 Total Utterances\nMulti-format (text and Across Datasources from Across Chart Types Across Utterance Ambiguity Types\nvisualization) expected outputs Different Domains Bar Chart: 30 Syntactic Ambiguity: 18\nMulti-turn conversations Finance: 8 Line Chart: 18 Semantic Ambiguity: 22\n” . - Superstore Scatter Plot: 6 Pragmatic Ambiguity: 37\nComposite intents in a * Inc 500 Box Plot: 4\neeisie epee on + ESPN Athlete's Salaries Histogram: 3\nlaa prance add % * ESPN Teams’ Finances Multi-line Chart: 3 Across Context Handling Types\nlabels; sort descending”) Edit Carryover: 19\nShifts in analytical stages Education:3 Reference Resolution: 32\nwithin a conversation + American University Data Inferred Encoding: 64\n* edX Course Stats\nHealthcare: 5\nLife Expectancy\n* Covid Vaccination Uptake\nPatient Billing",
+    "transcript_segments": [
+      {
+        "start_time": "00:01:38.000",
+        "end_time": "00:01:50.000",
+        "text": "LEXARA Toolkit,\nTest Cases Reflecting Real-World CVA Conversations: 80 Total Utterances\nMulti-format (text and Across Datasources from Across Chart Types Across Utterance Ambiguity Types\nvisualization) expected outputs Different Domains Bar Chart: 30 Syntactic Ambiguity: 18\nMulti-turn conversations Finance: 8 Line Chart: 18 Semantic Ambiguity: 22\n” . - Superstore Scatter Plot: 6 Pragmatic Ambiguity: 37\nComposite intents in a * Inc 500 Box Plot: 4\neeisie epee on + ESPN Athlete's Salaries Histogram: 3\nlaa prance add % * ESPN Teams’ Finances Multi-line Chart: 3 Across Context Handling Types\nlabels; sort descending”) Edit Carryover: 19\nShifts in analytical stages Education:3 Reference Resolution: 32\nwithin a conversation + American University Data Inferred Encoding: 64\n* edX Course Stats\nHealthcare: 5\nLife Expectancy\n* Covid Vaccination Uptake\nPatient Billing"
+      }
+    ]
+  },
+  {
+    "slide_index": 15,
+    "start_time": "00:01:50.000",
+    "end_time": "00:01:55.000",
+    "start_seconds": 110.0,
+    "end_seconds": 115.0,
+    "snapshot_image": "snapshots/slide_15.png",
+    "transcript": "LEXARA Toolkit\nUser-Centered Evaluation Metrics",
+    "transcript_segments": [
+      {
+        "start_time": "00:01:50.000",
+        "end_time": "00:01:55.000",
+        "text": "LEXARA Toolkit\nUser-Centered Evaluation Metrics"
+      }
+    ]
+  },
+  {
+    "slide_index": 16,
+    "start_time": "00:01:55.000",
+    "end_time": "00:02:09.000",
+    "start_seconds": 115.0,
+    "end_seconds": 129.0,
+    "snapshot_image": "snapshots/slide_16.png",
+    "transcript": "LEXARA Toolkit:\nUser-Centered Evaluation Metrics\nUSER UTTERANCE\n(“scatter of eisplacement vs MPG colored by origin”\nData\npel\n=_c7\nred\n443] Frape\ncoc\n=o\n=e)\nze usa\n32 8 ae\nCES\ni] 33) aoan\n91] 39) ao\n‘a7 tale\n“data: {\n\"values\": (\n“Cylinders: \"4\",\n“Horsepower”: \"46\",",
+    "transcript_segments": [
+      {
+        "start_time": "00:01:55.000",
+        "end_time": "00:02:09.000",
+        "text": "LEXARA Toolkit:\nUser-Centered Evaluation Metrics\nUSER UTTERANCE\n(“scatter of eisplacement vs MPG colored by origin”\nData\npel\n=_c7\nred\n443] Frape\ncoc\n=o\n=e)\nze usa\n32 8 ae\nCES\ni] 33) aoan\n91] 39) ao\n‘a7 tale\n“data: {\n\"values\": (\n“Cylinders: \"4\",\n“Horsepower”: \"46\","
+      }
+    ]
+  },
+  {
+    "slide_index": 17,
+    "start_time": "00:02:09.000",
+    "end_time": "00:02:14.000",
+    "start_seconds": 129.0,
+    "end_seconds": 134.0,
+    "snapshot_image": "snapshots/slide_17.png",
+    "transcript": "LEXARA Toolkit:\nUser-Centered Evaluation Metrics\nUSER UTTERANCE\n(O ‘scatter of displacement vs MPG colored by origin”\nFACTUAL GROUNDING veschTULNess ASSUMPTIONS DISCLOSURE",
+    "transcript_segments": [
+      {
+        "start_time": "00:02:09.000",
+        "end_time": "00:02:14.000",
+        "text": "LEXARA Toolkit:\nUser-Centered Evaluation Metrics\nUSER UTTERANCE\n(O ‘scatter of displacement vs MPG colored by origin”\nFACTUAL GROUNDING veschTULNess ASSUMPTIONS DISCLOSURE"
+      }
+    ]
+  },
+  {
+    "slide_index": 18,
+    "start_time": "00:02:14.000",
+    "end_time": "00:02:17.000",
+    "start_seconds": 134.0,
+    "end_seconds": 137.0,
+    "snapshot_image": "snapshots/slide_18.png",
+    "transcript": "LEXARA Toolkit,\nUser-Centered Evaluation Metrics\nUSER UTTERANCE\n(Q ‘seater of displacement vs MPG colored by origin”\nFACTUAL GROUNDING esciTPULNess ASSUMPTIONS DISCLOSURE CONVERSATION QUALITY\nMin",
+    "transcript_segments": [
+      {
+        "start_time": "00:02:14.000",
+        "end_time": "00:02:17.000",
+        "text": "LEXARA Toolkit,\nUser-Centered Evaluation Metrics\nUSER UTTERANCE\n(Q ‘seater of displacement vs MPG colored by origin”\nFACTUAL GROUNDING esciTPULNess ASSUMPTIONS DISCLOSURE CONVERSATION QUALITY\nMin"
+      }
+    ]
+  },
+  {
+    "slide_index": 19,
+    "start_time": "00:02:17.000",
+    "end_time": "00:02:22.000",
+    "start_seconds": 137.0,
+    "end_seconds": 142.0,
+    "snapshot_image": "snapshots/slide_19.png",
+    "transcript": "LEXARA Toolkit\nUSER UTTERANCE\n@ ‘scatter of cisplacement vs MPG colored by origin?\nFACTUAL GROUNDING INSIGHTFULNESS- ASSUMPTIONS DISCLOSURE CONVERSATION QUALITY\nThis scatter plot shows a the color encoding of car origin: The chart assunes that displacement ’ hip det\nstrong negative relationship _-U.S. vehicles cluster at high and MPG are measured consistently displa lency (MPG), but the reat story emerges through\nbetween engine displacesent displacesent and tow MPG, across countries, that MPG tests ! :\nand fuel efficiency (HG) reflecting a design emphasis on reflect comparable driving ney 3a\npower over efficiency; Japanese conditions, and that “Origin” is a 7 .\ncars concentrate at low meaningful categorical proxy for wel-ce f f betw\ndisplacesent and high MP6, broader design choices-assumptions lier 7\nhighlighting compact, fuel that, if violated, could bias \" However, t\nconscious engineering; and interpretation. also»\nEuropean models fall in between, a - z\nbalancing efficiency and ‘ f s\nperformance. Outliers, such as ted at\nEuropean diesels and Japanese\ncompacts exceeding 48 MPG,\nreinforce these contrasts.\nFOLLOW-UP RELEVANCE\n@® “contrt for weight?\nwhile displacement and origin reveal broad design trade-\noffs, weight is a confounding factor-heavier vehicles\nnaturally consume more fuel regardless of engine size.\nControlling for weight sharpens the picture: when cars of\nsimilar weight are compared, the slope between\ndisplacenent and HPG flattens, showing that much of the\nraw negative trend is mediated by vehicle mass.\nY 3",
+    "transcript_segments": [
+      {
+        "start_time": "00:02:17.000",
+        "end_time": "00:02:22.000",
+        "text": "LEXARA Toolkit\nUSER UTTERANCE\n@ ‘scatter of cisplacement vs MPG colored by origin?\nFACTUAL GROUNDING INSIGHTFULNESS- ASSUMPTIONS DISCLOSURE CONVERSATION QUALITY\nThis scatter plot shows a the color encoding of car origin: The chart assunes that displacement ’ hip det\nstrong negative relationship _-U.S. vehicles cluster at high and MPG are measured consistently displa lency (MPG), but the reat story emerges through\nbetween engine displacesent displacesent and tow MPG, across countries, that MPG tests ! :\nand fuel efficiency (HG) reflecting a design emphasis on reflect comparable driving ney 3a\npower over efficiency; Japanese conditions, and that “Origin” is a 7 .\ncars concentrate at low meaningful categorical proxy for wel-ce f f betw\ndisplacesent and high MP6, broader design choices-assumptions lier 7\nhighlighting compact, fuel that, if violated, could bias \" However, t\nconscious engineering; and interpretation. also»\nEuropean models fall in between, a - z\nbalancing efficiency and ‘ f s\nperformance. Outliers, such as ted at\nEuropean diesels and Japanese\ncompacts exceeding 48 MPG,\nreinforce these contrasts.\nFOLLOW-UP RELEVANCE\n@® “contrt for weight?\nwhile displacement and origin reveal broad design trade-\noffs, weight is a confounding factor-heavier vehicles\nnaturally consume more fuel regardless of engine size.\nControlling for weight sharpens the picture: when cars of\nsimilar weight are compared, the slope between\ndisplacenent and HPG flattens, showing that much of the\nraw negative trend is mediated by vehicle mass.\nY 3"
+      }
+    ]
+  },
+  {
+    "slide_index": 20,
+    "start_time": "00:02:22.000",
+    "end_time": "00:02:32.000",
+    "start_seconds": 142.0,
+    "end_seconds": 152.0,
+    "snapshot_image": "snapshots/slide_20.png",
+    "transcript": "Evaluation Metrics Expose Nuanced Strengths and Failures",
+    "transcript_segments": [
+      {
+        "start_time": "00:02:22.000",
+        "end_time": "00:02:32.000",
+        "text": "Evaluation Metrics Expose Nuanced Strengths and Failures"
+      }
+    ]
+  },
+  {
+    "slide_index": 21,
+    "start_time": "00:02:32.000",
+    "end_time": "00:02:52.000",
+    "start_seconds": 152.0,
+    "end_seconds": 172.0,
+    "snapshot_image": "snapshots/slide_21.png",
+    "transcript": "LEXARA Toolkit\nEvaluation Metrics Expose Nuanced Strengths and Failures\nTest User Utterance Expected Response Model Response Metrics\n) eee 7 S Data Fidelity = 100% ; Field\n. ao Similarity = 100% ; Chart Type\n= “ Similarity = 100% ; Axis Accu-\nj - { ° racy = 100% ; Filter Accuracy =\nj = * 100% ; Sort Accuracy = 100% ;\n+ = Visual Encoding Accuracy =\n. “i 100% .\nijl “yl Overall Viz = 100%.\npin ae NL: Factual Grounding 70% ;\n7 . . 7 . Assumptions Disclosure = 40% ;\nA vertical bar chart with Region A bar chart comparing Quantity Insightfulness = 40» ; Coher-\non the x-axis and the sum of (y-axis) across Regions (x-axis), ence 99% .\nQuantity on the y-axis (range 0- allowing a quick scan of how Overall NL 65%.\n140). The Central region has the _—_ quantities differ by region.\nhighest total ( 137), with other\nregions lower.",
+    "transcript_segments": [
+      {
+        "start_time": "00:02:32.000",
+        "end_time": "00:02:52.000",
+        "text": "LEXARA Toolkit\nEvaluation Metrics Expose Nuanced Strengths and Failures\nTest User Utterance Expected Response Model Response Metrics\n) eee 7 S Data Fidelity = 100% ; Field\n. ao Similarity = 100% ; Chart Type\n= “ Similarity = 100% ; Axis Accu-\nj - { ° racy = 100% ; Filter Accuracy =\nj = * 100% ; Sort Accuracy = 100% ;\n+ = Visual Encoding Accuracy =\n. “i 100% .\nijl “yl Overall Viz = 100%.\npin ae NL: Factual Grounding 70% ;\n7 . . 7 . Assumptions Disclosure = 40% ;\nA vertical bar chart with Region A bar chart comparing Quantity Insightfulness = 40» ; Coher-\non the x-axis and the sum of (y-axis) across Regions (x-axis), ence 99% .\nQuantity on the y-axis (range 0- allowing a quick scan of how Overall NL 65%.\n140). The Central region has the _—_ quantities differ by region.\nhighest total ( 137), with other\nregions lower."
+      }
+    ]
+  },
+  {
+    "slide_index": 22,
+    "start_time": "00:02:52.000",
+    "end_time": "00:03:15.000",
+    "start_seconds": 172.0,
+    "end_seconds": 195.0,
+    "snapshot_image": "snapshots/slide_22.png",
+    "transcript": "LEXARA Toolkit,\nEvaluation Metrics Expose Nuanced Strengths and Failures\nTest User Utterance Expected Response Model Response Metrics\na ner _ = Data Fidelity = 100% ; Field\n- 0 Similarity = 100% ; Chart Type\n= ee Similarity = 100% ; Axis Accu-\nj - racy = 50% _; Filter Accuracy =\ni” j 100% ; Sort Accuracy = 0% ;\n: si Visual Encoding Accuracy =\n= l hens 100% -\n“THE ° Overall Viz 65%.\nUi ° NL: Factual Grounding 60% ;\n. ... Assumptions Disclosure = 40% ;\nA vertical bar chart of Regions, A bar chart ordered by Quantity Insightfulness = 20% ; Coher-\nsorted in descending order by the _values for each Region; the ence Ge.\nsum of Quantity, so the highest- _ description notes sorting by Overall NL 50%.\nquantity region (Central, 137) quantity but does not specify\nappears first. whether the order is ascending or\ndescending.",
+    "transcript_segments": [
+      {
+        "start_time": "00:02:52.000",
+        "end_time": "00:03:15.000",
+        "text": "LEXARA Toolkit,\nEvaluation Metrics Expose Nuanced Strengths and Failures\nTest User Utterance Expected Response Model Response Metrics\na ner _ = Data Fidelity = 100% ; Field\n- 0 Similarity = 100% ; Chart Type\n= ee Similarity = 100% ; Axis Accu-\nj - racy = 50% _; Filter Accuracy =\ni” j 100% ; Sort Accuracy = 0% ;\n: si Visual Encoding Accuracy =\n= l hens 100% -\n“THE ° Overall Viz 65%.\nUi ° NL: Factual Grounding 60% ;\n. ... Assumptions Disclosure = 40% ;\nA vertical bar chart of Regions, A bar chart ordered by Quantity Insightfulness = 20% ; Coher-\nsorted in descending order by the _values for each Region; the ence Ge.\nsum of Quantity, so the highest- _ description notes sorting by Overall NL 50%.\nquantity region (Central, 137) quantity but does not specify\nappears first. whether the order is ascending or\ndescending."
+      }
+    ]
+  },
+  {
+    "slide_index": 23,
+    "start_time": "00:03:15.000",
+    "end_time": "00:03:32.000",
+    "start_seconds": 195.0,
+    "end_seconds": 212.0,
+    "snapshot_image": "snapshots/slide_23.png",
+    "transcript": "Interactive CVA Evaluation Tool",
+    "transcript_segments": [
+      {
+        "start_time": "00:03:15.000",
+        "end_time": "00:03:32.000",
+        "text": "Interactive CVA Evaluation Tool"
+      }
+    ]
+  },
+  {
+    "slide_index": 24,
+    "start_time": "00:03:32.000",
+    "end_time": "00:03:45.000",
+    "start_seconds": 212.0,
+    "end_seconds": 225.0,
+    "snapshot_image": "snapshots/slide_24.png",
+    "transcript": "LEXARA Toolkit\nInteractive CVA Evaluation Tool: Low-Code Evaluation Setup\nSpecify Multiple System Prompts\n— k @",
+    "transcript_segments": [
+      {
+        "start_time": "00:03:32.000",
+        "end_time": "00:03:45.000",
+        "text": "LEXARA Toolkit\nInteractive CVA Evaluation Tool: Low-Code Evaluation Setup\nSpecify Multiple System Prompts\n— k @"
+      }
+    ]
+  },
+  {
+    "slide_index": 25,
+    "start_time": "00:03:45.000",
+    "end_time": "00:03:50.000",
+    "start_seconds": 225.0,
+    "end_seconds": 230.0,
+    "snapshot_image": "snapshots/slide_25.png",
+    "transcript": "LEXARA Toolkit\nInteractive CVA Evaluation Tool: Low-Code Evaluation Setup\nSpecify Metrics (Programmatic and LLM-as-a-Judge)\n: = k @",
+    "transcript_segments": [
+      {
+        "start_time": "00:03:45.000",
+        "end_time": "00:03:50.000",
+        "text": "LEXARA Toolkit\nInteractive CVA Evaluation Tool: Low-Code Evaluation Setup\nSpecify Metrics (Programmatic and LLM-as-a-Judge)\n: = k @"
+      }
+    ]
+  },
+  {
+    "slide_index": 26,
+    "start_time": "00:03:50.000",
+    "end_time": "00:04:04.000",
+    "start_seconds": 230.0,
+    "end_seconds": 244.0,
+    "snapshot_image": "snapshots/slide_26.png",
+    "transcript": "LEXARA Toolkit\nInteractive CVA Evaluation Tool: Multi-Level Interpretable Metrics\nInterpretable Multi-Level Metrics with Explanations on Hover\nVisualization Grammar Differences\ni , j i cote eninge SO ~s “=e\n] | = —- - - se =",
+    "transcript_segments": [
+      {
+        "start_time": "00:03:50.000",
+        "end_time": "00:04:04.000",
+        "text": "LEXARA Toolkit\nInteractive CVA Evaluation Tool: Multi-Level Interpretable Metrics\nInterpretable Multi-Level Metrics with Explanations on Hover\nVisualization Grammar Differences\ni , j i cote eninge SO ~s “=e\n] | = —- - - se ="
+      }
+    ]
+  },
+  {
+    "slide_index": 27,
+    "start_time": "00:04:04.000",
+    "end_time": "00:04:07.000",
+    "start_seconds": 244.0,
+    "end_seconds": 247.0,
+    "snapshot_image": "snapshots/slide_27.png",
+    "transcript": "LEXARA Toolkit\nInteractive CVA Evaluation Tool: Multi-Level Interpretable Metrics\nInterpretable Multi-Level Metrics with Explanations on Hover\nVisualization Grammar Differences\nae ee",
+    "transcript_segments": [
+      {
+        "start_time": "00:04:04.000",
+        "end_time": "00:04:07.000",
+        "text": "LEXARA Toolkit\nInteractive CVA Evaluation Tool: Multi-Level Interpretable Metrics\nInterpretable Multi-Level Metrics with Explanations on Hover\nVisualization Grammar Differences\nae ee"
+      }
+    ]
+  },
+  {
+    "slide_index": 28,
+    "start_time": "00:04:07.000",
+    "end_time": "00:04:21.000",
+    "start_seconds": 247.0,
+    "end_seconds": 261.0,
+    "snapshot_image": "snapshots/slide_28.png",
+    "transcript": "LEXARA Toolkit\nInteractive CVA Evaluation Tool: Multi-Level Interpretable Metrics\nInterpretable Multi-Level Metrics with Explanations on Hover\nExpected Response Opendl: GPT-5 Nano - Prompt 2 Visualization Response Metrics\nwo} » Toe Overall Visualization Quality 56% O 8™% 0 8% 0 87% 0\n=| » =. » oma 50% 100% 100% 100%\nial iE a > Semantics O 100% 100% 100% 100%\n“ +i = » Functionality 25% 100% anne eon\n\" ba sauna ¥ Design 50% ‘0% Visual encoding accuracy: Extra channel: color.\ni : asl rcodngs 100% o% om om\noe ey cae ii Ce Interactivty 0% 0% 0% 0%\nwane clea by\nk @",
+    "transcript_segments": [
+      {
+        "start_time": "00:04:07.000",
+        "end_time": "00:04:21.000",
+        "text": "LEXARA Toolkit\nInteractive CVA Evaluation Tool: Multi-Level Interpretable Metrics\nInterpretable Multi-Level Metrics with Explanations on Hover\nExpected Response Opendl: GPT-5 Nano - Prompt 2 Visualization Response Metrics\nwo} » Toe Overall Visualization Quality 56% O 8™% 0 8% 0 87% 0\n=| » =. » oma 50% 100% 100% 100%\nial iE a > Semantics O 100% 100% 100% 100%\n“ +i = » Functionality 25% 100% anne eon\n\" ba sauna ¥ Design 50% ‘0% Visual encoding accuracy: Extra channel: color.\ni : asl rcodngs 100% o% om om\noe ey cae ii Ce Interactivty 0% 0% 0% 0%\nwane clea by\nk @"
+      }
+    ]
+  },
+  {
+    "slide_index": 29,
+    "start_time": "00:04:21.000",
+    "end_time": "00:04:24.000",
+    "start_seconds": 261.0,
+    "end_seconds": 264.0,
+    "snapshot_image": "snapshots/slide_29.png",
+    "transcript": "LEXARA Toolkit\nInteractive CVA Evaluation Tool: Multi-Level Interpretable Metrics\nOverview Results\nMetrics-by-Label Panel\nOpenAbOrT.8Nere:Promptt coca, “El” ae” ae ae Ta Tt A cee Sata =\n— Ga) re —",
+    "transcript_segments": [
+      {
+        "start_time": "00:04:21.000",
+        "end_time": "00:04:24.000",
+        "text": "LEXARA Toolkit\nInteractive CVA Evaluation Tool: Multi-Level Interpretable Metrics\nOverview Results\nMetrics-by-Label Panel\nOpenAbOrT.8Nere:Promptt coca, “El” ae” ae ae Ta Tt A cee Sata =\n— Ga) re —"
+      }
+    ]
+  },
+  {
+    "slide_index": 30,
+    "start_time": "00:04:24.000",
+    "end_time": "00:04:29.000",
+    "start_seconds": 264.0,
+    "end_seconds": 269.0,
+    "snapshot_image": "snapshots/slide_30.png",
+    "transcript": "LEXARA Toot\nInteractive CVA Evaluation Tool: Multi-Level Interpretable Metrics\nOverview Results\nMetrics-by-Label Panel\nOpendl: GPT-5 Nano - Prompt 1 cant anti eaity = pa = - - om ° ememaqumenny - - a\n= a",
+    "transcript_segments": [
+      {
+        "start_time": "00:04:24.000",
+        "end_time": "00:04:29.000",
+        "text": "LEXARA Toot\nInteractive CVA Evaluation Tool: Multi-Level Interpretable Metrics\nOverview Results\nMetrics-by-Label Panel\nOpendl: GPT-5 Nano - Prompt 1 cant anti eaity = pa = - - om ° ememaqumenny - - a\n= a"
+      }
+    ]
+  },
+  {
+    "slide_index": 31,
+    "start_time": "00:04:29.000",
+    "end_time": "00:04:38.000",
+    "start_seconds": 269.0,
+    "end_seconds": 278.0,
+    "snapshot_image": "snapshots/slide_31.png",
+    "transcript": "LEXARA Toolkit\nInteractive CVA Evaluation Tool: Multi-Level Interpretable Metrics\nMetrics-by-Label Panel\n= My",
+    "transcript_segments": [
+      {
+        "start_time": "00:04:29.000",
+        "end_time": "00:04:38.000",
+        "text": "LEXARA Toolkit\nInteractive CVA Evaluation Tool: Multi-Level Interpretable Metrics\nMetrics-by-Label Panel\n= My"
+      }
+    ]
+  },
+  {
+    "slide_index": 32,
+    "start_time": "00:04:38.000",
+    "end_time": "00:04:52.000",
+    "start_seconds": 278.0,
+    "end_seconds": 292.0,
+    "snapshot_image": "snapshots/slide_32.png",
+    "transcript": "Field Deployment of Toolkit & 2 Week Diary Study with 6 CVA Tool Developers",
+    "transcript_segments": [
+      {
+        "start_time": "00:04:38.000",
+        "end_time": "00:04:52.000",
+        "text": "Field Deployment of Toolkit & 2 Week Diary Study with 6 CVA Tool Developers"
+      }
+    ]
+  },
+  {
+    "slide_index": 33,
+    "start_time": "00:04:52.000",
+    "end_time": "00:05:00.000",
+    "start_seconds": 292.0,
+    "end_seconds": 300.0,
+    "snapshot_image": "snapshots/slide_33.png",
+    "transcript": "Field Deployment & 2 Week Diary Study with 6 CVA Tool Developers\n- - wo = . | = ra = a = c = —,\nSekt rr = ‘en es ee",
+    "transcript_segments": [
+      {
+        "start_time": "00:04:52.000",
+        "end_time": "00:05:00.000",
+        "text": "Field Deployment & 2 Week Diary Study with 6 CVA Tool Developers\n- - wo = . | = ra = a = c = —,\nSekt rr = ‘en es ee"
+      }
+    ]
+  },
+  {
+    "slide_index": 34,
+    "start_time": "00:05:00.000",
+    "end_time": "00:05:08.000",
+    "start_seconds": 300.0,
+    "end_seconds": 308.0,
+    "snapshot_image": "snapshots/slide_34.png",
+    "transcript": "Field Deployment & 2 Week Diary Study with 6 CVA Tool Developers\n‘lary Study Participation by Participant . “\nel a = ‘ ‘ ” . coger\n- a Srcren\nI it i iE r ra\nee a ‘a a —_— a\nSome he ones Taco a\n“| feel quite confident. | saw quantitatively a stark\n“The Viz Grammar Diff is pretty handy!. .. [I feel] difference in the performance of the models and\nMore confident than before! The difference in also by clicking through the outputs could tell\nscores do seem to correlate better with the qualitatively that Claude Sonnet was matching the\nobserved differences in the viz response.” expected outputs more often.\"\npL P3\n“It’s cool to see the model outputs side-by-side\nTwo vizzes looked the same, but the score and compare how they generated the viz.”\nwasn't 100. JSON showed a tooltip difference.\nec A\nPa Ps",
+    "transcript_segments": [
+      {
+        "start_time": "00:05:00.000",
+        "end_time": "00:05:08.000",
+        "text": "Field Deployment & 2 Week Diary Study with 6 CVA Tool Developers\n‘lary Study Participation by Participant . “\nel a = ‘ ‘ ” . coger\n- a Srcren\nI it i iE r ra\nee a ‘a a —_— a\nSome he ones Taco a\n“| feel quite confident. | saw quantitatively a stark\n“The Viz Grammar Diff is pretty handy!. .. [I feel] difference in the performance of the models and\nMore confident than before! The difference in also by clicking through the outputs could tell\nscores do seem to correlate better with the qualitatively that Claude Sonnet was matching the\nobserved differences in the viz response.” expected outputs more often.\"\npL P3\n“It’s cool to see the model outputs side-by-side\nTwo vizzes looked the same, but the score and compare how they generated the viz.”\nwasn't 100. JSON showed a tooltip difference.\nec A\nPa Ps"
+      }
+    ]
+  },
+  {
+    "slide_index": 35,
+    "start_time": "00:05:08.000",
+    "end_time": "00:05:41.000",
+    "start_seconds": 308.0,
+    "end_seconds": 341.0,
+    "snapshot_image": "snapshots/slide_35.png",
+    "transcript": "@ LEXARA\nA User-Centered Toolkit for Evaluating\nLarge Language Models for Conversational Visual Analytics",
+    "transcript_segments": [
+      {
+        "start_time": "00:05:08.000",
+        "end_time": "00:05:41.000",
+        "text": "@ LEXARA\nA User-Centered Toolkit for Evaluating\nLarge Language Models for Conversational Visual Analytics"
+      }
+    ]
+  },
+  {
+    "slide_index": 36,
+    "start_time": "00:05:41.000",
+    "end_time": "00:05:41.635",
+    "start_seconds": 341.0,
+    "end_seconds": 341.635,
+    "snapshot_image": "snapshots/slide_36.png",
+    "transcript": "@ LEXARA\nA User-Centered Toolkit for Evaluating\nLarge Language Models for Conversational Visual Analytics\nig Test Cases - Metrics ‘® Interactive Tool",
+    "transcript_segments": [
+      {
+        "start_time": "00:05:41.000",
+        "end_time": "00:05:41.635",
+        "text": "@ LEXARA\nA User-Centered Toolkit for Evaluating\nLarge Language Models for Conversational Visual Analytics\nig Test Cases - Metrics ‘® Interactive Tool"
+      }
+    ]
+  }
+]

@@ -1,0 +1,562 @@
+[
+  {
+    "slide_index": 1,
+    "start_time": "00:00:00.000",
+    "end_time": "00:00:04.000",
+    "start_seconds": 0.0,
+    "end_seconds": 4.0,
+    "snapshot_image": "snapshots/slide_01.png",
+    "transcript": "E| Ee] 4y \\\\ 4,\nHEY PI A/ wpe iW\nOnes B diss ic 5 re meee i] Me\nyy hs +\nsacs reaoir.s OUR ere RNR ees\nS C H | Association for\nS Computing Machinery\nCOPYRIGHT 2026 ACM Advancing Computing as a Sclence & Profession",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:00.000",
+        "end_time": "00:00:04.000",
+        "text": "E| Ee] 4y \\\\ 4,\nHEY PI A/ wpe iW\nOnes B diss ic 5 re meee i] Me\nyy hs +\nsacs reaoir.s OUR ere RNR ees\nS C H | Association for\nS Computing Machinery\nCOPYRIGHT 2026 ACM Advancing Computing as a Sclence & Profession"
+      }
+    ]
+  },
+  {
+    "slide_index": 2,
+    "start_time": "00:00:04.000",
+    "end_time": "00:00:20.000",
+    "start_seconds": 4.0,
+    "end_seconds": 20.0,
+    "snapshot_image": "snapshots/slide_02.png",
+    "transcript": "Exploring the Effects of Different Chatbot\nVoice Identities on Self-Disclosure\nYamato Mogi, Kyoto University\nWataru Akahori, NTT Inc., Kyoto University\nNaomi Yamashita, Kyoto University QOVB®\nInclusive Design Laboratory 1",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:04.000",
+        "end_time": "00:00:20.000",
+        "text": "Exploring the Effects of Different Chatbot\nVoice Identities on Self-Disclosure\nYamato Mogi, Kyoto University\nWataru Akahori, NTT Inc., Kyoto University\nNaomi Yamashita, Kyoto University QOVB®\nInclusive Design Laboratory 1"
+      }
+    ]
+  },
+  {
+    "slide_index": 3,
+    "start_time": "00:00:20.000",
+    "end_time": "00:00:30.000",
+    "start_seconds": 20.0,
+    "end_seconds": 30.0,
+    "snapshot_image": "snapshots/slide_03.png",
+    "transcript": "Background\nSelf-disclosure\n- Verbal expressions by which a person reveals aspects of himself\nor herself to others(ourard et al., 1971)\nABA Inclusive Design Laboratory 2",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:20.000",
+        "end_time": "00:00:30.000",
+        "text": "Background\nSelf-disclosure\n- Verbal expressions by which a person reveals aspects of himself\nor herself to others(ourard et al., 1971)\nABA Inclusive Design Laboratory 2"
+      }
+    ]
+  },
+  {
+    "slide_index": 4,
+    "start_time": "00:00:30.000",
+    "end_time": "00:00:49.000",
+    "start_seconds": 30.0,
+    "end_seconds": 49.0,
+    "snapshot_image": "snapshots/slide_04.png",
+    "transcript": "Background\nSelf-disclosure\n- Verbal expressions by which a person reveals aspects of himself\nor herself to others(ourard et al., 1971)\n- Offers multiple benefits, including building relationships, enhancing self-\nunderstanding, and relieving stress(Altman et al., 1973)\nABA Inclusive Design Laboratory 2",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:30.000",
+        "end_time": "00:00:49.000",
+        "text": "Background\nSelf-disclosure\n- Verbal expressions by which a person reveals aspects of himself\nor herself to others(ourard et al., 1971)\n- Offers multiple benefits, including building relationships, enhancing self-\nunderstanding, and relieving stress(Altman et al., 1973)\nABA Inclusive Design Laboratory 2"
+      }
+    ]
+  },
+  {
+    "slide_index": 5,
+    "start_time": "00:00:49.000",
+    "end_time": "00:01:07.000",
+    "start_seconds": 49.0,
+    "end_seconds": 67.0,
+    "snapshot_image": "snapshots/slide_05.png",
+    "transcript": "Background\nChatbot Use\n—y\n> Promoting Self-Disclosure Through Chatbots\nLow psychological\n. Similarity Voice\nresistance\n(Bickmore et al., 2020) (Zhao et al., 2025) (Yu et al., 2024)\nABA Inclusive Design Laboratory’ 3",
+    "transcript_segments": [
+      {
+        "start_time": "00:00:49.000",
+        "end_time": "00:01:07.000",
+        "text": "Background\nChatbot Use\n—y\n> Promoting Self-Disclosure Through Chatbots\nLow psychological\n. Similarity Voice\nresistance\n(Bickmore et al., 2020) (Zhao et al., 2025) (Yu et al., 2024)\nABA Inclusive Design Laboratory’ 3"
+      }
+    ]
+  },
+  {
+    "slide_index": 6,
+    "start_time": "00:01:07.000",
+    "end_time": "00:01:18.000",
+    "start_seconds": 67.0,
+    "end_seconds": 78.0,
+    "snapshot_image": "snapshots/slide_06.png",
+    "transcript": "Background\nChatbot Use\n“a\n> Promoting Self-Disclosure Through Chatbots\nLow psychological\n; Similarity Voice\nresistance\n(Bickmore et al., 2020) (Zhao et al., 2025) (Yu et al., 2024)\nABA Inclusive Design Laboratory’ Q",
+    "transcript_segments": [
+      {
+        "start_time": "00:01:07.000",
+        "end_time": "00:01:18.000",
+        "text": "Background\nChatbot Use\n“a\n> Promoting Self-Disclosure Through Chatbots\nLow psychological\n; Similarity Voice\nresistance\n(Bickmore et al., 2020) (Zhao et al., 2025) (Yu et al., 2024)\nABA Inclusive Design Laboratory’ Q"
+      }
+    ]
+  },
+  {
+    "slide_index": 7,
+    "start_time": "00:01:18.000",
+    "end_time": "00:01:29.000",
+    "start_seconds": 78.0,
+    "end_seconds": 89.0,
+    "snapshot_image": "snapshots/slide_07.png",
+    "transcript": "Background\nChatbot Use\n>Promoting Self-Disclosure Through Chatbots\nLow psychological\n; Similarity Voice\nresistance\n(Bickmore et al., 2020) (Zhao et al., 2025) (Yu et al., 2024)\nABA Inclusive Design Laboratory’ e",
+    "transcript_segments": [
+      {
+        "start_time": "00:01:18.000",
+        "end_time": "00:01:29.000",
+        "text": "Background\nChatbot Use\n>Promoting Self-Disclosure Through Chatbots\nLow psychological\n; Similarity Voice\nresistance\n(Bickmore et al., 2020) (Zhao et al., 2025) (Yu et al., 2024)\nABA Inclusive Design Laboratory’ e"
+      }
+    ]
+  },
+  {
+    "slide_index": 8,
+    "start_time": "00:01:29.000",
+    "end_time": "00:01:47.000",
+    "start_seconds": 89.0,
+    "end_seconds": 107.0,
+    "snapshot_image": "snapshots/slide_08.png",
+    "transcript": "Still limited research on how different types of voices\ninfluence self-disclosure",
+    "transcript_segments": [
+      {
+        "start_time": "00:01:29.000",
+        "end_time": "00:01:47.000",
+        "text": "Still limited research on how different types of voices\ninfluence self-disclosure"
+      }
+    ]
+  },
+  {
+    "slide_index": 9,
+    "start_time": "00:01:47.000",
+    "end_time": "00:02:00.000",
+    "start_seconds": 107.0,
+    "end_seconds": 120.0,
+    "snapshot_image": "snapshots/slide_09.png",
+    "transcript": "Background\nClone voice\n- Using Voice Cloning Technology to Investigate Voice Identity =\nABA Inclusive Design Laboratory’",
+    "transcript_segments": [
+      {
+        "start_time": "00:01:47.000",
+        "end_time": "00:02:00.000",
+        "text": "Background\nClone voice\n- Using Voice Cloning Technology to Investigate Voice Identity =\nABA Inclusive Design Laboratory’"
+      }
+    ]
+  },
+  {
+    "slide_index": 10,
+    "start_time": "00:02:00.000",
+    "end_time": "00:02:20.000",
+    "start_seconds": 120.0,
+    "end_seconds": 140.0,
+    "snapshot_image": "snapshots/slide_10.png",
+    "transcript": "Background\nClone voice\n- Using Voice Cloning Technology to Investigate Voice Identity ™\nps p Y p Social\nSelf Family Others distance\nABA Inclusive Design Laboratory’",
+    "transcript_segments": [
+      {
+        "start_time": "00:02:00.000",
+        "end_time": "00:02:20.000",
+        "text": "Background\nClone voice\n- Using Voice Cloning Technology to Investigate Voice Identity ™\nps p Y p Social\nSelf Family Others distance\nABA Inclusive Design Laboratory’"
+      }
+    ]
+  },
+  {
+    "slide_index": 11,
+    "start_time": "00:02:20.000",
+    "end_time": "00:02:28.000",
+    "start_seconds": 140.0,
+    "end_seconds": 148.0,
+    "snapshot_image": "snapshots/slide_11.png",
+    "transcript": "Background\nClone voice\n- Using Voice Cloning Technology to Investigate Voice Identity ™\na Y P Social\nSelf Family Others distance\nPerceived\nattractiveness\nthrough similarity\n(Feng et al., 2025)\nABA Inclusive Design Laboratory’",
+    "transcript_segments": [
+      {
+        "start_time": "00:02:20.000",
+        "end_time": "00:02:28.000",
+        "text": "Background\nClone voice\n- Using Voice Cloning Technology to Investigate Voice Identity ™\na Y P Social\nSelf Family Others distance\nPerceived\nattractiveness\nthrough similarity\n(Feng et al., 2025)\nABA Inclusive Design Laboratory’"
+      }
+    ]
+  },
+  {
+    "slide_index": 12,
+    "start_time": "00:02:28.000",
+    "end_time": "00:02:45.000",
+    "start_seconds": 148.0,
+    "end_seconds": 165.0,
+    "snapshot_image": "snapshots/slide_12.png",
+    "transcript": "Background\nClone voice\n- Using Voice Cloning Technology to Investigate Voice Identity ™\na p P Social\nSelf Family Others distance\nPerceived Transferred familiarity\nattractiveness from existing\nthrough similarity relationships\n(Feng et al., 2025) (Chang et al., 2021)\nABA Inclusive Design Laboratory’",
+    "transcript_segments": [
+      {
+        "start_time": "00:02:28.000",
+        "end_time": "00:02:45.000",
+        "text": "Background\nClone voice\n- Using Voice Cloning Technology to Investigate Voice Identity ™\na p P Social\nSelf Family Others distance\nPerceived Transferred familiarity\nattractiveness from existing\nthrough similarity relationships\n(Feng et al., 2025) (Chang et al., 2021)\nABA Inclusive Design Laboratory’"
+      }
+    ]
+  },
+  {
+    "slide_index": 13,
+    "start_time": "00:02:45.000",
+    "end_time": "00:03:15.000",
+    "start_seconds": 165.0,
+    "end_seconds": 195.0,
+    "snapshot_image": "snapshots/slide_13.png",
+    "transcript": "Background\nRQ\nWe experimentally investigate how self-disclosure differs\nacross voice identities (self, family member, and stranger)\nRQ1. How do impressions of chatbots differ across voice identities and evolve\nover time?\nRQ2. How does self-disclosure vary across voice identities and over time?\nABA Inclusive Design Laboratory’ Y",
+    "transcript_segments": [
+      {
+        "start_time": "00:02:45.000",
+        "end_time": "00:03:15.000",
+        "text": "Background\nRQ\nWe experimentally investigate how self-disclosure differs\nacross voice identities (self, family member, and stranger)\nRQ1. How do impressions of chatbots differ across voice identities and evolve\nover time?\nRQ2. How does self-disclosure vary across voice identities and over time?\nABA Inclusive Design Laboratory’ Y"
+      }
+    ]
+  },
+  {
+    "slide_index": 14,
+    "start_time": "00:03:15.000",
+    "end_time": "00:03:45.000",
+    "start_seconds": 195.0,
+    "end_seconds": 225.0,
+    "snapshot_image": "snapshots/slide_14.png",
+    "transcript": "Method\nExperimental overview\nCondition S Condition F Condition O =\na Participants’ own voice A Participants’ family voice fA Stranger's voice\na —_ , a \\ —\n22 people 19 people 20 people\nABA Inclusive Design Laboratory’ g",
+    "transcript_segments": [
+      {
+        "start_time": "00:03:15.000",
+        "end_time": "00:03:45.000",
+        "text": "Method\nExperimental overview\nCondition S Condition F Condition O =\na Participants’ own voice A Participants’ family voice fA Stranger's voice\na —_ , a \\ —\n22 people 19 people 20 people\nABA Inclusive Design Laboratory’ g"
+      }
+    ]
+  },
+  {
+    "slide_index": 15,
+    "start_time": "00:03:45.000",
+    "end_time": "00:04:06.000",
+    "start_seconds": 225.0,
+    "end_seconds": 246.0,
+    "snapshot_image": "snapshots/slide_15.png",
+    "transcript": "Method\nExperimental overview\nCondition S Condition F Condition O —\nld Participants’ own voice | B eevicivans family voice | 2 Stranger's voice\n= LC]\na —_ eS —\n22 people 19 people 20 people\nConversation with chatbot\n1 week 1 week\nConsent form & 1st Questionnaire 2nd Questionnaire 3rd Questionnaire Interview\nVoice recording | 9\nABA Inclusive Design Laboratory’",
+    "transcript_segments": [
+      {
+        "start_time": "00:03:45.000",
+        "end_time": "00:04:06.000",
+        "text": "Method\nExperimental overview\nCondition S Condition F Condition O —\nld Participants’ own voice | B eevicivans family voice | 2 Stranger's voice\n= LC]\na —_ eS —\n22 people 19 people 20 people\nConversation with chatbot\n1 week 1 week\nConsent form & 1st Questionnaire 2nd Questionnaire 3rd Questionnaire Interview\nVoice recording | 9\nABA Inclusive Design Laboratory’"
+      }
+    ]
+  },
+  {
+    "slide_index": 16,
+    "start_time": "00:04:06.000",
+    "end_time": "00:04:38.000",
+    "start_seconds": 246.0,
+    "end_seconds": 278.0,
+    "snapshot_image": "snapshots/slide_16.png",
+    "transcript": "Method\nConversation with Chatbot\n- Interaction began with the chatbot asking, “How was your day today?” =\n- To assess self-disclosure, the chatbot asked one predefined question per day\nDay1: What is your favorite food? (Low sensitivity)\nDay2: What is your favorite music or book?\nDay3: What do you enjoy or find satisfying about your studies or work?\nDay13: Do you ever feel aversion or resentment toward your friends?\nDay14: What do you dislike most about yourself? (High sensitivity)\nAMAA Inclusive Vesign Caborator 10",
+    "transcript_segments": [
+      {
+        "start_time": "00:04:06.000",
+        "end_time": "00:04:38.000",
+        "text": "Method\nConversation with Chatbot\n- Interaction began with the chatbot asking, “How was your day today?” =\n- To assess self-disclosure, the chatbot asked one predefined question per day\nDay1: What is your favorite food? (Low sensitivity)\nDay2: What is your favorite music or book?\nDay3: What do you enjoy or find satisfying about your studies or work?\nDay13: Do you ever feel aversion or resentment toward your friends?\nDay14: What do you dislike most about yourself? (High sensitivity)\nAMAA Inclusive Vesign Caborator 10"
+      }
+    ]
+  },
+  {
+    "slide_index": 17,
+    "start_time": "00:04:38.000",
+    "end_time": "00:04:53.000",
+    "start_seconds": 278.0,
+    "end_seconds": 293.0,
+    "snapshot_image": "snapshots/slide_17.png",
+    "transcript": "Method\nImplementation\n- Responses were generated using the GPT-40 mini\n- Voice synthesis was performed using the ElevenLabs API.\nGPT4-mini\nC) a response\n: ? —\nVoice chat — ElevenLabs\nvoice cloning\nABA Inclusive Design Laboratory it",
+    "transcript_segments": [
+      {
+        "start_time": "00:04:38.000",
+        "end_time": "00:04:53.000",
+        "text": "Method\nImplementation\n- Responses were generated using the GPT-40 mini\n- Voice synthesis was performed using the ElevenLabs API.\nGPT4-mini\nC) a response\n: ? —\nVoice chat — ElevenLabs\nvoice cloning\nABA Inclusive Design Laboratory it"
+      }
+    ]
+  },
+  {
+    "slide_index": 18,
+    "start_time": "00:04:53.000",
+    "end_time": "00:05:20.000",
+    "start_seconds": 293.0,
+    "end_seconds": 320.0,
+    "snapshot_image": "snapshots/slide_18.png",
+    "transcript": "Method\nMeasures\n- Survey: “Attractive,” “Familiar,” “Trustworthy” (5-point Likert scale)\n- Conversation with chatbot (casualness, amount, and depth of disclosure)\n- Interview data (Qualitative analysis)\nABA Inclusive Design Laboratory 12",
+    "transcript_segments": [
+      {
+        "start_time": "00:04:53.000",
+        "end_time": "00:05:20.000",
+        "text": "Method\nMeasures\n- Survey: “Attractive,” “Familiar,” “Trustworthy” (5-point Likert scale)\n- Conversation with chatbot (casualness, amount, and depth of disclosure)\n- Interview data (Qualitative analysis)\nABA Inclusive Design Laboratory 12"
+      }
+    ]
+  },
+  {
+    "slide_index": 19,
+    "start_time": "00:05:20.000",
+    "end_time": "00:05:31.000",
+    "start_seconds": 320.0,
+    "end_seconds": 331.0,
+    "snapshot_image": "snapshots/slide_19.png",
+    "transcript": "Results\nImpression of chatbots(RQ1)\nSurvey results on chatbot impressions (lo) ) =\n—In condition S, “attractiveness” increased —% [\nsignificantly over the study period =\n5 i) 5 ° 5 i)\nF pe 34 F\nof 4 Ba:\n<b. KN N44 3. £3: aan +\n0 1 20 1 20 1 2 0 1 20 1 20 1 2 0 1 20 1 20 1 2\nWeek Week Week\nABA Inclusive Design Laboratory 13",
+    "transcript_segments": [
+      {
+        "start_time": "00:05:20.000",
+        "end_time": "00:05:31.000",
+        "text": "Results\nImpression of chatbots(RQ1)\nSurvey results on chatbot impressions (lo) ) =\n—In condition S, “attractiveness” increased —% [\nsignificantly over the study period =\n5 i) 5 ° 5 i)\nF pe 34 F\nof 4 Ba:\n<b. KN N44 3. £3: aan +\n0 1 20 1 20 1 2 0 1 20 1 20 1 2 0 1 20 1 20 1 2\nWeek Week Week\nABA Inclusive Design Laboratory 13"
+      }
+    ]
+  },
+  {
+    "slide_index": 20,
+    "start_time": "00:05:31.000",
+    "end_time": "00:05:48.000",
+    "start_seconds": 331.0,
+    "end_seconds": 348.0,
+    "snapshot_image": "snapshots/slide_20.png",
+    "transcript": "Results\nConversation Casualness(RQ1)\nCasualness increased significantly in conditions S and F\n— Suggests increased perceived closeness to the chatbot : ao\naa,\nCondition S Condition F Condition 0\n45 x\nPy 4.0 T °\n3 3.0 | | ’ i 3 if | I\n123 45 6 7 8 9 1011121314 123 45 6 7 8 9 1011121314 123 45 6 7 8 9 10111213 14\nDay Day Day\nABA Inclusive Design Laboratory’ 4",
+    "transcript_segments": [
+      {
+        "start_time": "00:05:31.000",
+        "end_time": "00:05:48.000",
+        "text": "Results\nConversation Casualness(RQ1)\nCasualness increased significantly in conditions S and F\n— Suggests increased perceived closeness to the chatbot : ao\naa,\nCondition S Condition F Condition 0\n45 x\nPy 4.0 T °\n3 3.0 | | ’ i 3 if | I\n123 45 6 7 8 9 1011121314 123 45 6 7 8 9 1011121314 123 45 6 7 8 9 10111213 14\nDay Day Day\nABA Inclusive Design Laboratory’ 4"
+      }
+    ]
+  },
+  {
+    "slide_index": 21,
+    "start_time": "00:05:48.000",
+    "end_time": "00:06:03.000",
+    "start_seconds": 348.0,
+    "end_seconds": 363.0,
+    "snapshot_image": "snapshots/slide_21.png",
+    "transcript": "Results\nConversation length (RQ2)\nThe conversation length was measured Cc@ =\nby the number of characters per participant's utterances\n— A significant increase was observed in condition S\nCondition S Condition F Condition O\n100 i\nFi 80 i £ fl | eed | t\n3 T i | i ’ !\n: 40 i t } t I +\n<= 20\nT2345 678 SMUD 123 45 6 7 8 9 1011121314 123 45 6 7 8 9 101112 1314\nDay Day Day\nABA Inclusive Design Laboratory 15",
+    "transcript_segments": [
+      {
+        "start_time": "00:05:48.000",
+        "end_time": "00:06:03.000",
+        "text": "Results\nConversation length (RQ2)\nThe conversation length was measured Cc@ =\nby the number of characters per participant's utterances\n— A significant increase was observed in condition S\nCondition S Condition F Condition O\n100 i\nFi 80 i £ fl | eed | t\n3 T i | i ’ !\n: 40 i t } t I +\n<= 20\nT2345 678 SMUD 123 45 6 7 8 9 1011121314 123 45 6 7 8 9 101112 1314\nDay Day Day\nABA Inclusive Design Laboratory 15"
+      }
+    ]
+  },
+  {
+    "slide_index": 22,
+    "start_time": "00:06:03.000",
+    "end_time": "00:06:19.000",
+    "start_seconds": 363.0,
+    "end_seconds": 379.0,
+    "snapshot_image": "snapshots/slide_22.png",
+    "transcript": "Results\nDepth of self-disclosure(RQ2)\n-Responses were coded into ee» rc\nNon-disclosure, Peripheral, Intermediate, Core disclosure .\n>A significant decrease was observed only in condition O\nCondition S Condition F Condition O\nMOS Or on 123 4 5 6 7 8 9 1011 1213 14 123 4 5 6 7 8 9 1011 12 13 14\nDay Day Day\nABA Inclusive Design Laboratory 16",
+    "transcript_segments": [
+      {
+        "start_time": "00:06:03.000",
+        "end_time": "00:06:19.000",
+        "text": "Results\nDepth of self-disclosure(RQ2)\n-Responses were coded into ee» rc\nNon-disclosure, Peripheral, Intermediate, Core disclosure .\n>A significant decrease was observed only in condition O\nCondition S Condition F Condition O\nMOS Or on 123 4 5 6 7 8 9 1011 1213 14 123 4 5 6 7 8 9 1011 12 13 14\nDay Day Day\nABA Inclusive Design Laboratory 16"
+      }
+    ]
+  },
+  {
+    "slide_index": 23,
+    "start_time": "00:06:19.000",
+    "end_time": "00:06:31.000",
+    "start_seconds": 379.0,
+    "end_seconds": 391.0,
+    "snapshot_image": "snapshots/slide_23.png",
+    "transcript": "Results\nReflective self-disclosure in condition S(RQ2)\nIn condition S, participants engaged in more reflective self-disclosure\nworked as a company employee until | was 38, and after that, | became independent and started\nworking as a sole proprietor.\n[...], I'd like to continue growing by working on my own [...].\n(S4, response on Day 11)\nABA Inclusive Design Laboratory 7",
+    "transcript_segments": [
+      {
+        "start_time": "00:06:19.000",
+        "end_time": "00:06:31.000",
+        "text": "Results\nReflective self-disclosure in condition S(RQ2)\nIn condition S, participants engaged in more reflective self-disclosure\nworked as a company employee until | was 38, and after that, | became independent and started\nworking as a sole proprietor.\n[...], I'd like to continue growing by working on my own [...].\n(S4, response on Day 11)\nABA Inclusive Design Laboratory 7"
+      }
+    ]
+  },
+  {
+    "slide_index": 24,
+    "start_time": "00:06:31.000",
+    "end_time": "00:06:50.000",
+    "start_seconds": 391.0,
+    "end_seconds": 410.0,
+    "snapshot_image": "snapshots/slide_24.png",
+    "transcript": "Results\nReflective self-disclosure in condition S(RQ2)\nIn condition S, participants engaged in more reflective self-disclosure\nworked as a company employee until | was 38, and after that, | became independent and started\nworking as a sole proprietor.\n[...], I'd like to continue growing by working on my own [...].\n(S4, response on Day 11)\nWhen it comes to expressing my inner thoughts, | feel like\nI'm talking to another version of myself inside me.\nSo | can speak without shame or resistance. [...].\nABA Inclusive Design Laboratory Vv",
+    "transcript_segments": [
+      {
+        "start_time": "00:06:31.000",
+        "end_time": "00:06:50.000",
+        "text": "Results\nReflective self-disclosure in condition S(RQ2)\nIn condition S, participants engaged in more reflective self-disclosure\nworked as a company employee until | was 38, and after that, | became independent and started\nworking as a sole proprietor.\n[...], I'd like to continue growing by working on my own [...].\n(S4, response on Day 11)\nWhen it comes to expressing my inner thoughts, | feel like\nI'm talking to another version of myself inside me.\nSo | can speak without shame or resistance. [...].\nABA Inclusive Design Laboratory Vv"
+      }
+    ]
+  },
+  {
+    "slide_index": 25,
+    "start_time": "00:06:50.000",
+    "end_time": "00:07:01.000",
+    "start_seconds": 410.0,
+    "end_seconds": 421.0,
+    "snapshot_image": "snapshots/slide_25.png",
+    "transcript": "Results\nSelf-reflection in condition S (RQ2)\nParticipants in Condition S reported reflecting on their own\nspeaking style during the conversations\nIt was a learning experience, as | realized there are other ways to respond like that. (S1)\nThe way it responded was very polite, and in that sense, it taught me something about my own\npersonality. (S2)\nABA Inclusive Design Laboratory 18",
+    "transcript_segments": [
+      {
+        "start_time": "00:06:50.000",
+        "end_time": "00:07:01.000",
+        "text": "Results\nSelf-reflection in condition S (RQ2)\nParticipants in Condition S reported reflecting on their own\nspeaking style during the conversations\nIt was a learning experience, as | realized there are other ways to respond like that. (S1)\nThe way it responded was very polite, and in that sense, it taught me something about my own\npersonality. (S2)\nABA Inclusive Design Laboratory 18"
+      }
+    ]
+  },
+  {
+    "slide_index": 26,
+    "start_time": "00:07:01.000",
+    "end_time": "00:07:16.000",
+    "start_seconds": 421.0,
+    "end_seconds": 436.0,
+    "snapshot_image": "snapshots/slide_26.png",
+    "transcript": "Results\nSelf-reflection in condition S (RQ2)\nParticipants in Condition S reported reflecting on their own\nspeaking style during the conversations\nIt was a learning experience, as | realized there are other ways to respond like that. ($1)\nThe way it responded was very polite, and in that sense, it taught me something about my own\npersonality. (S2)\nThe own-voice chatbot may prompt users to reflect on >\nhow they communicate\nABA Inclusive Design Laboratory 18",
+    "transcript_segments": [
+      {
+        "start_time": "00:07:01.000",
+        "end_time": "00:07:16.000",
+        "text": "Results\nSelf-reflection in condition S (RQ2)\nParticipants in Condition S reported reflecting on their own\nspeaking style during the conversations\nIt was a learning experience, as | realized there are other ways to respond like that. ($1)\nThe way it responded was very polite, and in that sense, it taught me something about my own\npersonality. (S2)\nThe own-voice chatbot may prompt users to reflect on >\nhow they communicate\nABA Inclusive Design Laboratory 18"
+      }
+    ]
+  },
+  {
+    "slide_index": 27,
+    "start_time": "00:07:16.000",
+    "end_time": "00:07:31.000",
+    "start_seconds": 436.0,
+    "end_seconds": 451.0,
+    "snapshot_image": "snapshots/slide_27.png",
+    "transcript": "Results\nRelational Constraints on Topic Disclosure(RQ2)\nDisclosure varied depending on the topic in condition F\n- Participant described reluctance to discuss financial matters with a\ndaughter-voice chatbot\n“There was a conversation about I'm investing in stocks, (A)\nand | wondered, Is it okay to talk about this?”\n(F1, daughter's voice)\n, a \\\nABA Inclusive Design Laboratory 19",
+    "transcript_segments": [
+      {
+        "start_time": "00:07:16.000",
+        "end_time": "00:07:31.000",
+        "text": "Results\nRelational Constraints on Topic Disclosure(RQ2)\nDisclosure varied depending on the topic in condition F\n- Participant described reluctance to discuss financial matters with a\ndaughter-voice chatbot\n“There was a conversation about I'm investing in stocks, (A)\nand | wondered, Is it okay to talk about this?”\n(F1, daughter's voice)\n, a \\\nABA Inclusive Design Laboratory 19"
+      }
+    ]
+  },
+  {
+    "slide_index": 28,
+    "start_time": "00:07:31.000",
+    "end_time": "00:07:43.000",
+    "start_seconds": 451.0,
+    "end_seconds": 463.0,
+    "snapshot_image": "snapshots/slide_28.png",
+    "transcript": "Results\nRelational Constraints on Topic Disclosure(RQ2)\nDisclosure varied depending on the topic in condition F\n- When the topic aligned with ordinary family conversations, participants\nreported disclosing without noticeable reluctance\n“When | was asked a question that my father would definitely (6)\nknow, | felt a bit of discomfort, but | ended up talking as if\nwere explaining it again.” Le\n(F6, father’s voice)\nABA Inclusive Design Laboratory 20",
+    "transcript_segments": [
+      {
+        "start_time": "00:07:31.000",
+        "end_time": "00:07:43.000",
+        "text": "Results\nRelational Constraints on Topic Disclosure(RQ2)\nDisclosure varied depending on the topic in condition F\n- When the topic aligned with ordinary family conversations, participants\nreported disclosing without noticeable reluctance\n“When | was asked a question that my father would definitely (6)\nknow, | felt a bit of discomfort, but | ended up talking as if\nwere explaining it again.” Le\n(F6, father’s voice)\nABA Inclusive Design Laboratory 20"
+      }
+    ]
+  },
+  {
+    "slide_index": 29,
+    "start_time": "00:07:43.000",
+    "end_time": "00:08:08.000",
+    "start_seconds": 463.0,
+    "end_seconds": 488.0,
+    "snapshot_image": "snapshots/slide_29.png",
+    "transcript": "Discussion\nSelf-disclosure varies depending on voice identity\n- Condition S: Deeper self-reflective disclosure\n- Condition F: Variation in disclosure depending on family relationships\nABA Inclusive Design Laboratory 21",
+    "transcript_segments": [
+      {
+        "start_time": "00:07:43.000",
+        "end_time": "00:08:08.000",
+        "text": "Discussion\nSelf-disclosure varies depending on voice identity\n- Condition S: Deeper self-reflective disclosure\n- Condition F: Variation in disclosure depending on family relationships\nABA Inclusive Design Laboratory 21"
+      }
+    ]
+  },
+  {
+    "slide_index": 30,
+    "start_time": "00:08:08.000",
+    "end_time": "00:08:21.000",
+    "start_seconds": 488.0,
+    "end_seconds": 501.0,
+    "snapshot_image": "snapshots/slide_30.png",
+    "transcript": "Discussion\nHalo effect toward familiar voices\nIn condition O, the depth of self-disclosure decreased\n-Familiar voices may sustain the depth of self-disclosure\nSelf Family Others distance\nABA Inclusive Design Laboratory’ we",
+    "transcript_segments": [
+      {
+        "start_time": "00:08:08.000",
+        "end_time": "00:08:21.000",
+        "text": "Discussion\nHalo effect toward familiar voices\nIn condition O, the depth of self-disclosure decreased\n-Familiar voices may sustain the depth of self-disclosure\nSelf Family Others distance\nABA Inclusive Design Laboratory’ we"
+      }
+    ]
+  },
+  {
+    "slide_index": 31,
+    "start_time": "00:08:21.000",
+    "end_time": "00:08:33.000",
+    "start_seconds": 501.0,
+    "end_seconds": 513.0,
+    "snapshot_image": "snapshots/slide_31.png",
+    "transcript": "Discussion\nPotential risk\n-Users may unintentionally disclose personal information\nABA Inclusive Design Laboratory 23",
+    "transcript_segments": [
+      {
+        "start_time": "00:08:21.000",
+        "end_time": "00:08:33.000",
+        "text": "Discussion\nPotential risk\n-Users may unintentionally disclose personal information\nABA Inclusive Design Laboratory 23"
+      }
+    ]
+  },
+  {
+    "slide_index": 32,
+    "start_time": "00:08:33.000",
+    "end_time": "00:08:45.000",
+    "start_seconds": 513.0,
+    "end_seconds": 525.0,
+    "snapshot_image": "snapshots/slide_32.png",
+    "transcript": "Conclusion\n— ae\nYS Voice as a critical design factor\nABA Inclusive Design Laboratory’ as",
+    "transcript_segments": [
+      {
+        "start_time": "00:08:33.000",
+        "end_time": "00:08:45.000",
+        "text": "Conclusion\n— ae\nYS Voice as a critical design factor\nABA Inclusive Design Laboratory’ as"
+      }
+    ]
+  },
+  {
+    "slide_index": 33,
+    "start_time": "00:08:45.000",
+    "end_time": "00:08:58.000",
+    "start_seconds": 525.0,
+    "end_seconds": 538.0,
+    "snapshot_image": "snapshots/slide_33.png",
+    "transcript": "Conclusion\nYS Voice as a critical design factor\nDesign that considers potential risks\nMBA Inclusive Design Laboratory 24",
+    "transcript_segments": [
+      {
+        "start_time": "00:08:45.000",
+        "end_time": "00:08:58.000",
+        "text": "Conclusion\nYS Voice as a critical design factor\nDesign that considers potential risks\nMBA Inclusive Design Laboratory 24"
+      }
+    ]
+  },
+  {
+    "slide_index": 34,
+    "start_time": "00:08:58.000",
+    "end_time": "00:09:08.000",
+    "start_seconds": 538.0,
+    "end_seconds": 548.0,
+    "snapshot_image": "snapshots/slide_34.png",
+    "transcript": "Conclusion\nYS Voice as a critical design factor\nDesign that considers potential risks\nGQ Voice selection tailored to users’ needs\nABA Inclusive Design Laboratory 24",
+    "transcript_segments": [
+      {
+        "start_time": "00:08:58.000",
+        "end_time": "00:09:08.000",
+        "text": "Conclusion\nYS Voice as a critical design factor\nDesign that considers potential risks\nGQ Voice selection tailored to users’ needs\nABA Inclusive Design Laboratory 24"
+      }
+    ]
+  },
+  {
+    "slide_index": 35,
+    "start_time": "00:09:08.000",
+    "end_time": "00:09:16.559",
+    "start_seconds": 548.0,
+    "end_seconds": 556.559,
+    "snapshot_image": "snapshots/slide_35.png",
+    "transcript": "Thank you for listening!\nAA Inclusive Design Laboratory 25",
+    "transcript_segments": [
+      {
+        "start_time": "00:09:08.000",
+        "end_time": "00:09:16.559",
+        "text": "Thank you for listening!\nAA Inclusive Design Laboratory 25"
+      }
+    ]
+  }
+]
