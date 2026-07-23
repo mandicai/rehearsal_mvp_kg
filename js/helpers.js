@@ -635,12 +635,20 @@ function buildEntityGraph(triples) {
 // node's actual rendered half-width/half-height (converted into these same
 // abstract units by the caller) never hangs past the container - default 6
 // matches the original flat margin renderEntityGraph still relies on.
+// node.pinnedX/node.pinnedY (already in this function's width/height units,
+// each independently optional) hold that node's x and/or y fixed for the
+// entire simulation - other nodes still repel/spring around it normally, it
+// just never moves along whichever axis is pinned. A node can have just one
+// axis pinned (e.g. goal/takeaway nodes always kept near the top via a
+// pinned y, but still free to spread out horizontally) or both (a
+// manually-dragged node - see renderDependencyStyleGraph's
+// pinnedXPct/pinnedYPct handling below).
 function layoutForceGraph(nodes, edges, width, height, iterations, marginX = 6, marginY = 6) {
   const n = nodes.length;
   nodes.forEach((node, i) => {
     const angle = (i / Math.max(n, 1)) * 2 * Math.PI;
-    node.x = width / 2 + Math.cos(angle) * Math.min(width, height) * 0.35;
-    node.y = height / 2 + Math.sin(angle) * Math.min(width, height) * 0.35;
+    node.x = node.pinnedX != null ? node.pinnedX : width / 2 + Math.cos(angle) * Math.min(width, height) * 0.35;
+    node.y = node.pinnedY != null ? node.pinnedY : height / 2 + Math.sin(angle) * Math.min(width, height) * 0.35;
   });
 
   const k = Math.sqrt((width * height) / Math.max(n, 1));
@@ -677,10 +685,10 @@ function layoutForceGraph(nodes, edges, width, height, iterations, marginX = 6, 
     const temp = Math.min(width, height) * 0.1 * (1 - iter / iterations);
     for (let i = 0; i < n; i++) {
       const dlen = Math.sqrt(dispX[i] * dispX[i] + dispY[i] * dispY[i]) || 0.01;
-      nodes[i].x += (dispX[i] / dlen) * Math.min(dlen, temp);
-      nodes[i].y += (dispY[i] / dlen) * Math.min(dlen, temp);
-      nodes[i].x = Math.min(width - marginX, Math.max(marginX, nodes[i].x));
-      nodes[i].y = Math.min(height - marginY, Math.max(marginY, nodes[i].y));
+      const newX = nodes[i].x + (dispX[i] / dlen) * Math.min(dlen, temp);
+      const newY = nodes[i].y + (dispY[i] / dlen) * Math.min(dlen, temp);
+      nodes[i].x = nodes[i].pinnedX != null ? nodes[i].pinnedX : Math.min(width - marginX, Math.max(marginX, newX));
+      nodes[i].y = nodes[i].pinnedY != null ? nodes[i].pinnedY : Math.min(height - marginY, Math.max(marginY, newY));
     }
   }
 }
@@ -706,22 +714,41 @@ function renderDependencyStyleGraph(containerId, nodes, edges, options) {
   // every other caller pixel-identical to before.
   const ASPECT = options.aspect || 1.8;
   const area = Math.max(options.minArea || 560 * 300, nodes.length * 9000);
-  // wrapPxWidth is always derived from wrapPxHeight (never independently
-  // floored) so the wrap's real aspect ratio exactly matches ASPECT - see
-  // the width-setting note below for why that exactness matters.
+  // Height still comes from the area/aspect formula (so more nodes, or a
+  // caller-requested taller shape, still get more vertical room); width
+  // instead stretches to fill whatever the container actually has, rather
+  // than being derived from ASPECT. If the container is hidden right now
+  // (display:none - e.g. mid-navigation, before its step is shown) its
+  // rect is 0-wide, so fall back to the old ASPECT-derived width for this
+  // one render; the next real render (once visible) measures correctly.
   const wrapPxHeight = Math.max(260, Math.sqrt(area / ASPECT));
-  const wrapPxWidth = wrapPxHeight * ASPECT;
+  const measuredWidth = container.getBoundingClientRect().width;
+  const wrapPxWidth = measuredWidth > 0 ? measuredWidth : wrapPxHeight * ASPECT;
   const HEIGHT = 100;
-  const WIDTH = HEIGHT * ASPECT;
+  // WIDTH (abstract units) tracks the *actual* rendered aspect ratio (not
+  // the nominal ASPECT constant), so the SVG viewBox and node-percentage
+  // positions stay aligned now that the real width can differ from
+  // wrapPxHeight * ASPECT - see the width-setting note below.
+  const WIDTH = HEIGHT * (wrapPxWidth / wrapPxHeight);
 
-  // Widest/tallest node button classes (.graph-node-takeaway etc. up to
-  // 140px wide; a stacked .graph-node-stacked piece node - above-label line
-  // + 56px .graph-node-icon (+ 2px border each side) + its own label below -
-  // makes ~110px tall) - half that, converted into this render's abstract
-  // units, keeps a node's actual edge from ever hanging past the wrap's
-  // boundary (where .graph-scroll's overflow would otherwise clip it).
-  const marginX = (90 / wrapPxWidth) * WIDTH;
-  const marginY = (60 / wrapPxHeight) * HEIGHT;
+  // Widest/tallest node button classes: a .graph-node-multiline piece node
+  // (image + up to 3-line text block beside it) is the widest at 280px;
+  // .graph-node-goal/.graph-node-takeaway wrap their full text across
+  // several lines and can run ~90px tall for a long takeaway. Half the
+  // widest/tallest of these, converted into this render's abstract units,
+  // keeps a node's actual edge from ever hanging past the wrap's boundary
+  // (where .graph-scroll's overflow would otherwise clip it).
+  const marginX = (145 / wrapPxWidth) * WIDTH;
+  const marginY = (65 / wrapPxHeight) * HEIGHT;
+  // A manually-dragged node (see participant-view.js's link-graph mouseup
+  // handler) carries its remembered drop position as a plain 0-100
+  // percentage on one or both axes - translate whichever axis is present
+  // into this render's own abstract width/height units so layoutForceGraph
+  // holds it there instead of recomputing a fresh position for it.
+  nodes.forEach(node => {
+    if (node.pinnedXPct != null) node.pinnedX = (node.pinnedXPct / 100) * WIDTH;
+    if (node.pinnedYPct != null) node.pinnedY = (node.pinnedYPct / 100) * HEIGHT;
+  });
   layoutForceGraph(nodes, edges, WIDTH, HEIGHT, 300, marginX, marginY);
 
   const pairCounts = new Map();
@@ -736,16 +763,16 @@ function renderDependencyStyleGraph(containerId, nodes, edges, options) {
   scroll.className = 'graph-scroll';
   const wrap = document.createElement('div');
   wrap.className = 'graph-wrap';
-  // Setting an exact width (not just min-width) here is what makes this
-  // fix work: .graph-wrap's CSS default is `width: 100%`, which would
-  // otherwise let the wrap's real rendered box end up wider than
-  // wrapPxWidth/wrapPxHeight's 1.8 aspect ratio. Since the node buttons
-  // below are positioned by plain percentage of the wrap's *actual* box,
-  // while the SVG's viewBox scales to preserve its own 1.8 aspect (via the
+  // Setting an exact width (not just relying on .graph-wrap's CSS default
+  // `width: 100%`) is what makes this work: the node buttons below are
+  // positioned by plain percentage of the wrap's *actual* box, while the
+  // SVG's viewBox scales to preserve its own WIDTH:HEIGHT aspect (via the
   // default preserveAspectRatio="xMidYMid meet", letterboxing/centering
   // itself if the box's aspect doesn't match) - any mismatch between the
-  // wrap's real aspect and 1.8 makes edges visually miss the nodes they
-  // connect. Pinning the real width here keeps both perfectly in sync.
+  // wrap's real rendered aspect and WIDTH:HEIGHT makes edges visually miss
+  // the nodes they connect. Since WIDTH is now derived from this exact
+  // wrapPxWidth/wrapPxHeight ratio above, pinning the real width here keeps
+  // both perfectly in sync no matter how wide the container actually is.
   wrap.style.width = `${wrapPxWidth}px`;
   wrap.style.height = `${wrapPxHeight}px`;
 
@@ -808,34 +835,57 @@ function renderDependencyStyleGraph(containerId, nodes, edges, options) {
   nodes.forEach(node => {
     const btn = document.createElement('button');
     btn.type = 'button';
-    // node.aboveLabel switches the node to a stacked (column) layout with its
-    // own text sitting above the image, instead of the default side-by-side
-    // icon+label - used by participant-view.js's link graph to show a piece's
-    // slide/section above its thumbnail rather than next to it.
-    btn.className = `graph-node ${node.aboveLabel ? 'graph-node-stacked' : ''} ${options.nodeClass || ''} ${node.nodeClass || ''}`.trim();
+    btn.className = `graph-node ${node.labelLines ? 'graph-node-multiline' : ''} ${options.nodeClass || ''} ${node.nodeClass || ''}`.trim();
     if (options.isPendingSource && options.isPendingSource(node)) {
       btn.classList.add('pending-source');
-    }
-    if (node.aboveLabel) {
-      const above = document.createElement('span');
-      above.className = 'graph-node-above-label';
-      above.textContent = node.aboveLabel;
-      btn.appendChild(above);
     }
     if (node.imageSrc) {
       const icon = document.createElement('img');
       icon.className = 'graph-node-icon';
+      if (node.circleImage) icon.classList.add('graph-node-icon-circle');
       icon.src = node.imageSrc;
       icon.alt = '';
+      icon.draggable = false;
       btn.appendChild(icon);
     }
-    btn.appendChild(document.createTextNode(node.label));
+    // node.labelLines (e.g. a piece's kind+slide/section/reason) renders as a
+    // vertical stack beside the image, each line its own weight/style (bold,
+    // italic, and/or a typewriter font for a quoted excerpt) - used instead
+    // of the labelPrefix/label single-line pair below when a node needs
+    // more than one line of text.
+    if (node.labelLines) {
+      const lines = document.createElement('span');
+      lines.className = 'graph-node-lines';
+      node.labelLines.forEach(line => {
+        const lineEl = document.createElement(line.bold ? 'b' : 'div');
+        lineEl.className = [
+          'graph-node-line',
+          line.italic ? 'graph-node-line-italic' : '',
+          line.mono ? 'graph-node-line-mono' : '',
+        ].filter(Boolean).join(' ');
+        lineEl.textContent = line.text;
+        lines.appendChild(lineEl);
+      });
+      btn.appendChild(lines);
+    } else if (node.labelPrefix) {
+      // node.labelPrefix (e.g. "Goal for the talk:", "Takeaway:", "Helping")
+      // is rendered bold; node.label (the actual goal/takeaway text, or a
+      // piece's note) is not - keeps the node's own kind/role visually
+      // distinct from participant-authored content sitting right next to it.
+      const prefixEl = document.createElement('b');
+      prefixEl.textContent = node.labelPrefix;
+      btn.appendChild(prefixEl);
+      if (node.label) btn.appendChild(document.createTextNode(` ${node.label}`));
+    } else {
+      btn.appendChild(document.createTextNode(node.label));
+    }
     btn.title = node.title || node.label;
     btn.style.left = `${(node.x / WIDTH) * 100}%`;
     btn.style.top = `${(node.y / HEIGHT) * 100}%`;
     if (node.id !== undefined) btn.dataset.nodeId = node.id;
     if (options.onNodeClick) btn.addEventListener('click', () => options.onNodeClick(node));
-    if (options.onNodeMouseDown) btn.addEventListener('mousedown', () => options.onNodeMouseDown(node));
+    if (options.onNodeMouseDown) btn.addEventListener('mousedown', e => options.onNodeMouseDown(node, e));
+    if (options.onNodeDoubleClick) btn.addEventListener('dblclick', () => options.onNodeDoubleClick(node));
     wrap.appendChild(btn);
   });
 

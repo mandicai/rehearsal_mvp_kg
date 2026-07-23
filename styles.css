@@ -939,24 +939,41 @@ input, select {
   transition: border-color 0.15s ease;
 }
 
-/* Used when a node has an aboveLabel (see js/helpers.js) - stacks that label
-   above the image instead of the default side-by-side icon+label pill. */
-.graph-node-stacked {
-  flex-direction: column;
+.graph-node img {
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+/* Used when a node has labelLines (see js/helpers.js) - a piece's
+   kind+slide/section/reason, stacked vertically beside the image instead of
+   one shorten()'d line, with nothing truncated. */
+.graph-node-multiline {
   white-space: normal;
   overflow: visible;
   text-overflow: clip;
-  border-radius: 10px;
-  padding: 4px 8px 6px;
-  gap: 2px;
-  max-width: 104px;
 }
 
-.graph-node-above-label {
-  font-size: 9px;
-  font-weight: 700;
-  text-align: center;
-  line-height: 1.25;
+.graph-node-lines {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.graph-node-line {
+  font-size: 8px;
+  line-height: 1.3;
+  text-align: left;
+}
+
+.graph-node-line-italic {
+  font-style: italic;
+}
+
+/* Quoted excerpt line on an excerpt-tagged piece - an explicit typewriter
+   font, distinct from the rest of the UI's own monospace (Source Code Pro). */
+.graph-node-line-mono {
+  font-family: 'Courier New', Courier, monospace;
 }
 
 /* --- participant-view.html: slide-image (or, for a drawn-region piece, its
@@ -971,6 +988,13 @@ input, select {
   /* border: 2px solid #FFFFFF; */
   object-fit: cover;
   flex: 0 0 auto;
+}
+
+/* Drawn-region pieces (a "Portion" of a slide) show their cropped close-up
+   as a circle instead of a square, to read as a spotlighted portion rather
+   than a full-slide thumbnail. */
+.graph-node-icon-circle {
+  border-radius: 50%;
 }
 
 .graph-node.active {
@@ -1266,47 +1290,67 @@ input, select {
 /* --- participant-view.html: takeaway/piece link graph node types (same
    shared .graph-node/.graph-wrap rendering as the slide/objective graphs
    above, just color-coded per node kind instead of one uniform look) --- */
+/* Goal/takeaway nodes show their full text (not truncated - see
+   reflectionGraphNodes()), so they wrap across lines in a wider box instead
+   of the ellipsis-clipped single-line pill other node types use; the
+   smaller font keeps that from taking over the whole canvas. Rendered via
+   labelLines (see js/helpers.js) - "Goal for talk:"/"Takeaway:" as its own
+   bold line on top, the actual text below - so .graph-node-multiline
+   already handles the white-space/overflow relaxing; this just re-centers
+   the (left-aligned by default) lines column since there's no image beside it. */
+.graph-node-goal,
+.graph-node-takeaway {
+  font-size: 8px;
+  line-height: 1.35;
+  padding: 6px 10px;
+  max-width: 190px;
+  text-align: center;
+  border-radius: 10px;
+}
+
+.graph-node-goal .graph-node-lines,
+.graph-node-takeaway .graph-node-lines {
+  align-items: center;
+}
+
 .graph-node-goal {
-  font-size: 11px;
-  font-weight: 700;
-  padding: 6px 12px;
   background: #3F51B5;
   color: #FFFFFF;
-  max-width: 140px;
 }
 
 .graph-node-takeaway {
-  font-size: 11px;
-  font-weight: 700;
-  padding: 6px 12px;
   background: #FFFFFF;
   color: #3F51B5;
-  max-width: 140px;
 }
 
 /* Contributing/confusing pieces mark their color on the tagged image itself
    (a ring around .graph-node-icon) rather than filling the whole node pill,
    so the color reads as "this is what got tagged" instead of just a badge. */
 .graph-node-piece-contributing {
-  font-size: 11px;
-  font-weight: 700;
-  padding: 6px 12px;
+  font-size: 8px;
+  /* padding: 6px 12px; */
   background: transparent;
   /* color: #FFFFFF; */
-  max-width: 140px;
+  width: 120px;
   background-color: rgba(46, 125, 50, 0.25);
   /* border-color: var(--cd-success, #2E7D32); */
 }
 
 .graph-node-piece-confusing {
-  font-size: 11px;
-  font-weight: 700;
-  padding: 6px 12px;
+  font-size: 8px;
+  /* padding: 6px 12px; */
   background: transparent;
   /* color: #FFFFFF; */
-  max-width: 140px;
+  width: 120px;
   background-color: rgba(235, 16, 0, 0.25);
   /* border-color: var(--cd-accent, #EB1000); */
+}
+
+/* Whole-slide/excerpt pieces (labelLines - image + 3-line text block beside
+   it) need more width than the single-line pill above. */
+.graph-node-piece-contributing.graph-node-multiline,
+.graph-node-piece-confusing.graph-node-multiline {
+  width: 280px;
 }
 
 /* .graph-node-piece-contributing .graph-node-icon {
@@ -1340,6 +1384,7 @@ input, select {
   background: rgba(255, 255, 255, 0.08);
   border-radius: 6px;
   padding: 8px 12px;
+  margin-top: 5px;
 }
 
 #contributing-pieces-list .dependency-edge-row {
@@ -1360,6 +1405,10 @@ input, select {
 .dependency-edge-row .remove-x:hover {
   opacity: 1;
 }
+
+/* .dependency-edge-row b {
+  width: 10%;
+} */
 
 /* --- participant-view.html: stacked .dependency-edge-row spacing (same
    gap convention as #dependency-edge-list above) --- */
@@ -1394,21 +1443,6 @@ input, select {
   letter-spacing: 0.04em;
 }
 
-/* --- participant-view.html: live line shown while dragging from one link
-   graph node toward another - positioned in viewport (not document) space
-   via `fixed` so it can be drawn straight from getBoundingClientRect()/
-   clientX/clientY without accounting for scroll offsets. --- */
-.link-drag-line {
-  position: fixed;
-  top: 0;
-  left: 0;
-  height: 2px;
-  background: #9E9E9E;
-  transform-origin: 0 50%;
-  pointer-events: none;
-  z-index: 9999;
-}
-
 /* --- participant-view.html: floating popup shown just above a transcript
    text selection, offering to tag it - anchored via translate so `left`/
    `top` (set in JS from the selection's bounding rect) mark its bottom-center
@@ -1423,6 +1457,70 @@ input, select {
   border: 1px solid var(--cd-border-strong, rgba(38, 37, 35, 0.28));
   border-radius: 6px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  z-index: 9999;
+}
+
+/* The note-writing step right after choosing helping/confusing in the popup
+   above - floats at that same spot (see beginPieceNote()) instead of always
+   appearing in the fixed tagging column, so the note stays visually tied to
+   whatever slide/region/excerpt it's about. */
+.note-form-popup {
+  position: fixed;
+  transform: translate(-50%, -100%);
+  width: 260px;
+  padding: 10px;
+  background: var(--cd-card-bg, #FFFFFF);
+  border: 1px solid var(--cd-border-strong, rgba(38, 37, 35, 0.28));
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  z-index: 9999;
+}
+
+/* --- participant-view.html: "Suggest improvements" step - popup of
+   toggleable options shown near a clicked confusing node (see
+   showImprovementPopup()). --- */
+.improvement-popup {
+  position: fixed;
+  transform: translate(-50%, -100%);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 200px;
+  padding: 8px;
+  background: var(--cd-card-bg, #FFFFFF);
+  border: 1px solid var(--cd-border-strong, rgba(38, 37, 35, 0.28));
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  z-index: 9999;
+}
+
+.improvement-popup button {
+  /* text-align: left; */
+  font-size: 10px;
+  font-weight: normal;
+  white-space: normal;
+  line-height: 1.3;
+}
+
+.improvement-popup button.selected {
+  background: var(--cd-accent, #EB1000);
+  color: #FFFFFF;
+  border-color: var(--cd-accent, #EB1000);
+}
+
+/* --- participant-view.html: live line shown from a double-clicked
+   "pending source" node to the cursor while waiting for the second
+   double-click that completes a link - viewport (not document) space via
+   `fixed` so it can be drawn straight from getBoundingClientRect()/
+   clientX/clientY without accounting for scroll offsets. --- */
+.pending-edge-line {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 2px;
+  background: #9E9E9E;
+  transform-origin: 0 50%;
+  pointer-events: none;
   z-index: 9999;
 }
 

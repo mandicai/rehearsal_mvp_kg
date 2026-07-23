@@ -114,21 +114,34 @@ let slideObjectives = initialObjectivesState.slideObjectives;
 let participants = loadParticipants();
 
 let audioObjectUrl = null;
+// Optional real video file (video.mp4) alongside a deck's slides.json/
+// narration.mp3 - if present, it replaces the slide-image + narration-audio
+// playback in the live presentation step (see beginPresentation()); most
+// decks won't have one and just use the slide+audio player as before.
+let videoObjectUrl = null;
 let currentParticipant = null;
 let playerActiveIndex = 0;
 
 // --- Reflection-phase state (participant mode only, reset per session) ---
 let reflectionActiveSlideIndex = null; // which slide's transcript is shown in the reference panel
 let pieceNoteDraft = null;             // { type, slide_index, excerpt } while the note form is open
-let linkDragSourceId = null;   // set on node mousedown, cleared on mouseup, drives the drag-to-link gesture
+let pendingEdgeSourceId = null; // set by double-clicking a node, cleared on double-clicking it again or completing a link
 let pendingLinkDraft = null;   // { from_id, to_id } while the predicate form is open
+// Manually-dragged link-graph node positions (dropped on empty canvas rather
+// than onto another node - see the link-graph mouseup handler), keyed by
+// node id as { x, y } percentages of the graph wrap. Survives re-renders
+// within a session (e.g. after adding a takeaway) since reflectionGraphNodes()
+// rebuilds fresh node objects on every call; reset per participant below.
+let linkNodePinnedPositions = {};
 
 // Reflection is three sequential steps: state all takeaways (freely add/
 // edit/delete), tag parts of the presentation (global, not tied to any one
 // takeaway), then link/cluster those parts with the takeaways and the
 // participant's stated pre-talk goal - then finish (reveal the cut/add +
 // ratings sections).
-const REFLECTION_STEPS = ['reflection-step-takeaway', 'reflection-step-build-up', 'reflection-step-link'];
+const REFLECTION_STEPS = [
+  'reflection-step-takeaway', 'reflection-step-build-up', 'reflection-step-link', 'reflection-step-improve',
+];
 let reflectionStepIndex = 0;
 let takeawayEditDraftId = null; // set while editing an existing takeaway in place; null while adding a new one
 
@@ -606,7 +619,16 @@ function loadDeckFolder(folder, { resetTakeaways = true } = {}) {
     .then(blob => {
       if (audioObjectUrl) URL.revokeObjectURL(audioObjectUrl);
       audioObjectUrl = URL.createObjectURL(blob);
-      setStatus('deck-load-status', `Loaded ${slides.length} slides + narration audio from ${deckFolder}/`);
+      // video.mp4 is optional - a 404 here just means this deck plays the
+      // usual slide-image + narration-audio way, so it's not an error.
+      return fetch(`/${deckFolder}/video.mp4`);
+    })
+    .then(res => (res.ok ? res.blob() : null))
+    .then(blob => {
+      if (videoObjectUrl) URL.revokeObjectURL(videoObjectUrl);
+      videoObjectUrl = blob ? URL.createObjectURL(blob) : null;
+      const videoNote = videoObjectUrl ? ' + video (will play instead of slides)' : '';
+      setStatus('deck-load-status', `Loaded ${slides.length} slides + narration audio from ${deckFolder}/${videoNote}`);
     })
     .catch(err => setStatus('deck-load-status', `Could not load deck: ${err.message}`, true));
 }
@@ -654,6 +676,7 @@ document.getElementById('start-participant-mode-btn').addEventListener('click', 
 
 function switchToSetupMode() {
   presentationAudio.pause();
+  document.getElementById('presentation-video').pause();
   document.getElementById('participant-view').style.display = 'none';
   document.getElementById('setup-view').style.display = '';
   renderParticipantCountStatus();
@@ -878,8 +901,20 @@ function beginPresentation() {
   document.getElementById('reflection-module').style.display = 'none';
 
   updatePlayerSlide(0);
-  presentationAudio.src = audioObjectUrl;
-  presentationAudio.currentTime = 0;
+  const presentationVideo = document.getElementById('presentation-video');
+  if (videoObjectUrl) {
+    document.getElementById('player-slide-display').style.display = 'none';
+    presentationAudio.style.display = 'none';
+    presentationVideo.style.display = '';
+    presentationVideo.src = videoObjectUrl;
+    presentationVideo.currentTime = 0;
+  } else {
+    document.getElementById('player-slide-display').style.display = '';
+    presentationAudio.style.display = '';
+    presentationVideo.style.display = 'none';
+    presentationAudio.src = audioObjectUrl;
+    presentationAudio.currentTime = 0;
+  }
 }
 
 function updatePlayerSlide(index) {
@@ -905,10 +940,19 @@ presentationAudio.addEventListener('ended', () => {
   enterReflectionPhase();
 });
 
+// Plain "watch to the end" trigger for decks using video.mp4 instead of the
+// slide+audio player - no per-slide auto-advance needed since there are no
+// separate slide timestamps to sync against during video playback.
+document.getElementById('presentation-video').addEventListener('ended', () => {
+  if (!currentParticipant) return;
+  enterReflectionPhase();
+});
+
 function finalizeSession() {
   participants.push(currentParticipant);
   saveParticipants();
   presentationAudio.pause();
+  document.getElementById('presentation-video').pause();
   stopParticipantAudioRecording(); // downloads the recording before resetParticipantView() no-ops on it
   resetParticipantView();
   setStatus('pre-nav-status', 'Thanks! Your responses have been recorded. Ready for a new participant.');
@@ -918,6 +962,7 @@ function finalizeSession() {
 
 function enterReflectionPhase() {
   presentationAudio.pause();
+  document.getElementById('presentation-video').pause();
   document.getElementById('presentation-player-module').style.display = 'none';
   document.getElementById('reflection-module').style.display = '';
 
@@ -925,10 +970,12 @@ function enterReflectionPhase() {
   editsActiveSlideIndex = null;
   pieceNoteDraft = null;
   editNoteDraft = null;
-  linkDragSourceId = null;
+  pendingEdgeSourceId = null;
+  clearPendingEdgeLine();
+  hideImprovementPopup();
   pendingLinkDraft = null;
+  linkNodePinnedPositions = {};
   takeawayEditDraftId = null;
-  clearLinkDragLine();
   hideSelectionTagPopup();
   hideEditSelectionTagPopup();
 
@@ -983,7 +1030,8 @@ function renderTalkGoalReminder() {
   const reminderEl = document.getElementById('talk-goal-reminder');
   const outcomeEl = document.getElementById('talk-goal-outcome-module');
   if (goalText) {
-    reminderEl.textContent = `Reminder — before watching, you said you wanted to get out of this talk: "${goalText}"`;
+    reminderEl.innerHTML = '';
+    appendBoldValueSpan(reminderEl, 'Goal for talk:', `"${goalText}"`);
     reminderEl.style.display = '';
     outcomeEl.style.display = '';
   } else {
@@ -1024,7 +1072,8 @@ function renderBuildUpReminder() {
   const goalText = (currentParticipant.talk_goal || '').trim();
   const goalEl = document.getElementById('build-up-goal-reminder');
   if (goalText) {
-    goalEl.textContent = `What you wanted to get out of this talk: "${goalText}"`;
+    goalEl.innerHTML = '';
+    appendBoldValueSpan(goalEl, 'Goal for talk:', `"${goalText}"`);
     goalEl.style.display = '';
   } else {
     goalEl.style.display = 'none';
@@ -1034,7 +1083,7 @@ function renderBuildUpReminder() {
   currentParticipant.takeaways.forEach(takeaway => {
     const row = document.createElement('div');
     row.className = 'dependency-edge-row';
-    row.textContent = takeaway.text;
+    appendBoldValueSpan(row, 'Takeaway:', takeaway.text);
     list.appendChild(row);
   });
 }
@@ -1178,20 +1227,42 @@ document.getElementById('reflection-nav-next-btn').addEventListener('click', () 
     document.getElementById('submit-reflection-btn').style.display = '';
     return;
   }
-  if (reflectionStepIndex === 1) renderLinkGraph(); // build-up -> link transition needs a fresh graph
+  const enteringLink = reflectionStepIndex === 1;
+  const enteringImprove = reflectionStepIndex === 2;
+  // Show the next step first, THEN render its graph - renderDependencyStyleGraph()
+  // now measures the container's actual width to stretch the canvas to fit,
+  // which reads as 0 while the container is still display:none.
   showReflectionStep(reflectionStepIndex + 1);
+  if (enteringLink) renderLinkGraph(); // build-up -> link transition needs a fresh graph
+  if (enteringImprove) renderImproveGraph(); // link -> improve transition needs a fresh graph
 });
 
-function buildRemovableRow(labelText, onRemove) {
+// Appends a bold label + value as one flexible span (same shape as
+// buildRemovableRow()'s boldPrefix handling below, minus the remove-x).
+function appendBoldValueSpan(container, boldText, valueText) {
+  const span = document.createElement('span');
+  span.style.flex = '1 1 0%';
+  const bold = document.createElement('b');
+  bold.textContent = boldText;
+  span.appendChild(bold);
+  span.appendChild(document.createTextNode(` ${valueText}`));
+  container.appendChild(span);
+}
+
+function buildRemovableRow(labelText, onRemove, boldPrefix) {
   const row = document.createElement('div');
   row.className = 'dependency-edge-row';
-  const label = document.createElement('span');
-  label.textContent = labelText;
+  if (boldPrefix) {
+    appendBoldValueSpan(row, boldPrefix, labelText);
+  } else {
+    const label = document.createElement('span');
+    label.textContent = labelText;
+    row.appendChild(label);
+  }
   const removeX = document.createElement('span');
   removeX.className = 'remove-x';
   removeX.textContent = '×';
   removeX.addEventListener('click', onRemove);
-  row.appendChild(label);
   row.appendChild(removeX);
   return row;
 }
@@ -1203,10 +1274,7 @@ function renderTakeawaysList() {
     const row = document.createElement('div');
     row.className = 'dependency-edge-row';
 
-    const text = document.createElement('span');
-    text.textContent = takeaway.text;
-    text.style.flex = '1';
-    row.appendChild(text);
+    appendBoldValueSpan(row, 'Takeaway:', takeaway.text);
 
     const editLink = document.createElement('span');
     editLink.className = 'remove-x';
@@ -1344,9 +1412,13 @@ function setupRegionDrawing({ imgId, svgId, isSlideSelected, onRegionDrawn }) {
 function beginPieceNote(type, slideIndex, excerpt, region) {
   pieceNoteDraft = { type, slide_index: slideIndex, excerpt: excerpt || null, region: region || null };
   document.getElementById('piece-note-input').value = '';
-  document.getElementById('piece-note-form').style.display = '';
-  const quote = excerpt ? ` ("${shorten(excerpt)}")` : '';
-  setStatus('piece-picker-status', `Tagged Slide ${slideIndex}${quote} as ${type}. Add an optional note and save.`);
+  const form = document.getElementById('piece-note-form');
+  form.style.display = '';
+  // Anchor at the same spot the helping/confusing choice popup was just
+  // shown (selectionTagPopup's left/top persist after hideSelectionTagPopup()
+  // hides it) so the note stays right next to whatever was clicked/circled.
+  form.style.left = selectionTagPopup.style.left;
+  form.style.top = selectionTagPopup.style.top;
   renderReflectionActiveSlideImage();
 }
 
@@ -1452,6 +1524,9 @@ document.getElementById('save-piece-btn').addEventListener('click', () => {
     region: pieceNoteDraft.region,
     regionThumbnail,
     note: document.getElementById('piece-note-input').value.trim(),
+    // Only meaningful for confusing pieces - see "Suggest improvements"
+    // (REFLECTION_STEPS[3], renderImproveGraph()).
+    improvements: [],
   });
   pieceNoteDraft = null;
   document.getElementById('piece-note-form').style.display = 'none';
@@ -1475,23 +1550,22 @@ function renderPiecesLists() {
   confusingList.innerHTML = '';
   currentParticipant.pieces.forEach(piece => {
     const list = piece.type === 'helping' ? contributingList : confusingList;
-    const quote = piece.excerpt ? `: "${piece.excerpt}"` : '';
+    const quote = piece.excerpt ? ` "${piece.excerpt}"` : '';
     const note = piece.note ? ` — ${piece.note}` : '';
-    list.appendChild(buildRemovableRow(`Slide ${piece.slide_index}${quote}${note}`, () => {
+    list.appendChild(buildRemovableRow(`${quote}${note}`, () => {
       currentParticipant.pieces = currentParticipant.pieces.filter(p => p.id !== piece.id);
       currentParticipant.links = currentParticipant.links.filter(l => l.from_id !== piece.id && l.to_id !== piece.id);
       renderPiecesLists();
       renderLinkGraph();
       renderReflectionActiveSlideImage();
-    }));
+    }, `Slide ${piece.slide_index}:`));
   });
 }
 
 // --- Reflection phase: Link Them Together (reuses helpers.js's shared
-// renderDependencyStyleGraph; click-drag from one node to another to link
-// them - mousedown on the source via onNodeMouseDown, then a page-wide
-// mouseup checks whatever's under the pointer via elementFromPoint, same
-// pattern as the carousel's drag-to-select-a-section). ---
+// renderDependencyStyleGraph). Click-drag a node to move it around the
+// canvas (see makeNodeMouseDownHandler); double-click a node then
+// double-click another to link them (see onLinkNodeDoubleClick). ---
 
 // Graph includes: the participant's stated pre-talk goal (from the
 // familiarity step's "what do you want to get out of this talk?"), every
@@ -1506,50 +1580,180 @@ function pieceGraphNode(p, fallbackImageSrc) {
   const kind = p.type === 'helping' ? 'Helping' : 'Confusing';
   const nodeClass = p.type === 'helping' ? 'graph-node-piece-contributing' : 'graph-node-piece-confusing';
   const section = findSectionForSlide(p.slide_index);
-  const slideText = section && section.title && section.title.trim()
-    ? `Slide ${p.slide_index} — ${section.title.trim()}`
-    : `Slide ${p.slide_index}`;
+  const sectionTitle = section && section.title && section.title.trim() ? section.title.trim() : null;
+  const slideText = sectionTitle ? `Slide ${p.slide_index} — ${sectionTitle}` : `Slide ${p.slide_index}`;
   const detail = p.excerpt ? `: "${p.excerpt}"` : '';
   const title = `${slideText}${detail}${p.note ? ` — ${p.note}` : ''}`;
-  if (p.region) {
-    return {
-      id: p.id, label: kind, aboveLabel: shorten(slideText), title, nodeClass,
-      imageSrc: p.regionThumbnail || fallbackImageSrc,
-    };
+
+  // A drawn-region piece is a "Portion" of the slide (shown as a circular
+  // close-up crop); an excerpt-tagged piece names itself an "Excerpt"; a
+  // whole-slide piece names the slide directly. Section follows beneath,
+  // then either the highlighted excerpt itself (in quotes, typewriter font -
+  // any separately-written note stays tooltip-only in this case) or, when
+  // there's no excerpt, the participant's reason in italics - each omitted
+  // if there's nothing to show rather than a placeholder.
+  const firstLineText = p.region
+    ? `Slide ${p.slide_index} Portion ${kind}`
+    : p.excerpt
+      ? `Slide ${p.slide_index} Excerpt ${kind}`
+      : `Slide ${p.slide_index} ${kind}`;
+  const labelLines = [{ text: firstLineText, bold: true }];
+  if (sectionTitle) labelLines.push({ text: `in ${sectionTitle}` });
+  if (p.excerpt) {
+    labelLines.push({ text: `"${p.excerpt}"`, mono: true });
+  } else if (p.note) {
+    labelLines.push({ text: p.note, italic: true });
   }
+
   return {
-    id: p.id, label: shorten(`${kind}: ${p.excerpt || slideText}`), title, nodeClass,
-    imageSrc: fallbackImageSrc,
+    id: p.id, labelLines, title, nodeClass,
+    circleImage: !!p.region,
+    imageSrc: (p.region && p.regionThumbnail) || fallbackImageSrc,
   };
 }
+
+// Goal/takeaway nodes are always kept near the top of the canvas (a pinned
+// y, but x still free to spread out via the normal force layout) unless the
+// participant has manually dragged that node elsewhere - see the
+// pinnedYPct handling in both graph-node functions below.
+const TOP_ROW_Y_PCT = 12;
 
 function reflectionGraphNodes() {
   const goalText = (currentParticipant.talk_goal || '').trim();
   const goalNodes = goalText ? [{
-    id: 'goal', label: `Desired takeaway: ${shorten(goalText)}`, title: goalText, nodeClass: 'graph-node-goal',
+    id: 'goal', labelLines: [{ text: 'Goal for talk:', bold: true }, { text: goalText }], title: goalText,
+    nodeClass: 'graph-node-goal',
   }] : [];
   const takeawayNodes = currentParticipant.takeaways.map(t => ({
-    id: t.id, label: `Takeaway: ${shorten(t.text)}`, title: t.text, nodeClass: 'graph-node-takeaway',
+    id: t.id, labelLines: [{ text: 'Takeaway:', bold: true }, { text: t.text }], title: t.text,
+    nodeClass: 'graph-node-takeaway',
   }));
   const pieceNodes = currentParticipant.pieces.map(p => {
     const slide = slides.find(s => s.slide_index === p.slide_index);
     return pieceGraphNode(p, slide ? `/${slide.snapshot_image}` : null);
   });
-  return [...goalNodes, ...takeawayNodes, ...pieceNodes];
+  const nodes = [...goalNodes, ...takeawayNodes, ...pieceNodes];
+  // Re-apply any node the participant has manually dragged to a specific
+  // spot (see the link-graph mouseup handler) - node objects here are
+  // rebuilt fresh every call, so this has to be re-attached each time.
+  nodes.forEach(node => {
+    const pinned = linkNodePinnedPositions[node.id];
+    if (pinned) {
+      node.pinnedXPct = pinned.x;
+      node.pinnedYPct = pinned.y;
+    } else if (node.nodeClass === 'graph-node-goal' || node.nodeClass === 'graph-node-takeaway') {
+      node.pinnedYPct = TOP_ROW_Y_PCT;
+    }
+  });
+  return nodes;
 }
 
-function onLinkNodeMouseDown(node) {
-  linkDragSourceId = node.id;
-  renderLinkGraph();
+// Node repositioning: mousedown+drag moves the node live under the cursor
+// (see the mousemove handler below), snapping into its dropped spot on
+// release (see linkNodePinnedPositions above). A small movement threshold
+// distinguishes a real drag from the two quick clicks of a double-click
+// (see onLinkNodeDoubleClick below, which is how edges are made instead).
+// Shared across both the "Connect tags" (#link-graph) and "Suggest
+// improvements" (#improve-graph) graphs, which show the same nodes/edges and
+// the same shared linkNodePinnedPositions - draggingNodeContainerId tracks
+// which of the two a given drag started in.
+let draggingNodeId = null;
+let draggingNodeContainerId = null;
+let draggingNodeEl = null;
+let draggingStartClientX = 0;
+let draggingStartClientY = 0;
+let draggingMoved = false;
+const DRAG_MOVE_THRESHOLD_PX = 4;
+
+function makeNodeMouseDownHandler(containerId) {
+  return (node, e) => {
+    draggingNodeId = node.id;
+    draggingNodeContainerId = containerId;
+    draggingNodeEl = document.querySelector(`#${containerId} .graph-node[data-node-id="${node.id}"]`);
+    draggingStartClientX = e.clientX;
+    draggingStartClientY = e.clientY;
+    draggingMoved = false;
+  };
 }
 
-// Drawn fresh on each mousemove while dragging - a `fixed`-positioned div
-// stretched/rotated between the source node's current screen position and
-// the cursor, so the participant can see the link forming before they drop it.
-let linkDragLineEl = null;
+// Cursor position as a 0-100 percentage of the given graph's wrap, clamped
+// to stay inside it - the same coordinate space node buttons are positioned in.
+// Keeps a dragged node's center at least half its own box away from the
+// wrap's edge (same 145/65px margin the auto force-layout uses in
+// helpers.js) - without this, a node could be dragged so its center sits
+// right at 0%/100%, hanging half its (up to 280px wide) box off the visible
+// canvas instead of stopping fully inside it.
+const DRAG_MARGIN_X_PX = 145;
+const DRAG_MARGIN_Y_PX = 65;
 
-function updateLinkDragLine(clientX, clientY) {
-  const sourceEl = document.querySelector(`#link-graph .graph-node[data-node-id="${linkDragSourceId}"]`);
+function linkGraphWrapPercent(containerId, clientX, clientY) {
+  const wrap = document.querySelector(`#${containerId} .graph-wrap`);
+  const rect = wrap?.getBoundingClientRect();
+  if (!rect) return null;
+  const marginX = Math.min(DRAG_MARGIN_X_PX, rect.width / 2);
+  const marginY = Math.min(DRAG_MARGIN_Y_PX, rect.height / 2);
+  const x = Math.min(rect.width - marginX, Math.max(marginX, clientX - rect.left));
+  const y = Math.min(rect.height - marginY, Math.max(marginY, clientY - rect.top));
+  return { x: (x / rect.width) * 100, y: (y / rect.height) * 100 };
+}
+
+document.addEventListener('mousemove', e => {
+  if (draggingNodeId === null || !draggingNodeEl) return;
+  if (!draggingMoved) {
+    const dx = e.clientX - draggingStartClientX;
+    const dy = e.clientY - draggingStartClientY;
+    if (Math.sqrt(dx * dx + dy * dy) < DRAG_MOVE_THRESHOLD_PX) return;
+    draggingMoved = true;
+  }
+  const pct = linkGraphWrapPercent(draggingNodeContainerId, e.clientX, e.clientY);
+  if (!pct) return;
+  draggingNodeEl.style.left = `${pct.x}%`;
+  draggingNodeEl.style.top = `${pct.y}%`;
+});
+
+document.addEventListener('mouseup', e => {
+  if (draggingNodeId === null) return;
+  const nodeId = draggingNodeId;
+  const containerId = draggingNodeContainerId;
+  const moved = draggingMoved;
+  draggingNodeId = null;
+  draggingNodeContainerId = null;
+  draggingNodeEl = null;
+  draggingMoved = false;
+  // A real drag still fires a native 'click' on mouseup (the button just
+  // followed the cursor, so mouseup lands back on the same element) - swallow
+  // that one click so it can't also open the improve-graph's node popup
+  // right after repositioning a node.
+  if (moved) suppressNextNodeClick = true;
+  if (!moved || !currentParticipant) return;
+  const pct = linkGraphWrapPercent(containerId, e.clientX, e.clientY);
+  if (pct) {
+    linkNodePinnedPositions[nodeId] = pct;
+    // Both graphs share the same node positions, so keep them in sync
+    // regardless of which one the drag happened in.
+    renderLinkGraph();
+    renderImproveGraph();
+  }
+});
+
+let suppressNextNodeClick = false;
+document.addEventListener('click', e => {
+  if (!suppressNextNodeClick) return;
+  suppressNextNodeClick = false;
+  if (e.target.closest('.graph-node')) {
+    e.stopPropagation();
+    e.preventDefault();
+  }
+}, true);
+
+// Drawn/updated on every mousemove while a pending edge source is selected
+// (see onLinkNodeDoubleClick) - a straight line from that node to the
+// cursor, so the participant can see the connection forming in the interim
+// between the first and second double-click, not just after both.
+let pendingEdgeLineEl = null;
+
+function updatePendingEdgeLine(clientX, clientY) {
+  const sourceEl = document.querySelector(`#link-graph .graph-node[data-node-id="${pendingEdgeSourceId}"]`);
   if (!sourceEl) return;
   const rect = sourceEl.getBoundingClientRect();
   const x1 = rect.left + rect.width / 2;
@@ -1559,44 +1763,57 @@ function updateLinkDragLine(clientX, clientY) {
   const length = Math.sqrt(dx * dx + dy * dy);
   const angle = Math.atan2(dy, dx) * 180 / Math.PI;
 
-  if (!linkDragLineEl) {
-    linkDragLineEl = document.createElement('div');
-    linkDragLineEl.className = 'link-drag-line';
-    document.body.appendChild(linkDragLineEl);
+  if (!pendingEdgeLineEl) {
+    pendingEdgeLineEl = document.createElement('div');
+    pendingEdgeLineEl.className = 'pending-edge-line';
+    document.body.appendChild(pendingEdgeLineEl);
   }
-  linkDragLineEl.style.left = `${x1}px`;
-  linkDragLineEl.style.top = `${y1}px`;
-  linkDragLineEl.style.width = `${length}px`;
-  linkDragLineEl.style.transform = `rotate(${angle}deg)`;
+  pendingEdgeLineEl.style.left = `${x1}px`;
+  pendingEdgeLineEl.style.top = `${y1}px`;
+  pendingEdgeLineEl.style.width = `${length}px`;
+  pendingEdgeLineEl.style.transform = `rotate(${angle}deg)`;
 }
 
-function clearLinkDragLine() {
-  if (linkDragLineEl) {
-    linkDragLineEl.remove();
-    linkDragLineEl = null;
+function clearPendingEdgeLine() {
+  if (pendingEdgeLineEl) {
+    pendingEdgeLineEl.remove();
+    pendingEdgeLineEl = null;
   }
 }
 
 document.addEventListener('mousemove', e => {
-  if (linkDragSourceId === null) return;
-  updateLinkDragLine(e.clientX, e.clientY);
+  if (pendingEdgeSourceId === null) return;
+  updatePendingEdgeLine(e.clientX, e.clientY);
 });
 
-document.addEventListener('mouseup', e => {
-  if (linkDragSourceId === null) return;
-  const sourceId = linkDragSourceId;
-  linkDragSourceId = null;
-  clearLinkDragLine();
-  renderLinkGraph();
-
+// Edge creation: double-click a node to mark it as the pending source
+// (highlighted via isPendingSource in renderLinkGraph, with a line to the
+// cursor via updatePendingEdgeLine above), then double-click a different
+// node to link them. Double-clicking the same pending node again cancels
+// the selection instead.
+function onLinkNodeDoubleClick(node) {
   if (!currentParticipant) return;
-  const nodeEl = document.elementFromPoint(e.clientX, e.clientY)?.closest('.graph-node');
-  const targetId = nodeEl?.dataset.nodeId;
-  if (!targetId || targetId === sourceId) return;
+  if (pendingEdgeSourceId === null) {
+    pendingEdgeSourceId = node.id;
+    renderLinkGraph();
+    return;
+  }
+  if (pendingEdgeSourceId === node.id) {
+    pendingEdgeSourceId = null;
+    clearPendingEdgeLine();
+    renderLinkGraph();
+    return;
+  }
+
+  const sourceId = pendingEdgeSourceId;
+  const targetId = node.id;
+  pendingEdgeSourceId = null;
+  clearPendingEdgeLine();
 
   const exists = currentParticipant.links.some(l => l.from_id === sourceId && l.to_id === targetId);
   if (exists) {
     setStatus('link-graph-status', 'That link already exists.', true);
+    renderLinkGraph();
     return;
   }
 
@@ -1610,7 +1827,7 @@ document.addEventListener('mouseup', e => {
   document.getElementById('link-predicate-input').value = '';
   document.getElementById('link-predicate-form').style.display = '';
   setStatus('link-graph-status', '');
-});
+}
 
 document.getElementById('save-link-btn').addEventListener('click', () => {
   if (!pendingLinkDraft) return;
@@ -1625,22 +1842,44 @@ document.getElementById('cancel-link-btn').addEventListener('click', () => {
   document.getElementById('link-predicate-form').style.display = 'none';
 });
 
-function nodeTitleById(nodes, id) {
-  const node = nodes.find(n => n.id === id);
-  return node ? node.title : id;
+// Appends a node's bold identifying label (its own labelLines[0] - "Goal for
+// talk:", "Takeaway:", or a piece's "Slide N ... Kind") to a connection-list
+// row, so links are scannable by the same identity the node itself shows -
+// instead of the old full descriptive node.title tooltip text. Goal/takeaway
+// nodes also get their (shortened) text after the bold prefix, since the
+// prefix alone isn't identifying on its own; a piece's bold label already is.
+function appendConnectionLabel(container, node, fallbackId) {
+  if (!node) {
+    container.appendChild(document.createTextNode(fallbackId));
+    return;
+  }
+  const bold = document.createElement('b');
+  bold.textContent = node.labelLines[0].text;
+  container.appendChild(bold);
+  const isGoalOrTakeaway = node.nodeClass === 'graph-node-goal' || node.nodeClass === 'graph-node-takeaway';
+  if (isGoalOrTakeaway) container.appendChild(document.createTextNode(` ${shorten(node.labelLines[1].text)}`));
 }
 
 function renderLinkEdgeList(nodes) {
   const list = document.getElementById('link-edge-list');
   list.innerHTML = '';
   currentParticipant.links.forEach(link => {
-    const arrow = link.predicate
-      ? `${nodeTitleById(nodes, link.from_id)} --[${link.predicate}]--> ${nodeTitleById(nodes, link.to_id)}`
-      : `${nodeTitleById(nodes, link.from_id)} → ${nodeTitleById(nodes, link.to_id)}`;
-    list.appendChild(buildRemovableRow(arrow, () => {
+    const row = document.createElement('div');
+    row.className = 'dependency-edge-row';
+    const label = document.createElement('span');
+    appendConnectionLabel(label, nodes.find(n => n.id === link.from_id), link.from_id);
+    label.appendChild(document.createTextNode(link.predicate ? ` --[${link.predicate}]--> ` : ' → '));
+    appendConnectionLabel(label, nodes.find(n => n.id === link.to_id), link.to_id);
+    row.appendChild(label);
+    const removeX = document.createElement('span');
+    removeX.className = 'remove-x';
+    removeX.textContent = '×';
+    removeX.addEventListener('click', () => {
       currentParticipant.links = currentParticipant.links.filter(l => l !== link);
       renderLinkGraph();
-    }));
+    });
+    row.appendChild(removeX);
+    list.appendChild(row);
   });
 }
 
@@ -1658,13 +1897,132 @@ function renderLinkGraph() {
 
   renderDependencyStyleGraph('link-graph', nodes, edges, {
     nodeClass: '',
-    isPendingSource: node => node.id === linkDragSourceId,
-    onNodeMouseDown: onLinkNodeMouseDown,
+    isPendingSource: node => node.id === pendingEdgeSourceId,
+    onNodeMouseDown: makeNodeMouseDownHandler('link-graph'),
+    onNodeDoubleClick: onLinkNodeDoubleClick,
     // Taller than the default dependency-graph shape (1.8:1) - this graph
-    // tends to have more nodes spread with images, and needs more vertical
-    // room to breathe than a plain takeaway/slide dependency graph does.
-    aspect: 1.3,
-    minArea: 560 * 420,
+    // tends to have more nodes spread with images and full-text goal/
+    // takeaway nodes that wrap across several lines, and needs more
+    // vertical room to breathe than a plain takeaway/slide dependency
+    // graph does.
+    aspect: 1.0,
+    minArea: 560 * 700,
+  });
+}
+
+// --- Reflection phase: Suggest improvements (REFLECTION_STEPS[3]) - a
+// duplicate of the "Connect tags" graph above (same nodes/edges/dragging,
+// via reflectionGraphNodes()/makeNodeMouseDownHandler()/
+// linkNodePinnedPositions), but clicking a confusing node instead opens a
+// popup of concrete ways to improve it (see IMPROVEMENT_OPTIONS/
+// showImprovementPopup()) rather than starting a new link. ---
+
+const IMPROVEMENT_OPTIONS = [
+  { id: 'example', label: 'A relevant example' },
+  { id: 'detail', label: 'More detail and explanation' },
+  { id: 'credibility', label: 'Demonstrations of credibility and validity' },
+  { id: 'context', label: 'Connections to related work and societal implications' },
+];
+
+const improvementPopup = document.createElement('div');
+improvementPopup.className = 'improvement-popup';
+improvementPopup.style.display = 'none';
+IMPROVEMENT_OPTIONS.forEach(opt => {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn-secondary';
+  btn.textContent = opt.label;
+  btn.dataset.optionId = opt.id;
+  btn.addEventListener('click', () => toggleImprovementOption(opt.id));
+  improvementPopup.appendChild(btn);
+});
+document.body.appendChild(improvementPopup);
+
+// Which piece (by id) the popup above is currently open for - null when hidden.
+let improvementPopupPieceId = null;
+
+function renderImprovementPopupSelection() {
+  const piece = currentParticipant.pieces.find(p => p.id === improvementPopupPieceId);
+  const selected = piece ? piece.improvements : [];
+  improvementPopup.querySelectorAll('button').forEach(btn => {
+    btn.classList.toggle('selected', selected.includes(btn.dataset.optionId));
+  });
+}
+
+function toggleImprovementOption(optionId) {
+  const piece = currentParticipant.pieces.find(p => p.id === improvementPopupPieceId);
+  if (!piece) return;
+  const idx = piece.improvements.indexOf(optionId);
+  if (idx === -1) piece.improvements.push(optionId);
+  else piece.improvements.splice(idx, 1);
+  renderImprovementPopupSelection();
+  renderImproveEdgeList();
+}
+
+function showImprovementPopup(pieceId, rect) {
+  improvementPopupPieceId = pieceId;
+  renderImprovementPopupSelection();
+  improvementPopup.style.display = '';
+  improvementPopup.style.left = `${rect.left + rect.width / 2}px`;
+  improvementPopup.style.top = `${rect.top - 8}px`;
+}
+
+function hideImprovementPopup() {
+  improvementPopup.style.display = 'none';
+  improvementPopupPieceId = null;
+}
+
+document.addEventListener('mousedown', e => {
+  if (improvementPopup.style.display !== 'none' && !improvementPopup.contains(e.target)
+    && !e.target.closest('#improve-graph .graph-node')) {
+    hideImprovementPopup();
+  }
+});
+
+function onImproveNodeClick(node) {
+  if (node.nodeClass !== 'graph-node-piece-confusing') {
+    setStatus('improve-graph-status', 'Click a confusing part (red) to suggest what would improve it.', true);
+    return;
+  }
+  setStatus('improve-graph-status', '');
+  const nodeEl = document.querySelector(`#improve-graph .graph-node[data-node-id="${node.id}"]`);
+  if (!nodeEl) return;
+  showImprovementPopup(node.id, nodeEl.getBoundingClientRect());
+}
+
+function renderImproveEdgeList() {
+  const list = document.getElementById('improve-edge-list');
+  list.innerHTML = '';
+  currentParticipant.pieces
+    .filter(p => p.type === 'confusing' && p.improvements.length > 0)
+    .forEach(piece => {
+      const names = piece.improvements.map(id => IMPROVEMENT_OPTIONS.find(o => o.id === id).label).join(', ');
+      list.appendChild(buildRemovableRow(names, () => {
+        piece.improvements = [];
+        renderImproveEdgeList();
+        if (improvementPopupPieceId === piece.id) renderImprovementPopupSelection();
+      }, `Slide ${piece.slide_index} needs:`));
+    });
+}
+
+function renderImproveGraph() {
+  const nodes = reflectionGraphNodes();
+  renderImproveEdgeList();
+  if (nodes.length === 0) {
+    document.getElementById('improve-graph').innerHTML = '';
+    return;
+  }
+  const nodeIndexById = new Map(nodes.map((n, i) => [n.id, i]));
+  const edges = currentParticipant.links
+    .filter(l => nodeIndexById.has(l.from_id) && nodeIndexById.has(l.to_id))
+    .map(l => ({ source: nodeIndexById.get(l.from_id), target: nodeIndexById.get(l.to_id), predicate: l.predicate }));
+
+  renderDependencyStyleGraph('improve-graph', nodes, edges, {
+    nodeClass: '',
+    onNodeMouseDown: makeNodeMouseDownHandler('improve-graph'),
+    onNodeClick: onImproveNodeClick,
+    aspect: 1.0,
+    minArea: 560 * 700,
   });
 }
 
@@ -2029,10 +2387,12 @@ function renderAggregateTable() {
 function participantGraphNodes(participant) {
   const goalText = (participant.talk_goal || '').trim();
   const goalNodes = goalText ? [{
-    id: 'goal', label: `Desired takeaway: ${shorten(goalText)}`, title: goalText, nodeClass: 'graph-node-goal',
+    id: 'goal', labelLines: [{ text: 'Goal for talk:', bold: true }, { text: goalText }], title: goalText,
+    nodeClass: 'graph-node-goal', pinnedYPct: TOP_ROW_Y_PCT,
   }] : [];
   const takeawayNodes = participant.takeaways.map(t => ({
-    id: t.id, label: `Takeaway: ${shorten(t.text)}`, title: t.text, nodeClass: 'graph-node-takeaway',
+    id: t.id, labelLines: [{ text: 'Takeaway:', bold: true }, { text: t.text }], title: t.text,
+    nodeClass: 'graph-node-takeaway', pinnedYPct: TOP_ROW_Y_PCT,
   }));
   const pieceNodes = participant.pieces.map(p => pieceGraphNode(p, null));
   return [...goalNodes, ...takeawayNodes, ...pieceNodes];

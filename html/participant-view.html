@@ -41,6 +41,8 @@
             </li>
             <li><code>snapshots/</code> - one PNG image per slide, referenced by <code>slides.json</code></li>
             <li><code>narration.mp3</code> - the full narration audio track, aligned to those timestamps</li>
+            <li><code>video.mp4</code> - optional; if present, participants watch this video instead of the
+              slide-image + narration-audio player</li>
           </ul>
           <div class="audience-input-row">
             <input type="text" id="deck-folder-input" placeholder="e.g. presentation-examples/election">
@@ -142,7 +144,8 @@
           <button id="clear-dataset-btn" class="btn-secondary">Clear all data</button>
           <div id="dataset-status" class="status-line"></div>
 
-          <h3 style="font-size: 13px; margin-top: 24px;">Average presentation ratings (by self-rated familiarity with topic)</h3>
+          <h3 style="font-size: 13px; margin-top: 24px;">Average presentation ratings (by self-rated familiarity with
+            topic)</h3>
           <div style="font-size: 13px;" id="aggregate-table"></div>
 
           <h3 style="font-size: 13px; margin-top: 24px;">Participants</h3>
@@ -170,7 +173,7 @@
                 style="font-weight: 600;">as it is presented</span></i>.
             For example, recall a research talk that lost you early on, which then shaped how well you understood the
             rest of the talk.
-            Alternatively, successful research talks build up understanding progressively to communicate their main
+            Alternatively, successful research talks <b>build up understanding progressively</b> to communicate their main
             takeaways.
           </p>
           <p style="font-weight: 700; margin-bottom: 8px;">Here's what to expect over the next hour or so:</p>
@@ -293,13 +296,15 @@
           <h2>Live research presentation</h2>
           <!-- <div class="mentor-note"></div> -->
           <p class="audience-empty-hint">
-            We are going to show you a short research presentation. The abstract of the talk is below. Answer honestly based on
-            what you already know—don't look anything up.
+            We are going to show you a short research presentation. The abstract of the presentation is below.
           </p>
           <div id="talk-abstract-display" class="reflection-transcript" style="display: none;">
-            <div style="font-weight: 700; margin-bottom: 6px;">Abstract of talk</div>
+            <div style="font-weight: 700; margin-bottom: 6px;">Abstract of presentation</div>
             <div id="talk-abstract-text"></div>
           </div>
+          <p class="audience-empty-hint">
+            Answer the following questions based on what you already know—don't look anything up.
+          </p>
           <div class="audience-input-row">
             <label style="font-weight: 600; flex: 1;">How familiar are you with this general topic area?
               <select id="demo-familiarity-input" style="width: 100%; margin-top: 4px;">
@@ -315,8 +320,12 @@
           <div class="objectives-scope"
             style="border-bottom: none; margin-bottom: 0; padding-bottom: 0; margin-top: 20px;">
             <label style="display: block; font-weight: 600; margin-bottom: 8px;">
-              What do you want to get out of this talk?
+              What would you want to get out of this research presentation?
             </label>
+            <p class="audience-empty-hint" style="margin-top: 0;">
+              It could be anything from <i>how this research relates to my work</i>, to <i>an understanding of a new 
+              research area</i>, to <i>an example of a useful method</i>, or whatever you like.
+            </p>
             <textarea id="talk-goal-input" class="styled-textarea" rows="3"
               placeholder="What are you hoping to take away from this presentation?"></textarea>
           </div>
@@ -334,7 +343,8 @@
             <button id="pre-nav-back-btn" class="btn-secondary" style="display: none;">&larr; Back</button>
             <div style="flex: 1;"></div>
             <button id="record-audio-btn" class="btn-secondary">Record audio</button>
-            <button id="stop-recording-audio-btn" class="btn-secondary" style="display: none;">Stop recording audio</button>
+            <button id="stop-recording-audio-btn" class="btn-secondary" style="display: none;">Stop recording
+              audio</button>
             <button id="pre-nav-next-btn" class="btn-primary">Begin</button>
           </div>
           <div id="pre-nav-status" class="status-line"></div>
@@ -346,7 +356,7 @@
           <h2>Live research presentation</h2>
           <p class="audience-empty-hint">
             <b>Scenario:</b> You are attending a live research presentation. <b>Your friend could not make it, and asked
-              you to explain the main takeaways of the presentation later to them.</b>
+              you to explain your takeaways and an overall picture of the presentation later to them.</b>
           </p>
           <p class="audience-empty-hint">
             Press play on the video and watch the research presentation all the way through. You can take notes while it
@@ -356,6 +366,10 @@
           <!-- <div id="player-progress" class="status-line"></div> -->
           <div id="player-slide-display" style="text-align: center;"></div>
           <audio id="presentation-audio" controls style="width: 100%; margin-top: 12px;"></audio>
+          <!-- Shown instead of the slide-image + audio above when the loaded
+               deck has an optional video.mp4 (see loadDeckFolder() /
+               beginPresentation() in js/participant-view.js). -->
+          <video id="presentation-video" controls style="width: 100%; margin-top: 12px; display: none;"></video>
         </div>
 
         <!-- 5. Reflection: open-ended data collection, shown once playback ends.
@@ -378,15 +392,16 @@
                 <div id="rating-talk-goal-outcome" class="likert-row">
                   <div class="likert-label">Did you get what you wanted out of this talk?</div>
                   <div class="likert-pills"></div>
-                  <div class="likert-endpoints"><span>Not at all</span><span>Somewhat</span><span>Completely</span></div>
+                  <div class="likert-endpoints"><span>Not at all</span><span>Somewhat</span><span>Completely</span>
+                  </div>
                 </div>
                 <textarea id="talk-goal-outcome-why-input" class="styled-textarea" rows="3"
                   placeholder="Why or why not?" style="margin-top: 8px;"></textarea>
               </div>
               <p class="audience-empty-hint" style="font-weight: 600; margin: 0 0 10px;">
                 Write down as many main takeaways from the presentation as you'd like—things you'd feel comfortable
-                explaining to a
-                friend. You can edit or delete any of them below.
+                explaining to your friend. Add them one at a time, pressing <i>Add</i> after each one.
+                You can edit or delete added takeaways.
               </p>
               <textarea id="takeaway-input" class="styled-textarea" rows="4"
                 placeholder="What's one thing you'd feel comfortable explaining to a friend after watching this?"></textarea>
@@ -399,11 +414,17 @@
             </div>
 
             <div id="reflection-step-build-up" class="objectives-scope" style="display: none;">
-              <h3>Tag parts of the presentation</h3>
+              <h3>Tag the presentation</h3>
               <p class="audience-empty-hint" style="margin: 0 0 10px;">
-                Tag parts that were especially helpful or especially confusing for understanding your takeaways. Click a slide to tag, or draw around a part of the slide to tag just that region.
-                <!-- Click a slide to view its transcript below. Highlight some transcript text to tag just that excerpt,
-                or use the buttons below to tag the whole slide. -->
+                Tag <b>5-10 things</b> that were especially helpful or especially confusing for understanding the
+                presentation
+                and getting your takeaways. <b>Were there confusing parts that impacted your understanding
+                  downstream and throughout the presentation?</b>
+              </p>
+              <p class="audience-empty-hint" style="margin: 0 0 10px;">
+                Click a slide to tag the entire slide, or circle a part in the enlarged view with your cursor to tag
+                that region.
+                Highlight some transcript text to tag just that excerpt.
               </p>
               <div class="pieces-layout">
                 <div class="pieces-reference-col">
@@ -419,7 +440,7 @@
 
                 <div class="pieces-tagging-col">
                   <div id="piece-picker-status" class="status-line"></div>
-                  <div id="piece-note-form" style="display: none;">
+                  <div id="piece-note-form" class="note-form-popup" style="display: none;">
                     <textarea id="piece-note-input" class="styled-textarea" rows="2"
                       placeholder="Why did this help? Or: why was it confusing?"></textarea>
                     <button id="save-piece-btn" class="btn-primary" style="margin-top: 8px;">Save Part</button>
@@ -434,34 +455,53 @@
                        takeaways just stated in the previous step), so it's
                        easy to keep them in mind while tagging - see
                        renderBuildUpReminder(). -->
-                  <h4 class="reflection-subheading">Reminder: what you wanted, and your takeaways so far</h4>
-                  <div id="build-up-goal-reminder" class="dependency-edge-row" style="margin-bottom: 8px; display: none;"></div>
+                  <!-- <h4 class="reflection-subheading">Reminder: what you wanted to know and your takeaways so far</h4> -->
+                  <div id="build-up-goal-reminder" class="dependency-edge-row"
+                    style="margin-top: 50px; margin-bottom: 8px; display: none;"></div>
                   <div id="build-up-takeaways-reminder-list"></div>
                 </div>
               </div>
             </div>
 
             <div id="reflection-step-link" class="objectives-scope" style="display: none;">
-              <h3>Link tagged parts together</h3>
+              <h3>Connect tags with takeaways</h3>
               <p class="audience-empty-hint" style="margin: 0 0 10px;">
-                Cluster the parts that were helpful in building up your takeaways, and connect them to what you wanted
-                to get out of
-                the presentation. Click and drag from one part to another to link them.
+                Drag a node to move it around; double-click one part, then double-click another, to link them.
+              </p>
+              <p class="audience-empty-hint" style="margin: 0 0 10px;">
+                <b>Connect helpful parts that contributed to your takeaways</b>. You can specify how it helped you
+                derive a takeaway.
+              </p>
+              <p class="audience-empty-hint" style="margin: 0 0 10px;">
+                <b>In addition, connect confusing parts that hindered or prevented you from getting your <i>desired</i>
+                  takeaways</b>.
               </p>
               <!-- <p class="audience-empty-hint" style="margin: 0 0 10px;">
-        <b>Example:</b> if a slide that explained a term helped you understand a later slide, drag from that contributing piece
-        to the one it supports and label the arrow "explains" or "required for". If a confusing slide made a later part harder
-        to follow, link it forward and label it "made this harder to understand".
-      </p> -->
+                    <b>Example:</b> if a slide that explained a term helped you understand a later slide, drag from that contributing piece
+                    to the one it supports and label the arrow "explains" or "required for". If a confusing slide made a later part harder
+                    to follow, link it forward and label it "made this harder to understand".
+                  </p> -->
               <div id="link-graph-status" class="status-line"></div>
               <div id="link-graph"></div>
               <div id="link-predicate-form" class="audience-input-row" style="display: none;">
+                <span style="align-self: center; font-size: 13px; font-weight: 700;">Optional:</span>
                 <input type="text" id="link-predicate-input" class="styled-textarea" style="flex: 1;"
-                  placeholder="Describe the relationship (optional), e.g. 'required for', 'made this harder to understand'...">
+                  placeholder="Describe the relationship, e.g. 'required for', 'made this harder to understand'...">
                 <button id="save-link-btn" class="btn-primary">Save Link</button>
                 <button id="cancel-link-btn" class="btn-secondary">Cancel</button>
               </div>
               <div id="link-edge-list"></div>
+            </div>
+
+            <div id="reflection-step-improve" class="objectives-scope" style="display: none;">
+              <h3>Suggest improvements</h3>
+              <p class="audience-empty-hint" style="margin: 0 0 10px;">
+                Click a <b>confusing</b> part below and choose what would have helped you understand it better—you
+                can pick more than one.
+              </p>
+              <div id="improve-graph-status" class="status-line"></div>
+              <div id="improve-graph"></div>
+              <div id="improve-edge-list"></div>
             </div>
           </div>
 
@@ -499,7 +539,8 @@
                     <img id="edits-active-slide-img" draggable="false">
                     <svg id="edits-active-slide-svg" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
                   </div>
-                  <p class="audience-empty-hint" style="margin: 6px 0 0;">Draw around a part of the slide above to tag just that region.</p>
+                  <p class="audience-empty-hint" style="margin: 6px 0 0;">Draw around a part of the slide above to tag
+                    just that region.</p>
                   <div id="edits-section-label" class="audience-empty-hint"></div>
                   <div id="edits-transcript" class="reflection-transcript"></div>
                 </div>
@@ -539,21 +580,25 @@
               <div id="rating-understandability" class="likert-row">
                 <div class="likert-label">Understandability</div>
                 <div class="likert-pills"></div>
-                <div class="likert-endpoints"><span>Very hard to understand</span><span>Moderately easy to understand</span><span>Very easy to understand</span>
+                <div class="likert-endpoints"><span>Very hard to understand</span><span>Moderately easy to
+                    understand</span><span>Very easy to understand</span>
                 </div>
               </div>
               <div id="rating-relevance" class="likert-row">
                 <div class="likert-label">Relevance</div>
                 <div class="likert-pills"></div>
-                <div class="likert-endpoints"><span>Not at all relevant to me</span><span>Somewhat relevant to me</span><span>Extremely relevant to me</span></div>
+                <div class="likert-endpoints"><span>Not at all relevant to me</span><span>Somewhat relevant to
+                    me</span><span>Extremely relevant to me</span></div>
               </div>
               <div id="rating-detail" class="likert-row">
                 <div class="likert-label">Level of detail</div>
                 <div class="likert-pills"></div>
-                <div class="likert-endpoints"><span>Too little detail</span><span>Just the right amount</span><span>Too much detail</span></div>
+                <div class="likert-endpoints"><span>Too little detail</span><span>Just the right amount</span><span>Too
+                    much detail</span></div>
               </div>
 
-              <div class="likert-label" style="margin-top: 12px;">Any other feedback you have for the presentation?</div>
+              <div class="likert-label" style="margin-top: 12px;">Any other feedback you have for the presentation?
+              </div>
               <textarea id="rating-comments-input" class="styled-textarea" rows="4"></textarea>
             </div>
 
