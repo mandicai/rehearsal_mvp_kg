@@ -420,8 +420,8 @@ input, select {
   margin: 0 0 16px;
 }
 
-/* --- Feedback module (feedback.html) --- */
-#feedback-module {
+/* --- Feedback setup module (feedback.html) --- */
+#feedback-setup-module {
   max-width: 720px;
   margin: 10px auto 40px;
   padding: 24px 28px;
@@ -429,18 +429,27 @@ input, select {
   border-radius: 8px;
 }
 
-#feedback-module h2 {
+#feedback-setup-module h2 {
   font-size: 15px;
-  /* text-transform: uppercase; */
   letter-spacing: 0.05em;
   margin: 0 0 16px;
 }
 
-.feedback-audience-row {
+.feedback-audience-row,
+.feedback-goal-row {
   margin-bottom: 14px;
 }
 
-#feedback-audience-input {
+.feedback-audience-row label,
+.feedback-goal-row label {
+  display: block;
+  font-size: 12px;
+  opacity: 0.8;
+  margin-bottom: 6px;
+}
+
+#feedback-audience-input,
+#feedback-goal-input {
   width: 100%;
   font-family: inherit;
   font-size: 13px;
@@ -451,15 +460,9 @@ input, select {
   color: #FFFFFF;
 }
 
-#feedback-audience-input::placeholder {
+#feedback-audience-input::placeholder,
+#feedback-goal-input::placeholder {
   color: rgba(255, 255, 255, 0.5);
-}
-
-#feedback-suggested-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 20px;
 }
 
 .feedback-prompt-group {
@@ -521,10 +524,12 @@ input, select {
   color: #FFD5CE;
 }
 
-#feedback-result {
-  margin-top: 16px;
-}
-
+/* Not used by feedback.html's own UI right now (it's built around the
+   progressive timeline instead - see #feedback-timeline below), but kept
+   alongside js/helpers.js's fetchFeedback()/renderFeedbackResult() (the
+   one-shot retrospective mode, still a working, independently-callable
+   feature) so that pairing stays self-consistent rather than silently
+   broken if it's ever reused. */
 .feedback-response-card {
   background: rgba(255, 255, 255, 0.08);
   border-radius: 6px;
@@ -544,84 +549,43 @@ input, select {
   white-space: pre-wrap;
 }
 
-/* --- Progressive vs. retrospective feedback comparison (feedback.html) --- */
-#comparison-module {
-  max-width: 1200px;
+/* --- Per-slide feedback panel (feedback.html) - the currently-selected
+   slide's own feedback (or a section-recap/overall entry), shown right
+   underneath the transcript panel. --- */
+#slide-feedback-panel {
+  max-width: 720px;
+  margin: 10px auto 24px;
+  padding: 16px 18px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.slide-feedback-label {
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0.75;
+  margin-bottom: 4px;
+}
+
+/* --- Cumulative feedback timeline (feedback.html) - every slide/section-
+   recap/overall entry, in order, as they're generated. --- */
+#feedback-timeline-module {
+  max-width: 720px;
   margin: 10px auto 40px;
   padding: 24px 28px;
   background: rgba(0, 0, 0, 0.2);
   border-radius: 8px;
 }
 
-#comparison-module h2 {
+#feedback-timeline-module h2 {
   font-size: 15px;
-  /* text-transform: uppercase; */
   letter-spacing: 0.05em;
-  margin: 0 0 12px;
+  margin: 0 0 16px;
 }
 
-.comparison-description {
-  font-size: 13px;
-  line-height: 1.5;
-  opacity: 0.85;
-  margin: 0 0 18px;
-  max-width: 760px;
-}
-
-#compare-feedback-btn {
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  padding: 8px 16px;
-  border: none;
-  border-radius: 4px;
-  background: #FFFFFF;
-  color: #EB1000;
-  cursor: pointer;
-}
-
-#compare-feedback-btn:hover {
-  background: rgba(255, 255, 255, 0.85);
-}
-
-#compare-feedback-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-#comparison-status {
-  font-size: 12px;
-  opacity: 0.85;
-  min-height: 16px;
-  margin-top: 14px;
-}
-
-#comparison-status.error {
-  color: #FFD5CE;
-}
-
-.comparison-columns {
-  display: flex;
-  gap: 20px;
-  margin-top: 18px;
-  align-items: flex-start;
-}
-
-.comparison-column {
-  flex: 1 1 360px;
-  min-width: 0;
-}
-
-.comparison-column-title {
-  font-size: 12px;
-  font-weight: 700;
-  /* text-transform: uppercase; */
-  letter-spacing: 0.04em;
-  opacity: 0.75;
-  margin-bottom: 10px;
-}
-
-#progressive-timeline {
+#feedback-timeline {
   max-height: 640px;
   overflow-y: auto;
   padding-right: 8px;
@@ -630,14 +594,14 @@ input, select {
   gap: 10px;
 }
 
-#progressive-timeline::-webkit-scrollbar {
+#feedback-timeline::-webkit-scrollbar {
   width: 8px;
 }
-#progressive-timeline::-webkit-scrollbar-thumb {
+#feedback-timeline::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.5);
   border-radius: 4px;
 }
-#progressive-timeline::-webkit-scrollbar-track {
+#feedback-timeline::-webkit-scrollbar-track {
   background: rgba(0, 0, 0, 0.15);
 }
 
@@ -654,10 +618,15 @@ input, select {
   margin-bottom: 6px;
 }
 
-.progressive-step-text {
+.progressive-step-field {
   font-size: 13px;
   line-height: 1.5;
-  white-space: pre-wrap;
+  margin-top: 6px;
+}
+
+.progressive-step-header + .progressive-step-field,
+.slide-feedback-label + .progressive-step-field {
+  margin-top: 0;
 }
 
 /* --- Text segments --- */

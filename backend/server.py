@@ -163,12 +163,14 @@ def feedback():
 @app.route('/feedback/progressive_step', methods=['POST'])
 def feedback_progressive_step():
     # One step of "progressive" mode (see feedback_llm.get_progressive_reaction):
-    # the frontend calls this once per slide, in order, carrying the growing
+    # the frontend calls this once per turn (a real slide, or a synthetic
+    # section-recap/overall checkpoint), in order, carrying the growing
     # `messages` conversation forward itself between calls - this route is
     # stateless like every other route here, so nothing is stored server-side.
     data = request.get_json(silent=True) or {}
     audience = (data.get('audience') or '').strip()
     prompt = (data.get('prompt') or '').strip()
+    goal = (data.get('goal') or '').strip()
     messages = data.get('messages') or []
     slide = data.get('slide')
 
@@ -185,11 +187,15 @@ def feedback_progressive_step():
         }), 503
 
     try:
-        reaction, updated_messages = feedback_client.get_progressive_reaction(audience, prompt, messages, slide)
+        parsed, updated_messages = feedback_client.get_progressive_reaction(audience, prompt, messages, slide, goal)
     except FeedbackLLMCallError as exc:
         return jsonify({'error': str(exc)}), 500
 
-    return jsonify({'reaction': reaction, 'messages': updated_messages})
+    return jsonify({
+        'flow_feedback': parsed.get('flow_feedback', ''),
+        'understanding_feedback': parsed.get('understanding_feedback', ''),
+        'messages': updated_messages,
+    })
 
 
 @app.route('/ingest/pptx', methods=['POST'])

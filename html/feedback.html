@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Presentation Feedback Simulator</title>
+<title>Presentation Feedback</title>
 <!-- Cache-busting: this static site has no build step to fingerprint asset
      URLs, so local CSS/JS is fetched fresh every load via a timestamped
      query string instead of relying on a hard-refresh after each edit. -->
@@ -14,27 +14,46 @@
 </head>
 <body>
 
-<h1>Presentation Feedback Simulator</h1>
+<h1>Presentation Feedback</h1>
 
-<!-- carousel of slides -->
+<!-- carousel of slides - the same deck already configured in Setup
+     (participant-view.html), auto-loaded via the same localStorage key
+     (see js/feedback.js). -->
 <div id="carousel"></div>
 
-<!-- transcript segment corresponding to slide -->
+<!-- transcript segment corresponding to the selected slide -->
 <div id="transcript-panel">
   <div class="slide-number" id="slide-number"></div>
   <div class="timestamp" id="timestamp"></div>
   <div class="transcript-text" id="transcript-text">Loading...</div>
 </div>
 
-<!-- pick an audience persona + a prompt, then get in-character feedback -->
-<div id="feedback-module">
-  <h2>Audience Feedback Simulator</h2>
+<!-- Shows the currently-selected slide's own feedback (or a section-recap/
+     overall entry, if one of those is selected) - populated client-side
+     from data already fetched during the run, no new network call. -->
+<div id="slide-feedback-panel"></div>
+
+<!-- Persona + goal + optional focus, then run the whole deck sequentially -
+     a real, continuing conversation, one turn per slide, reacting each time
+     with no knowledge of what's still to come (see js/feedback.js's
+     runFeedbackSession / backend/feedback_llm.py's get_progressive_reaction). -->
+<div id="feedback-setup-module">
+  <h2>Simulate Audience Feedback</h2>
+  <p style="font-size: 13px; opacity: 0.85; margin-top: 0;">
+    Describe an audience persona and their goal for attending this talk. They'll "watch" the presentation
+    slide by slide - like a real audience member, with no knowledge of what's still to come - giving flow and
+    understanding feedback as they go, a recap at the end of each titled section, and overall feedback at the end.
+  </p>
 
   <div class="feedback-audience-row">
-    <input type="text" id="feedback-audience-input" placeholder="Who should give feedback? (e.g. Marketing Director, 8th-grade student, Skeptical investor)">
+    <label for="feedback-audience-input">Audience persona</label>
+    <input type="text" id="feedback-audience-input" placeholder="e.g. Skeptical machine learning engineer at a competing company">
   </div>
-  <div class="audience-section-label">Suggested from this presentation's transcript (click to use):</div>
-  <div id="feedback-suggested-chips"></div>
+
+  <div class="feedback-goal-row">
+    <label for="feedback-goal-input">Their goal for this talk</label>
+    <input type="text" id="feedback-goal-input" placeholder="e.g. Understand whether this approach beats their own team's system">
+  </div>
 
   <div class="feedback-prompt-group">
     <label for="feedback-prompt-input">Anything specific you want them to focus on? (optional)</label>
@@ -43,27 +62,14 @@
 
   <button id="get-feedback-btn">Get Feedback</button>
   <div id="feedback-status"></div>
-  <div id="feedback-result"></div>
 </div>
 
-<!-- research module: does feedback differ when the agent reacts live, slide by slide, vs. reviewing the full transcript afterward? -->
-<div id="comparison-module">
-  <h2>Progressive vs. Retrospective Feedback</h2>
-  <p class="comparison-description">
-    Runs the same audience persona through this presentation twice: once <strong>retrospectively</strong> (the whole deck at once, one final review - the same as "Get Feedback" above), and once <strong>progressively</strong> (a real, continuing conversation, one new slide per turn, reacting each time with no knowledge of what's still to come). Uses the audience and focus prompt set above.
+<div id="feedback-timeline-module">
+  <h2>Feedback timeline</h2>
+  <p style="font-size: 13px; opacity: 0.85; margin-top: 0;">
+    Every slide's feedback, each section's recap, and the overall wrap-up, in order, as they're generated.
   </p>
-  <button id="compare-feedback-btn">Compare Progressive vs. Retrospective</button>
-  <div id="comparison-status"></div>
-  <div class="comparison-columns">
-    <div class="comparison-column">
-      <div class="comparison-column-title">Progressive (live, slide-by-slide)</div>
-      <div id="progressive-timeline"></div>
-    </div>
-    <div class="comparison-column">
-      <div class="comparison-column-title">Retrospective (full transcript, one shot)</div>
-      <div id="retrospective-result"></div>
-    </div>
-  </div>
+  <div id="feedback-timeline"></div>
 </div>
 
 <script>

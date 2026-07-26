@@ -1,7 +1,35 @@
-// helper functions in helpers.js loaded before this
-// --- slide carousel + transcript (same wiring as main.js) ---
+// js/feedback.js - persona+goal progressive presentation feedback. Reuses
+// whatever deck + presenter-defined sections/takeaways are already
+// configured in Setup (participant-view.html), via the exact same
+// localStorage keys js/participant-view.js reads/writes - no separate deck
+// picker lives on this page at all.
+// helper functions in helpers.js loaded before this.
+
+const DECK_FOLDER_STORAGE_KEY = 'calibrate-priors-deck-folder-v1';
+const OBJECTIVES_STORAGE_KEY = 'calibrate-priors-objectives-v2';
+
 let slides = [];
 let activeIndex = 0;
+let sectionsByRange = {};
+let presentationObjectives = [];
+
+// --- Sections/takeaways: read-only mirror of participant-view.js's own
+// findSectionForSlide() - section-level recaps are simply skipped (see
+// runFeedbackSession) if the loaded deck has none defined. ---
+function findSectionForSlide(slideIndex) {
+  return Object.values(sectionsByRange).find(s => slideIndex >= s.start_slide_index && slideIndex <= s.end_slide_index) || null;
+}
+
+function isLastSlideOfSection(slide) {
+  const section = findSectionForSlide(slide.slide_index);
+  return section && section.end_slide_index === slide.slide_index ? section : null;
+}
+
+function sectionKeyFor(section) {
+  return `section:${section.start_slide_index}-${section.end_slide_index}`;
+}
+
+// --- Carousel + transcript (same wiring shape as main.js/presenter-view.js) ---
 
 function selectSlide(index) {
   activeIndex = index;
@@ -19,172 +47,253 @@ function selectSlide(index) {
   if (activeThumb) {
     activeThumb.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
   }
+
+  renderSlideFeedbackPanel(slide);
 }
 
-const DECK_DIR = 'presentation-examples/flower';
-
-fetch(`/${DECK_DIR}/slides.json`)
-  .then(res => res.json())
-  .then(data => {
-    slides = data.map(slide => ({ ...slide, snapshot_image: `${DECK_DIR}/${slide.snapshot_image}` }));
-    const carousel = document.getElementById('carousel');
-
-    slides.forEach((slide, i) => {
-      const thumb = document.createElement('div');
-      thumb.className = 'slide-thumb';
-      thumb.innerHTML = `
-        <img src="/${slide.snapshot_image}" alt="Slide ${slide.slide_index}">
-        <div class="thumb-label">${slide.start_time}</div>
-      `;
-      thumb.addEventListener('click', () => selectSlide(i));
-      carousel.appendChild(thumb);
-    });
-
-    selectSlide(0);
-    renderSuggestedChips(computeInferredAudiences(slides));
-  })
-  .catch(err => {
-    document.getElementById('transcript-text').textContent = 'Failed to load slides.json: ' + err;
-  });
-
-// --- audience picker: unlike index.html's multi-select target-audience
-// list, the feedback module only ever role-plays as one persona at a time,
-// so a suggested chip just fills the text input rather than adding to a list ---
-const audienceInput = document.getElementById('feedback-audience-input');
-
-function renderSuggestedChips(inferred) {
-  const container = document.getElementById('feedback-suggested-chips');
-  container.innerHTML = '';
-
-  if (inferred.length === 0) {
-    container.innerHTML = '<span class="audience-empty-hint">No strong audience signals detected in this transcript.</span>';
+function loadDeck() {
+  const folder = localStorage.getItem(DECK_FOLDER_STORAGE_KEY);
+  if (!folder) {
+    document.getElementById('transcript-text').textContent =
+      'No deck configured yet - load one in Setup (participant-view.html) first.';
     return;
   }
 
-  inferred.forEach(item => {
-    const chip = document.createElement('button');
-    chip.type = 'button';
-    chip.className = 'chip suggested';
-    chip.innerHTML = `+ ${item.label} <span class="hit-count">(${item.count})</span>`;
-    chip.addEventListener('click', () => { audienceInput.value = item.label; });
-    container.appendChild(chip);
-  });
+  try {
+    const parsed = JSON.parse(localStorage.getItem(OBJECTIVES_STORAGE_KEY));
+    if (parsed) {
+      presentationObjectives = parsed.presentationObjectives || [];
+      sectionsByRange = parsed.sectionsByRange || {};
+    }
+  } catch (err) { /* no takeaways configured yet - section recaps just get skipped */ }
+
+  fetch(`/${folder}/slides.json`)
+    .then(res => {
+      if (!res.ok) throw new Error(`slides.json not found (HTTP ${res.status})`);
+      return res.json();
+    })
+    .then(data => {
+      slides = data.map(slide => ({ ...slide, snapshot_image: `${folder}/${slide.snapshot_image}` }));
+      const carousel = document.getElementById('carousel');
+      carousel.innerHTML = '';
+      slides.forEach((slide, i) => {
+        const thumb = document.createElement('div');
+        thumb.className = 'slide-thumb';
+        thumb.innerHTML = `
+          <img src="/${slide.snapshot_image}" alt="Slide ${slide.slide_index}">
+          <div class="thumb-label">${slide.start_time}</div>
+        `;
+        thumb.addEventListener('click', () => selectSlide(i));
+        carousel.appendChild(thumb);
+      });
+      selectSlide(0);
+    })
+    .catch(err => {
+      document.getElementById('transcript-text').textContent = `Could not load deck "${folder}": ${err.message}`;
+    });
 }
 
-// --- feedback module: audience + prompt + transcript + slide images feed
-// into a vision-capable LLM (real, via backend/server.py's /feedback route,
-// see feedback_llm.py) that role-plays as the chosen audience and reacts to
-// the presentation ---
+loadDeck();
+
+// --- Setup inputs ---
+const audienceInput = document.getElementById('feedback-audience-input');
+const goalInput = document.getElementById('feedback-goal-input');
 const promptInput = document.getElementById('feedback-prompt-input');
 const getFeedbackBtn = document.getElementById('get-feedback-btn');
 const statusEl = document.getElementById('feedback-status');
-const resultEl = document.getElementById('feedback-result');
+const timelineEl = document.getElementById('feedback-timeline');
 
 function setStatus(message, isError) {
   statusEl.textContent = message || '';
   statusEl.classList.toggle('error', !!isError);
 }
 
-function runFeedback() {
+// --- Feedback results so far, keyed by slide_index (a number) for
+// per-slide entries, or a synthetic string key for a section recap
+// (sectionKeyFor) or the final 'overall' entry. ---
+let feedbackByKey = {};
+
+function appendFeedbackFields(container, entry) {
+  const flow = document.createElement('div');
+  flow.className = 'progressive-step-field';
+  const flowLabel = document.createElement('b');
+  flowLabel.textContent = 'Flow:';
+  flow.appendChild(flowLabel);
+  flow.appendChild(document.createTextNode(` ${entry.flow_feedback}`));
+  container.appendChild(flow);
+
+  const understanding = document.createElement('div');
+  understanding.className = 'progressive-step-field';
+  const understandingLabel = document.createElement('b');
+  understandingLabel.textContent = 'Understanding:';
+  understanding.appendChild(understandingLabel);
+  understanding.appendChild(document.createTextNode(` ${entry.understanding_feedback}`));
+  container.appendChild(understanding);
+}
+
+function renderTimelineEntry(headerText, entry) {
+  const card = document.createElement('div');
+  card.className = 'progressive-step-card';
+
+  const header = document.createElement('div');
+  header.className = 'progressive-step-header';
+  header.textContent = headerText;
+  card.appendChild(header);
+
+  appendFeedbackFields(card, entry);
+
+  timelineEl.appendChild(card);
+  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// Shows the selected slide's own feedback, plus (anchored to whichever
+// slide triggered them) that slide's section recap if it's a section's
+// last slide, and the overall wrap-up if it's the deck's last slide -
+// entirely from already-fetched data, no network call.
+function renderSlideFeedbackPanel(slide) {
+  const panel = document.getElementById('slide-feedback-panel');
+  panel.innerHTML = '';
+
+  const slideBlock = document.createElement('div');
+  const slideLabel = document.createElement('div');
+  slideLabel.className = 'slide-feedback-label';
+  slideLabel.textContent = `Slide ${slide.slide_index} feedback`;
+  slideBlock.appendChild(slideLabel);
+  const slideEntry = feedbackByKey[slide.slide_index];
+  if (slideEntry) {
+    appendFeedbackFields(slideBlock, slideEntry);
+  } else {
+    const hint = document.createElement('div');
+    hint.className = 'progressive-step-field';
+    hint.textContent = 'Not generated yet - click "Get Feedback" to run the session.';
+    slideBlock.appendChild(hint);
+  }
+  panel.appendChild(slideBlock);
+
+  const section = isLastSlideOfSection(slide);
+  const recapEntry = section && feedbackByKey[sectionKeyFor(section)];
+  if (recapEntry) {
+    const recapBlock = document.createElement('div');
+    recapBlock.style.marginTop = '14px';
+    const recapLabel = document.createElement('div');
+    recapLabel.className = 'slide-feedback-label';
+    recapLabel.textContent = `Section recap: ${(section.title || '').trim() || '(untitled section)'}`;
+    recapBlock.appendChild(recapLabel);
+    appendFeedbackFields(recapBlock, recapEntry);
+    panel.appendChild(recapBlock);
+  }
+
+  const isLastSlide = slides.length > 0 && slide.slide_index === slides[slides.length - 1].slide_index;
+  const overallEntry = isLastSlide && feedbackByKey.overall;
+  if (overallEntry) {
+    const overallBlock = document.createElement('div');
+    overallBlock.style.marginTop = '14px';
+    const overallLabel = document.createElement('div');
+    overallLabel.className = 'slide-feedback-label';
+    overallLabel.textContent = 'Overall feedback';
+    overallBlock.appendChild(overallLabel);
+    appendFeedbackFields(overallBlock, overallEntry);
+    panel.appendChild(overallBlock);
+  }
+}
+
+function refreshPanelIfSelected(slideIndex) {
+  if (slides[activeIndex] && slides[activeIndex].slide_index === slideIndex) {
+    renderSlideFeedbackPanel(slides[activeIndex]);
+  }
+}
+
+// Runs the whole deck as one real, continuing conversation: one turn per
+// slide in order (paced by PROGRESSIVE_STEP_DELAY_MS - see helpers.js),
+// with a synthetic section-recap turn (no image, skipped entirely if the
+// deck has no sections defined) right after each section's last slide, and
+// a final synthetic overall-feedback turn after the whole deck - see
+// backend/feedback_llm.py's get_progressive_reaction for how these
+// checkpoint turns share the exact same request/response shape as a real slide.
+function runFeedbackSession() {
   const audience = audienceInput.value.trim();
+  const goal = goalInput.value.trim();
   const prompt = promptInput.value.trim();
 
   if (!audience) {
-    setStatus('Please enter or pick a target audience first.', true);
+    setStatus('Please enter an audience persona first.', true);
     return;
   }
   if (slides.length === 0) {
-    setStatus('Slides have not loaded yet.', true);
+    setStatus('No deck loaded yet.', true);
     return;
   }
 
   getFeedbackBtn.disabled = true;
-  resultEl.innerHTML = '';
+  feedbackByKey = {};
+  timelineEl.innerHTML = '';
+  renderSlideFeedbackPanel(slides[activeIndex]);
   setStatus('Preparing slide images...');
 
-  prepareSlidePayload(slides)
-    .then(slidePayload => {
-      console.log('slidePayload', slidePayload.map(s => ({ ...s, image: `${s.image.length} chars` })));
-      setStatus(`Asking "${audience}" to review the presentation (this calls the local Python backend)...`);
-      return fetchFeedback(audience, prompt, slidePayload);
-    })
-    .then(feedbackText => {
-      renderFeedbackResult(resultEl, audience, feedbackText);
-      setStatus('Done.');
-    })
-    .catch(err => {
-      setStatus(err.message, true);
-    })
-    .finally(() => {
-      getFeedbackBtn.disabled = false;
+  let messages = [];
+
+  function runCheckpoint(headerText, key, checkpointSlide, anchorSlideIndex) {
+    return fetchProgressiveReaction(audience, prompt, messages, checkpointSlide, goal).then(data => {
+      messages = data.messages;
+      const entry = { flow_feedback: data.flow_feedback, understanding_feedback: data.understanding_feedback };
+      feedbackByKey[key] = entry;
+      renderTimelineEntry(headerText, entry);
+      refreshPanelIfSelected(anchorSlideIndex);
     });
-}
-
-getFeedbackBtn.addEventListener('click', runFeedback);
-
-// --- Research module: progressive (live, slide-by-slide) vs. retrospective
-// (full transcript, one shot) feedback, run side by side on the same
-// audience/prompt/deck so the two conditions are directly comparable. Both
-// are real LLM calls (see helpers.js's fetchFeedback/runProgressiveTimeline,
-// backend/feedback_llm.py's get_feedback/get_progressive_reaction) - the
-// retrospective column reuses the exact same call as "Get Feedback" above.
-const compareBtn = document.getElementById('compare-feedback-btn');
-const comparisonStatusEl = document.getElementById('comparison-status');
-const progressiveTimelineEl = document.getElementById('progressive-timeline');
-const retrospectiveResultEl = document.getElementById('retrospective-result');
-
-function setComparisonStatus(message, isError) {
-  comparisonStatusEl.textContent = message || '';
-  comparisonStatusEl.classList.toggle('error', !!isError);
-}
-
-function runComparison() {
-  const audience = audienceInput.value.trim();
-  const prompt = promptInput.value.trim();
-
-  if (!audience) {
-    setComparisonStatus('Please enter or pick a target audience first.', true);
-    return;
   }
-  if (slides.length === 0) {
-    setComparisonStatus('Slides have not loaded yet.', true);
-    return;
-  }
-
-  compareBtn.disabled = true;
-  progressiveTimelineEl.innerHTML = '';
-  retrospectiveResultEl.innerHTML = '';
-  setComparisonStatus('Preparing slide images...');
 
   prepareSlidePayload(slides)
     .then(slidePayload => {
-      // Sequenced, not concurrent: each progressive step's request grows
-      // (it resends every prior slide's image in the conversation so far),
-      // and running the single big retrospective call at the same time
-      // doubles the peak token load right when it's highest - a real way to
-      // trip a provider's per-minute rate limit on a full-size deck. This
-      // also mirrors the research framing: progressive reactions happen
-      // live as the deck plays; the retrospective review only happens once
-      // everything has already been seen.
-      setComparisonStatus(`Watching "${audience}" react live, slide by slide...`);
-      return runProgressiveTimeline(progressiveTimelineEl, audience, prompt, slidePayload)
-        .then(() => {
-          setComparisonStatus(`Progressive pass done. Now asking "${audience}" for a retrospective review of the whole deck...`);
-          return fetchFeedback(audience, prompt, slidePayload);
-        })
-        .then(feedbackText => {
-          renderFeedbackResult(retrospectiveResultEl, audience, feedbackText);
-        });
+      setStatus(`Watching as "${audience}"...`);
+      return slidePayload.reduce((chain, slidePayloadItem, index) => {
+        const slide = slides[index];
+        return chain
+          .then(() => (index === 0 ? Promise.resolve() : delay(PROGRESSIVE_STEP_DELAY_MS)))
+          .then(() => runCheckpoint(
+            `Slide ${slide.slide_index} (${slide.start_time} - ${slide.end_time})`,
+            slide.slide_index,
+            slidePayloadItem,
+            slide.slide_index,
+          ))
+          .then(() => {
+            const section = isLastSlideOfSection(slide);
+            if (!section) return;
+            const sectionTitle = (section.title || '').trim() || '(untitled section)';
+            const takeaways = (section.objectives || []).map(o => o.text).join('; ');
+            return delay(PROGRESSIVE_STEP_DELAY_MS).then(() => runCheckpoint(
+              `Section recap: ${sectionTitle}`,
+              sectionKeyFor(section),
+              {
+                slide_index: null,
+                transcript: `You've just finished the section titled "${sectionTitle}" (covering the slides you `
+                  + 'just saw).'
+                  + (takeaways ? ` The presenter's intended takeaway for this section: ${takeaways}.` : '')
+                  + ' Reflect specifically on this section as a whole before moving on.',
+              },
+              slide.slide_index,
+            ));
+          });
+      }, Promise.resolve());
     })
+    .then(() => delay(PROGRESSIVE_STEP_DELAY_MS))
     .then(() => {
-      setComparisonStatus('Done.');
+      const takeaways = presentationObjectives.map(o => o.text).join('; ');
+      const lastSlide = slides[slides.length - 1];
+      return runCheckpoint(
+        'Overall feedback',
+        'overall',
+        {
+          slide_index: null,
+          transcript: 'The presentation has now ended entirely.'
+            + (takeaways ? ` The presenter's overall intended takeaway: ${takeaways}.` : '')
+            + ' Give your overall feedback on the presentation as a whole now, thinking back on everything you saw.',
+        },
+        lastSlide.slide_index,
+      );
     })
-    .catch(err => {
-      setComparisonStatus(err.message, true);
-    })
-    .finally(() => {
-      compareBtn.disabled = false;
-    });
+    .then(() => setStatus('Done.'))
+    .catch(err => setStatus(err.message, true))
+    .finally(() => { getFeedbackBtn.disabled = false; });
 }
 
-compareBtn.addEventListener('click', runComparison);
+getFeedbackBtn.addEventListener('click', runFeedbackSession);

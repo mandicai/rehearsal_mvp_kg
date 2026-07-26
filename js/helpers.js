@@ -1181,22 +1181,20 @@ function renderFeedbackResult(container, audience, feedbackText) {
   container.appendChild(card);
 }
 
-// --- Progressive vs. retrospective feedback comparison (also feedback.html) ---
-// Answers "how does an agent's feedback differ live, slide-by-slide, vs.
-// retrospectively from the full transcript?" by running the SAME audience
-// persona through two conditions on the same deck: fetchFeedback above
-// (retrospective: the whole deck at once, one final review) vs. this
-// module (progressive: one real, continuing multi-turn conversation, fed
-// one new slide per turn, reacting each time with no knowledge of what's
-// still to come - see backend/feedback_llm.py's get_progressive_reaction).
+// --- Progressive (live, slide-by-slide) feedback (feedback.html) ---
+// One real, continuing multi-turn conversation, fed one new turn at a time
+// (a slide, or a synthetic section-recap/overall checkpoint - see
+// js/feedback.js's runFeedbackSession), reacting each time with no
+// knowledge of what's still to come - see backend/feedback_llm.py's
+// get_progressive_reaction.
 
 const FEEDBACK_PROGRESSIVE_API_URL = 'http://127.0.0.1:8000/feedback/progressive_step';
 
-function fetchProgressiveReaction(audience, prompt, messages, slide) {
+function fetchProgressiveReaction(audience, prompt, messages, slide, goal) {
   return fetch(FEEDBACK_PROGRESSIVE_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ audience, prompt, messages, slide })
+    body: JSON.stringify({ audience, prompt, messages, slide, goal })
   })
     .then(res => {
       if (!res.ok) {
@@ -1214,55 +1212,17 @@ function fetchProgressiveReaction(audience, prompt, messages, slide) {
     });
 }
 
-// Runs the progressive condition end to end: one call per slide, strictly
-// sequential (each call's `messages` depends on the previous one's reply),
-// rendering each slide's reaction into `container` as soon as it arrives -
-// this is what makes the comparison feel "live" rather than a single wait
-// followed by a wall of text.
-//
-// PROGRESSIVE_STEP_DELAY_MS paces the calls: each step's request resends
-// every prior slide's image (the whole conversation so far), so a 9-slide
-// deck fired back-to-back with no gap can burst past a provider's
-// per-minute token rate limit well before hitting any per-request size
-// limit - a real failure observed in testing, not a hypothetical one. A
-// small delay between steps spreads that load out over more wall-clock
-// time instead.
+// PROGRESSIVE_STEP_DELAY_MS paces sequential calls (see js/feedback.js's
+// runFeedbackSession): each step's request resends every prior turn's
+// image (the whole conversation so far), so a multi-slide deck fired
+// back-to-back with no gap can burst past a provider's per-minute token
+// rate limit well before hitting any per-request size limit - a real
+// failure observed in testing, not a hypothetical one. A small delay
+// between steps spreads that load out over more wall-clock time instead.
 const PROGRESSIVE_STEP_DELAY_MS = 1500;
 
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function runProgressiveTimeline(container, audience, prompt, slidePayload, onStep) {
-  let messages = [];
-  return slidePayload.reduce((chain, slide, index) => {
-    return chain
-      .then(() => (index === 0 ? Promise.resolve() : delay(PROGRESSIVE_STEP_DELAY_MS)))
-      .then(() => fetchProgressiveReaction(audience, prompt, messages, slide))
-      .then(data => {
-        messages = data.messages;
-        renderProgressiveStep(container, slide, data.reaction);
-        if (onStep) onStep(slide, data.reaction);
-      });
-  }, Promise.resolve());
-}
-
-function renderProgressiveStep(container, slide, reaction) {
-  const card = document.createElement('div');
-  card.className = 'progressive-step-card';
-
-  const header = document.createElement('div');
-  header.className = 'progressive-step-header';
-  header.textContent = `Slide ${slide.slide_index} (${slide.start_time} - ${slide.end_time})`;
-  card.appendChild(header);
-
-  const body = document.createElement('div');
-  body.className = 'progressive-step-text';
-  body.textContent = reaction;
-  card.appendChild(body);
-
-  container.appendChild(card);
-  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 // --- Input readers ---
