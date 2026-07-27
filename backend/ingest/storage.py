@@ -1,7 +1,7 @@
 """On-disk layout for a data-collection project: projects/<project_id>/ holds
 the original upload, rendered snapshots, and (once saved) project.json. Kept
 separate from the pre-baked root slides.json + snapshots/ fixture used by
-index.html/feedback.html/carta.html - this package never touches those."""
+knowledge.html/feedback.html/carta.html - this package never touches those."""
 import json
 import re
 from pathlib import Path

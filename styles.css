@@ -323,7 +323,7 @@ input, select {
 .input-group input[type="text"] {
   font-family: inherit;
   font-size: 13px;
-  padding: 8px 10px;
+  padding: 4px;
   border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.08);
@@ -654,6 +654,444 @@ input, select {
 
 .segments-section:last-child {
   margin-bottom: 0;
+}
+
+/* --- Paper extraction blocks (html/index.html) --- */
+.paper-source-label {
+  font-size: 12px;
+  opacity: 0.7;
+  margin-bottom: 14px;
+}
+
+.paper-sections-feed {
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+  padding-right: 10px;
+}
+
+.paper-section-block {
+  position: relative;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  padding: 16px 44px 16px 20px;
+  margin-bottom: 16px;
+  transition: opacity 0.15s ease;
+}
+
+.paper-section-block.removed {
+  opacity: 0.4;
+}
+
+.paper-section-block.removed .paper-section-title,
+.paper-section-block.removed .paper-section-text {
+  text-decoration: line-through;
+}
+
+.paper-section-block.selected {
+  box-shadow: 0 0 0 2px #f18700;
+}
+
+.paper-section-remove-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: transparent;
+  color: #FFFFFF;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.paper-section-remove-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Click-to-edit fields (title/text) - cursor:text + a dashed underline hint
+   on hover, so it's clear these are separate from the corner exclude button. */
+.editable-field {
+  cursor: text;
+  border-radius: 3px;
+  transition: background 0.15s ease;
+}
+
+.editable-field:hover {
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+
+.editable-field.editing {
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.5);
+  cursor: text;
+  outline: none;
+}
+
+.paper-section-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.paper-section-image {
+  display: block;
+  max-width: 100%;
+  border-radius: 6px;
+  margin: 8px 0 12px;
+}
+
+.paper-section-meta {
+  font-size: 11px;
+  opacity: 0.6;
+  margin-bottom: 10px;
+}
+
+.paper-section-text {
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.paper-section-storyboard {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.25);
+}
+
+.paper-section-storyboard-line {
+  font-size: 12px;
+  line-height: 1.5;
+  margin-bottom: 6px;
+}
+
+.paper-section-storyboard-line:last-child {
+  margin-bottom: 0;
+}
+
+.paper-section-storyboard-label {
+  font-weight: 700;
+  opacity: 0.8;
+}
+
+/* --- Stock media ("Find Footage" - html/index.html, after "Generate
+   Storyboard") - a row of video thumbnails and a stacked list of audio
+   previews per section, fetched from Pexels/Freesound on demand. --- */
+.find-footage-btn {
+  margin-top: 10px;
+}
+
+.paper-section-media {
+  margin-top: 10px;
+}
+
+.media-video-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.media-video-option {
+  position: relative;
+  width: 96px;
+  height: 64px;
+  border-radius: 4px;
+  overflow: hidden;
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.media-video-option img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.media-video-option.selected {
+  box-shadow: 0 0 0 2px #f18700;
+}
+
+.media-option-link {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: #FFFFFF;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.media-option-link:hover {
+  background: rgba(0, 0, 0, 0.85);
+}
+
+.media-audio-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.media-audio-option {
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.media-audio-option.selected {
+  box-shadow: 0 0 0 2px #f18700;
+}
+
+.media-audio-option-label {
+  font-size: 11px;
+  opacity: 0.8;
+  margin-bottom: 4px;
+}
+
+.media-audio-option audio {
+  width: 100%;
+  height: 28px;
+}
+
+/* --- Sections underneath the movie-editor timeline (html/index.html,
+   after "Arrange into Narrative") - three columns, one per documentary act,
+   each holding whichever .paper-section-blocks were assigned to it. */
+.narrative-sections-below {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.narrative-act-column {
+  flex: 1 1 0;
+  min-width: 0;
+  max-height: calc(100vh - 220px);
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
+.narrative-act-heading {
+  margin-bottom: 14px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+.narrative-act-title {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.narrative-act-hint {
+  font-size: 11px;
+  opacity: 0.65;
+  margin-top: 2px;
+}
+
+.narrative-act-empty {
+  font-size: 12px;
+  opacity: 0.6;
+  font-style: italic;
+}
+
+/* Smaller text specifically for the section cards inside the movie-editor's
+   narrative-act columns - .paper-section-title/-text/-meta/-storyboard-line
+   are shared with the pre-arrangement flat feed (.paper-sections-feed),
+   which keeps its own larger size; only this narrower, three-up layout
+   gets scaled down. */
+.narrative-act-column .paper-section-title {
+  font-size: 13px;
+}
+
+.narrative-act-column .paper-section-text {
+  font-size: 11px;
+}
+
+.narrative-act-column .paper-section-meta {
+  font-size: 10px;
+}
+
+.narrative-act-column .paper-section-storyboard-line {
+  font-size: 11px;
+}
+
+/* --- Movie-editor view (html/index.html, after "Arrange into Narrative") -
+   a video-player-style preview pane, then a timeline segmented into the
+   three acts, each with a video track and an audio track of clips. Both
+   are wrapped together in .editor-pinned-top (see renderMovieEditor), above
+   .narrative-sections-below, which holds the full section text. */
+.editor-pinned-top {
+  background: #1a1a1a;
+  padding-bottom: 4px;
+}
+
+.editor-preview {
+  margin-bottom: 10px;
+}
+
+.editor-preview-frame {
+  background: #000000;
+  border-radius: 8px;
+  min-height: 360px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+}
+
+.editor-preview-visual {
+  font-size: 16px;
+  line-height: 1.5;
+  text-align: center;
+  color: #FFFFFF;
+}
+
+.editor-preview-empty {
+  font-size: 13px;
+  opacity: 0.6;
+  text-align: center;
+  color: #FFFFFF;
+}
+
+.editor-preview-caption {
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: center;
+  color: #FFD5CE;
+  padding: 6px 16px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  align-self: center;
+}
+
+.editor-preview-meta {
+  font-size: 12px;
+  opacity: 0.7;
+  margin-top: 8px;
+  text-align: center;
+}
+
+.editor-timeline {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.editor-segment {
+  flex: 1 1 0;
+  min-width: 0;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+  padding: 10px 12px;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.editor-segment.drag-over {
+  box-shadow: 0 0 0 2px #f18700;
+  background: rgba(241, 135, 0, 0.15);
+}
+
+.editor-segment-label {
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0.75;
+  margin-bottom: 8px;
+}
+
+.editor-track {
+  display: flex;
+  gap: 3px;
+  margin-bottom: 4px;
+}
+
+.editor-track:last-child {
+  margin-bottom: 0;
+}
+
+.editor-clip {
+  flex: 1 1 0;
+  min-width: 0;
+  cursor: pointer;
+  overflow: hidden;
+  transition: opacity 0.15s ease;
+}
+
+.editor-clip:hover {
+  opacity: 0.85;
+}
+
+.editor-clip.removed {
+  opacity: 0.35;
+}
+
+.editor-clip.selected {
+  box-shadow: 0 0 0 2px #f18700;
+}
+
+.editor-clip-video[draggable="true"] {
+  cursor: grab;
+}
+
+.editor-clip-video.dragging {
+  opacity: 0.4;
+}
+
+.editor-clip-video {
+  height: 16px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.18);
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+}
+
+.editor-clip-video .editor-clip-label {
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.editor-clip-audio {
+  height: 16px;
+  border-radius: 3px;
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.35) 0 2px,
+    rgba(255, 255, 255, 0.12) 2px 5px
+  );
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.editor-clip-audio .editor-clip-label {
+  font-size: 10px;
+}
+
+.editor-clip-empty {
+  background: transparent;
+  border: 1px dashed rgba(255, 255, 255, 0.25);
+  cursor: default;
+}
+
+.editor-clip-empty:hover {
+  opacity: 1;
 }
 
 .segment-card {
@@ -1046,6 +1484,30 @@ input, select {
   border-radius: 8px;
 }
 
+/* Once relocated (see js/paper-extract.js's runArrangeNarrative) - still
+   its own separate card (same background/border/shadow as always), just
+   without the 900px centering that only made sense as a full-width module. */
+.module-card.module-card--in-sidebar {
+  max-width: none;
+  margin: 0;
+}
+
+/* Stacks the collapsible upload sidebar and, once relocated, the
+   documentary-intent module as two separate cards in the same left column. */
+.sidebar-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  flex: 0 0 300px;
+  min-width: 0;
+}
+
+.sidebar-stack > .upload-sidebar {
+  flex: 0 0 auto; /* not 0 0 300px - that would force a 300px *height* in this column-direction parent */
+  position: static; /* overrides the shared .upload-sidebar rule's sticky (still used by presenter-view.html) */
+  margin-top: 0;
+}
+
 /* Generic "locked until its prerequisite is ready" state - not scoped to
    .module-card since the Setup sidebar's Record Transcript section (an
    .objectives-scope, not a .module-card) also toggles this same class. */
@@ -1137,6 +1599,8 @@ input, select {
   opacity: 0.85;
   min-height: 16px;
   margin-top: 14px;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .status-line.error {
@@ -1959,12 +2423,44 @@ input, select {
   padding: 0 20px 40px;
 }
 
+/* --- html/index.html only: the documentary-intent module (a .module-card)
+   and the extracted-sections feed both live in .main-column, to the right
+   of the collapsible "Your research paper" upload-sidebar. */
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+#documentary-intent-module {
+  margin: 0 0 30px 0;
+  max-width: 100%;
+}
+
+.documentary-intent-input {
+  width: 100%;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #FFFFFF;
+  resize: vertical;
+}
+
+.documentary-intent-input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
 .main-column {
   flex: 1 1 auto;
   min-width: 0;
+  /* margin-top: 20px; */
 }
 
-/* Bigger slide thumbnails, scoped to this page only (index/feedback/carta
+/* Bigger slide thumbnails, scoped to this page only (knowledge/feedback/carta
    share the same .slide-thumb base rule and are unaffected). */
 body.collect-data-page .slide-thumb {
   width: 340px;
@@ -1983,6 +2479,10 @@ body.collect-data-page .slide-thumb {
   overflow: hidden;
 }
 
+.upload-sidebar-doc {
+  padding: 24px 24px 0px 24px;
+}
+
 .upload-sidebar-body #transcript-source-module, #presentation-notes-section {
   margin-bottom: 0;
   padding-bottom: 0;
@@ -1997,7 +2497,7 @@ body.collect-data-page .slide-thumb {
 }
 
 .upload-sidebar-header h2 {
-  font-size: 15px;
+  font-size: 20px;
   /* text-transform: uppercase; */
   letter-spacing: 0.05em;
   margin: 0;
@@ -2055,7 +2555,7 @@ body.collect-data-page {
   --cd-accent-hover: #C50E00;
   --cd-accent-text: #FFFFFF;
   --cd-success: #2E7D32;
-  --cd-font-heading: 'Cabin Sketch', cursive;
+  --cd-font-heading: 'Coral Pixels', cursive;
   --cd-font-body: 'Source Sans 3', sans-serif;
 
   background: var(--cd-bg);
@@ -2096,14 +2596,16 @@ body.collect-data-page #transcript-panel .timestamp-edit-row input[type="number"
 body.collect-data-page #transcript-panel .transcript-text-input,
 body.collect-data-page #audience-input,
 body.collect-data-page .input-group input[type="file"],
-body.collect-data-page .input-group input[type="text"] {
+body.collect-data-page .input-group input[type="text"],
+body.collect-data-page .documentary-intent-input {
   background: var(--cd-card-bg);
   border: 1px solid var(--cd-border-strong);
   color: var(--cd-text);
 }
 
 body.collect-data-page #audience-input::placeholder,
-body.collect-data-page .input-group input[type="text"]::placeholder {
+body.collect-data-page .input-group input[type="text"]::placeholder,
+body.collect-data-page .documentary-intent-input::placeholder {
   color: rgba(38, 37, 35, 0.45);
 }
 
@@ -2171,6 +2673,75 @@ body.collect-data-page .graph-node {
 }
 body.collect-data-page .graph-node.active {
   border-color: var(--cd-accent);
+}
+
+body.collect-data-page .paper-section-block {
+  background: var(--cd-card-bg);
+  border: 1px solid var(--cd-border);
+  box-shadow: 0 1px 4px rgba(38, 37, 35, 0.06);
+}
+
+body.collect-data-page .editable-field:hover {
+  background: var(--cd-panel-bg);
+  box-shadow: 0 0 0 1px var(--cd-border-strong);
+}
+
+body.collect-data-page .editable-field.editing {
+  background: var(--cd-panel-bg);
+  box-shadow: 0 0 0 1px var(--cd-accent);
+}
+
+body.collect-data-page .paper-section-remove-btn {
+  border-color: var(--cd-border-strong);
+  color: var(--cd-text);
+}
+
+body.collect-data-page .paper-section-remove-btn:hover {
+  background: var(--cd-panel-bg);
+}
+
+body.collect-data-page .narrative-act-heading {
+  border-bottom-color: var(--cd-border-strong);
+}
+
+body.collect-data-page .paper-section-storyboard {
+  border-top-color: var(--cd-border);
+}
+
+body.collect-data-page .media-video-option {
+  background: var(--cd-panel-bg);
+  border: 1px solid var(--cd-border);
+}
+
+body.collect-data-page .media-audio-option {
+  background: var(--cd-panel-bg);
+  border: 1px solid var(--cd-border);
+}
+
+body.collect-data-page .editor-segment {
+  background: var(--cd-panel-bg);
+  border: 1px solid var(--cd-border);
+}
+
+body.collect-data-page .editor-pinned-top {
+  background: var(--cd-bg);
+}
+
+body.collect-data-page .editor-clip-video {
+  background: var(--cd-border-strong);
+}
+
+body.collect-data-page .editor-clip-audio {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--cd-border-strong) 0 2px,
+    var(--cd-border) 2px 5px
+  );
+}
+
+body.collect-data-page .editor-clip-empty {
+  background: transparent;
+  border: 1px dashed var(--cd-border-strong);
 }
 body.collect-data-page .graph-node-slide {
   background: var(--cd-accent);

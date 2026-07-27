@@ -57,7 +57,7 @@ fetch(`/${DECK_DIR}/slides.json`)
 // similarity-based entity/predicate clusters with their canonical labels,
 // and the iteratively-built schema (type taxonomy), for double-checking the
 // pipeline's output at every stage. Real, not mocked - same local Python
-// backend as index.html's segmentation module, which must be running.
+// backend as knowledge.html's segmentation module, which must be running.
 const fileInput = document.getElementById('carta-file-input');
 const urlInput = document.getElementById('carta-url-input');
 const extractBtn = document.getElementById('carta-extract-btn');
@@ -85,7 +85,7 @@ function processSources(sources) {
   resultsEl.appendChild(feedEl);
 
   // each source runs through the carta pipeline independently, same as the
-  // segmentation module on index.html - a topic shift between an upload and
+  // segmentation module on knowledge.html - a topic shift between an upload and
   // a URL isn't folded into one shared chunking pass
   const tasks = sources.map(source =>
     fetchCartaResult(source.text, source.label).then(result => {

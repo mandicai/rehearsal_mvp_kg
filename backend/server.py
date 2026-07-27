@@ -15,7 +15,34 @@ Also exposes segmentation_carta/ (an independent, in-progress pipeline: text
 -> overlapping chunks -> LLM-extracted entity mentions per chunk) at
 /segment_carta, for the carta.html inspector page. Unlike /segment, this one
 has no local fallback and returns 503 without an LLM key.
+
+Also exposes paper_extraction.py's Docling-backed PDF section extraction at
+/paper/extract, for index.html's paper-upload tool - no LLM key needed, but
+the first request downloads Docling's layout/OCR model weights (needs
+internet access once).
+
+Also exposes narrative_arc_llm.py's LLM classification of that tool's
+extracted sections into a three-act documentary narrative arc at
+/paper/narrative_arc - unlike /paper/extract, this does need an LLM key and
+returns 503 without one.
+
+Also exposes storyboard_llm.py's LLM-generated loose storyboard (a visual
+direction + narration line per already-arranged section) at
+/paper/storyboard - also needs an LLM key, returns 503 without one. That
+route also runs segmentation_carta's per-chunk entity extraction
+(CartaLLMClient.extract_entities) over each section first, reusing that
+pipeline's stage 2 in isolation - skipping its chunking/clustering/dedup
+machinery, since each section here is already a natural unit - to ground
+the storyboard's shots in specific named entities, and the storyboard
+response also carries a video_query/audio_query per section for the two
+routes below.
+
+Also exposes stock_media.py's Pexels/Freesound search at /media/search_video
+and /media/search_audio, for that same tool's per-section "Find Footage"
+action - each needs its own API key (PEXELS_API_KEY/FREESOUND_API_KEY),
+returns 503 independently without one.
 """
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 from dotenv import load_dotenv
@@ -27,7 +54,7 @@ from flask_cors import CORS
 
 from segmentation import PipelineConfig, SegmentationPipeline
 from segmentation_carta import CartaConfig, CartaPipeline
-from segmentation_carta.llm import CartaLLMCallError
+from segmentation_carta.llm import CartaLLMClient, CartaLLMCallError
 from feedback_llm import FeedbackLLMClient, LLMCallError as FeedbackLLMCallError
 from ingest import IngestConfig, render_pptx_to_slides, PptxRenderError, SofficeNotFoundError
 from ingest import next_rehearsal_run_id, project_dir, snapshots_dir, save_project, PROJECTS_DIR
@@ -35,6 +62,10 @@ from ingest import TranscriptionClient, TranscriptionCallError
 from ingest import align_transcript, AlignError
 from ingest import ObjectivesLLMClient, ObjectivesLLMCallError
 from ingest import AssessmentLLMClient, AssessmentLLMCallError
+from paper_extraction import extract_sections, PaperExtractionError
+from narrative_arc_llm import NarrativeArcLLMClient, NarrativeArcLLMCallError
+from storyboard_llm import StoryboardLLMClient, StoryboardLLMCallError
+from stock_media import PexelsClient, FreesoundClient, StockMediaCallError
 
 # Structural parsing + NER run in roughly linear time, but boundary scoring
 # and refinement are O(n^2)-ish over base units, so this caps worst-case
@@ -57,9 +88,34 @@ MAX_FEEDBACK_SLIDES = 60
 MAX_PPTX_SIZE_MB = 50
 MAX_AUDIO_SIZE_MB = 50
 
+# Bound on index.html's paper upload (see /paper/extract below).
+MAX_PAPER_SIZE_MB = 50
+
+# Bounds on index.html's narrative-arc request (see /paper/narrative_arc
+# below). Was 40, raised to 100 - paper_extraction.py now gives every
+# figure/table its own section on top of headings, so real papers can
+# comfortably clear 40 sections; 100 is generous headroom rather than a real
+# expected ceiling. Per-section text is truncated since the LLM only needs
+# enough to judge where a section belongs, not its full body.
+MAX_NARRATIVE_ARC_SECTIONS = 100
+MAX_NARRATIVE_ARC_SECTION_CHARS = 2000
+
+# Bounds on index.html's storyboard request (see /paper/storyboard below) -
+# a tighter per-section cap than narrative-arc's since this call's output
+# (a visual + narration line per section) is already richer/larger, and the
+# LLM only needs enough of each section to draft a shot from, not its full body.
+MAX_STORYBOARD_SECTIONS = 100
+MAX_STORYBOARD_SECTION_CHARS = 1500
+
+# Bound on the free-text "documentary intent" statement index.html's
+# narrative-arc/storyboard requests can optionally include (see both routes
+# below) - a presenter's stated focus/message, not a document, so this is
+# generous headroom rather than an expected length.
+MAX_DOCUMENTARY_GOAL_CHARS = 500
+
 app = Flask(__name__)
 CORS(app)
-app.config['MAX_CONTENT_LENGTH'] = max(MAX_PPTX_SIZE_MB, MAX_AUDIO_SIZE_MB) * 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = max(MAX_PPTX_SIZE_MB, MAX_AUDIO_SIZE_MB, MAX_PAPER_SIZE_MB) * 1024 * 1024
 
 pipeline = SegmentationPipeline(PipelineConfig())
 carta_pipeline = CartaPipeline(CartaConfig())
@@ -68,6 +124,11 @@ ingest_config = IngestConfig()
 transcription_client = TranscriptionClient(model=ingest_config.transcription_model)
 objectives_client = ObjectivesLLMClient()
 assessment_client = AssessmentLLMClient()
+narrative_arc_client = NarrativeArcLLMClient()
+storyboard_client = StoryboardLLMClient()
+carta_entity_client = CartaLLMClient()
+pexels_client = PexelsClient()
+freesound_client = FreesoundClient()
 
 
 @app.route('/segment', methods=['POST'])
@@ -196,6 +257,190 @@ def feedback_progressive_step():
         'understanding_feedback': parsed.get('understanding_feedback', ''),
         'messages': updated_messages,
     })
+
+
+@app.route('/paper/extract', methods=['POST'])
+def paper_extract():
+    uploaded = request.files.get('file')
+    if uploaded is None or not uploaded.filename:
+        return jsonify({'error': 'file is required (multipart field "file")'}), 400
+    if not uploaded.filename.lower().endswith('.pdf'):
+        return jsonify({'error': 'file must be a .pdf'}), 400
+
+    pdf_bytes = uploaded.read()
+    if len(pdf_bytes) > MAX_PAPER_SIZE_MB * 1024 * 1024:
+        return jsonify({'error': f'file exceeds max size of {MAX_PAPER_SIZE_MB}MB'}), 400
+
+    try:
+        result = extract_sections(pdf_bytes, uploaded.filename)
+    except PaperExtractionError as exc:
+        return jsonify({'error': str(exc)}), 500
+
+    return jsonify(result)
+
+
+_NARRATIVE_ARC_NOT_CONFIGURED_ERROR = (
+    'Arranging sections into a narrative arc requires an LLM API key. Set OPENAI_API_KEY (or OPENROUTER_API_KEY) in backend/.env.'
+)
+
+
+@app.route('/paper/narrative_arc', methods=['POST'])
+def paper_narrative_arc():
+    data = request.get_json(silent=True) or {}
+    sections = data.get('sections')
+
+    if not isinstance(sections, list) or not sections:
+        return jsonify({'error': 'sections is required and must be a non-empty list'}), 400
+    if len(sections) > MAX_NARRATIVE_ARC_SECTIONS:
+        return jsonify({'error': f'too many sections (max {MAX_NARRATIVE_ARC_SECTIONS})'}), 400
+
+    cleaned = []
+    for i, section in enumerate(sections):
+        if not isinstance(section, dict):
+            return jsonify({'error': f'section {i} must be an object'}), 400
+        index = section.get('index')
+        title = (section.get('title') or '').strip()
+        if not isinstance(index, int) or not title:
+            return jsonify({'error': f'section {i} must have an integer "index" and non-empty "title"'}), 400
+        cleaned.append({
+            'index': index,
+            'title': title,
+            'text': (section.get('text') or '').strip()[:MAX_NARRATIVE_ARC_SECTION_CHARS],
+        })
+
+    documentary_goal = (data.get('documentary_goal') or '').strip()[:MAX_DOCUMENTARY_GOAL_CHARS]
+
+    if not narrative_arc_client.is_configured():
+        return jsonify({'error': _NARRATIVE_ARC_NOT_CONFIGURED_ERROR}), 503
+
+    try:
+        assignments = narrative_arc_client.assign_acts(cleaned, documentary_goal)
+    except NarrativeArcLLMCallError as exc:
+        return jsonify({'error': str(exc)}), 500
+
+    return jsonify({'assignments': [{'index': index, 'act': act} for index, act in assignments.items()]})
+
+
+_STORYBOARD_NOT_CONFIGURED_ERROR = (
+    'Generating a storyboard requires an LLM API key. Set OPENAI_API_KEY (or OPENROUTER_API_KEY) in backend/.env.'
+)
+
+
+@app.route('/paper/storyboard', methods=['POST'])
+def paper_storyboard():
+    data = request.get_json(silent=True) or {}
+    sections = data.get('sections')
+
+    if not isinstance(sections, list) or not sections:
+        return jsonify({'error': 'sections is required and must be a non-empty list'}), 400
+    if len(sections) > MAX_STORYBOARD_SECTIONS:
+        return jsonify({'error': f'too many sections (max {MAX_STORYBOARD_SECTIONS})'}), 400
+
+    cleaned = []
+    for i, section in enumerate(sections):
+        if not isinstance(section, dict):
+            return jsonify({'error': f'section {i} must be an object'}), 400
+        index = section.get('index')
+        title = (section.get('title') or '').strip()
+        act = section.get('act')
+        if not isinstance(index, int) or not title or act not in ('beginning', 'middle', 'end'):
+            return jsonify({'error': f'section {i} must have an integer "index", non-empty "title", and "act" of beginning/middle/end'}), 400
+        cleaned.append({
+            'index': index,
+            'title': title,
+            'act': act,
+            'text': (section.get('text') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS],
+        })
+
+    documentary_goal = (data.get('documentary_goal') or '').strip()[:MAX_DOCUMENTARY_GOAL_CHARS]
+
+    if not storyboard_client.is_configured():
+        return jsonify({'error': _STORYBOARD_NOT_CONFIGURED_ERROR}), 503
+
+    # Entities are an enrichment, not a requirement - a failed/unconfigured
+    # extraction just means that section's shot stays generic, it doesn't
+    # sink the whole storyboard request. One LLM call per section, run in
+    # parallel (mirrors segmentation_carta/pipeline.py's own stage-2 fan-out).
+    entities_by_index = {section['index']: [] for section in cleaned}
+    if carta_entity_client.is_configured():
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            future_to_section = {
+                executor.submit(carta_entity_client.extract_entities, section['text']): section
+                for section in cleaned
+            }
+            for future in future_to_section:
+                section = future_to_section[future]
+                try:
+                    entities_by_index[section['index']] = future.result()
+                except CartaLLMCallError:
+                    pass  # leave that section's entities empty
+
+    for section in cleaned:
+        section['entities'] = entities_by_index[section['index']]
+
+    try:
+        storyboard = storyboard_client.generate_storyboard(cleaned, documentary_goal)
+    except StoryboardLLMCallError as exc:
+        return jsonify({'error': str(exc)}), 500
+
+    return jsonify({'storyboard': [
+        {
+            'index': index,
+            'visual': entry['visual'],
+            'narration': entry['narration'],
+            'video_query': entry['video_query'],
+            'audio_query': entry['audio_query'],
+            'entities': entities_by_index.get(index, []),
+        }
+        for index, entry in storyboard.items()
+    ]})
+
+
+_PEXELS_NOT_CONFIGURED_ERROR = (
+    'Video search requires a Pexels API key. Set PEXELS_API_KEY in backend/.env (free at pexels.com/api).'
+)
+_FREESOUND_NOT_CONFIGURED_ERROR = (
+    'Audio search requires a Freesound API key. Set FREESOUND_API_KEY in backend/.env '
+    '(free at freesound.org/apiv2/apply - non-commercial use only).'
+)
+
+
+@app.route('/media/search_video', methods=['POST'])
+def media_search_video():
+    data = request.get_json(silent=True) or {}
+    query = (data.get('query') or '').strip()
+
+    if not query:
+        return jsonify({'error': 'query is required'}), 400
+
+    if not pexels_client.is_configured():
+        return jsonify({'error': _PEXELS_NOT_CONFIGURED_ERROR}), 503
+
+    try:
+        videos = pexels_client.search_videos(query)
+    except StockMediaCallError as exc:
+        return jsonify({'error': str(exc)}), 500
+
+    return jsonify({'videos': videos})
+
+
+@app.route('/media/search_audio', methods=['POST'])
+def media_search_audio():
+    data = request.get_json(silent=True) or {}
+    query = (data.get('query') or '').strip()
+
+    if not query:
+        return jsonify({'error': 'query is required'}), 400
+
+    if not freesound_client.is_configured():
+        return jsonify({'error': _FREESOUND_NOT_CONFIGURED_ERROR}), 503
+
+    try:
+        audio = freesound_client.search_sounds(query)
+    except StockMediaCallError as exc:
+        return jsonify({'error': str(exc)}), 500
+
+    return jsonify({'audio': audio})
 
 
 @app.route('/ingest/pptx', methods=['POST'])

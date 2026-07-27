@@ -7,3 +7,5 @@ python-pptx==1.0.2
 numpy==2.0.2
 spacy==3.8.11
 sentence-transformers==5.1.2
+docling==2.69.1
+requests==2.32.5

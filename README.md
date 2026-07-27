@@ -7,15 +7,17 @@
    python3 -m pip install -r requirements.txt
    python3 -m spacy download en_core_web_sm
    ```
-   The spaCy model is used by `backend/segmentation/` and `backend/segmentation_carta/`; `sentence-transformers` will download its embedding model automatically the first time it runs (needs internet access once).
+   `docling` will download models automatically the first time it runs (needs internet access once - `docling`'s layout/OCR models in particular can take a minute).
 
-2. **Install LibreOffice** (provides the `soffice` command), needed only for converting an uploaded `.pptx` into slide images in `presenter-view.html`:
+<!-- 2. **Install LibreOffice** (provides the `soffice` command), needed only for converting an uploaded `.pptx` into slide images in `presenter-view.html`:
    - macOS: `brew install --cask libreoffice`
    - Linux: `apt install libreoffice` (or your distro's equivalent)
 
-   Confirm it's on your `PATH` with `soffice --version`.
+   Confirm it's on your `PATH` with `soffice --version`. -->
 
-3. **Configure an LLM API key**: copy `backend/.env.example` to `backend/.env` and fill in `OPENAI_API_KEY` with a real OpenAI (or OpenRouter) key. If you're using the real OpenAI API directly (not an internal proxy), delete/blank out the `OPENAI_BASE_URL` line - it's only needed to point at a custom OpenAI-compatible proxy. Without a key, most LLM-backed features (learning objective suggestions, Simulate Audience, feedback) won't work, though the app will still start. `participant-view.html` doesn't call the LLM at all.
+3. **Configure an LLM API key**: copy `backend/.env.example` to `backend/.env` and fill in `OPENAI_API_KEY` with a real OpenAI (or OpenRouter) key. If you're using the real OpenAI API directly (not an internal proxy), delete/blank out the `OPENAI_BASE_URL` line - it's only needed to point at a custom OpenAI-compatible proxy. 
+
+<!-- Without a key, most LLM-backed features (learning objective suggestions, Simulate Audience, feedback) won't work, though the app will still start. `participant-view.html` doesn't call the LLM at all. -->
 
 4. **Start both servers** (two separate terminals, both from the repo root):
    ```
@@ -23,14 +25,16 @@
    python3 -m http.server 5500    # frontend static files, http://localhost:5500
    ```
 
-5. **Open a page** in your browser:
-   - `http://localhost:5500/html/presenter-view.html` - upload a `.pptx`, record/align a transcript, define an audience and learning objectives, then run the Simulate Audience (Bayesian Knowledge Tracing) feature.
+5. **Open `http://localhost:5500/html/index.html`** in your browser. Upload an academic paper (PDF) and extract its section titles and body text for review. PDFs are parsed server-side by Docling.
+
+   <!-- - `http://localhost:5500/html/presenter-view.html` - upload a `.pptx`, record/align a transcript, define an audience and learning objectives, then run the Simulate Audience (Bayesian Knowledge Tracing) feature.
    - `http://localhost:5500/html/participant-view.html` - collect real human takeaways/reactions/ratings after watching a presentation.
-   - `http://localhost:5500/html/index.html`, `.../feedback.html`, `.../carta.html` - the other tools described below.
+   - `http://localhost:5500/html/index.html` - upload an academic paper (PDF/text/Markdown) and extract its section titles and body text for review. PDFs are parsed server-side by Docling; `.txt`/`.md` uploads use a client-side heuristic instead (Docling only handles PDFs).
+   - `http://localhost:5500/html/knowledge.html`, `.../feedback.html`, `.../carta.html` - the other tools described below. -->
 
 HTML pages live in `html/` and JS files live in `js/`; both are served as static files from the repo root by the `http.server` command above, so page/script/asset references use root-absolute paths (e.g. `/js/helpers.js`, `/slides.json`) rather than paths relative to `html/`.
 
-## `backend/segmentation/*.py`
+<!-- ## `backend/segmentation/*.py`
 
 Handles segmentation of input documents or a Wikipedia URL (placeholder for now, as an example of "common knowledge")
 
@@ -44,6 +48,10 @@ Handles segmentation of input documents or a Wikipedia URL (placeholder for now,
 
 ## html/index.html
 
+- Uploads an academic paper (PDF/.txt/.md) and extracts its section titles and body text as reviewable blocks, so the extraction can be sanity-checked against the source paper. No LLM call either way: PDFs are parsed server-side by `backend/paper_extraction.py` using Docling (a real structural parse, not a heuristic - see `/paper/extract` in `backend/server.py`); `.txt`/`.md` uploads stay client-side, using a pattern-matching heuristic (relative to common section names/numbered headings) since Docling only handles PDFs.
+
+## html/knowledge.html
+
 - Our system that provides improves feedback over naive system
 
 ## html/feedback.html
@@ -56,7 +64,7 @@ Handles segmentation of input documents or a Wikipedia URL (placeholder for now,
 
 ## html/participant-view.html
 
-- A standalone tool for collecting **real human** (not LLM-simulated) reactions to a presentation: participants watch a slide+audio deck straight through, then reflect on it open-endedly - main takeaways they'd feel comfortable explaining to a friend, which slides/transcript excerpts contributed to or confused that understanding (and why), dependency links drawn between all of those, and Likert + open-response ratings of the presentation's informativeness/confusingness/understandability. No LLM calls or API key needed - the researcher's Learning Objectives module is reference-only context, not a comprehension quiz. Records persist in the browser's `localStorage` and are exportable as JSON.
+- A standalone tool for collecting **real human** (not LLM-simulated) reactions to a presentation: participants watch a slide+audio deck straight through, then reflect on it open-endedly - main takeaways they'd feel comfortable explaining to a friend, which slides/transcript excerpts contributed to or confused that understanding (and why), dependency links drawn between all of those, and Likert + open-response ratings of the presentation's informativeness/confusingness/understandability. No LLM calls or API key needed - the researcher's Learning Objectives module is reference-only context, not a comprehension quiz. Records persist in the browser's `localStorage` and are exportable as JSON. -->
 
 ### Task list
 

@@ -1326,7 +1326,15 @@ function handleJsonResponse(res) {
   if (!res.ok) {
     return res.json()
       .catch(() => ({}))
-      .then(body => { throw new Error(body.error || `server responded with ${res.status}`); });
+      .then(body => {
+        const err = new Error(body.error || `server responded with ${res.status}`);
+        // Distinguishes "reached the server and it said no" (a real,
+        // already-clear error message) from an actual connection failure -
+        // see the paper-extraction fetch wrappers below, which use this to
+        // avoid relabeling a legitimate 400/500 as "could not reach the server".
+        err.isServerError = true;
+        throw err;
+      });
   }
   return res.json();
 }
@@ -1399,6 +1407,117 @@ function fetchSuggestObjectives(audience, scopeLabel, slidesForScope) {
     .catch(err => {
       throw new Error(
         `Could not reach the takeaway-suggestion server at ${SUGGEST_OBJECTIVES_API_URL} (${err.message}). ` +
+        `Start it with: python backend/server.py`
+      );
+    });
+}
+
+// --- index.html: PDF section extraction (backend/paper_extraction.py) ---
+// Docling runs in-process on the backend (no separate service, unlike the
+// segmentation/feedback pipelines' external calls) - still a multipart
+// upload though, so this follows fetchIngestPptx's shape exactly. .txt/.md
+// uploads never hit this; see js/paper-extract.js's client-side heuristic.
+
+const PAPER_EXTRACT_API_URL = 'http://127.0.0.1:8000/paper/extract';
+
+function fetchPaperExtraction(file) {
+  const form = new FormData();
+  form.append('file', file);
+
+  return fetch(PAPER_EXTRACT_API_URL, { method: 'POST', body: form })
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(
+        `Could not reach the paper-extraction server at ${PAPER_EXTRACT_API_URL} (${err.message}). ` +
+        `Start it with: python backend/server.py`
+      );
+    });
+}
+
+// --- index.html: narrative-arc arrangement (backend/narrative_arc_llm.py) ---
+// Unlike fetchPaperExtraction above, this is an LLM call (JSON body, no
+// file) that classifies each already-extracted section into one of three
+// documentary acts. Requires an LLM API key server-side; see
+// js/paper-extract.js's runArrangeNarrative.
+
+const NARRATIVE_ARC_API_URL = 'http://127.0.0.1:8000/paper/narrative_arc';
+
+function fetchNarrativeArc(sections, documentaryGoal) {
+  return fetch(NARRATIVE_ARC_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sections, documentary_goal: documentaryGoal || '' })
+  })
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(
+        `Could not reach the narrative-arc server at ${NARRATIVE_ARC_API_URL} (${err.message}). ` +
+        `Start it with: python backend/server.py`
+      );
+    });
+}
+
+// --- index.html: storyboard generation (backend/storyboard_llm.py) ---
+// Same shape as fetchNarrativeArc above, but each section must already
+// carry an "act" (beginning/middle/end) - see js/paper-extract.js's
+// runGenerateStoryboard, which only runs after a narrative-arc arrangement.
+
+const STORYBOARD_API_URL = 'http://127.0.0.1:8000/paper/storyboard';
+
+function fetchStoryboard(sections, documentaryGoal) {
+  return fetch(STORYBOARD_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sections, documentary_goal: documentaryGoal || '' })
+  })
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(
+        `Could not reach the storyboard server at ${STORYBOARD_API_URL} (${err.message}). ` +
+        `Start it with: python backend/server.py`
+      );
+    });
+}
+
+// --- index.html: stock media search (backend/stock_media.py) ---
+// Same shape as fetchStoryboard above, but there are two independent
+// providers/routes - see js/paper-extract.js's runFindFootage, which calls
+// both in parallel via Promise.allSettled so one failing doesn't blank out
+// the other.
+
+const SEARCH_VIDEO_API_URL = 'http://127.0.0.1:8000/media/search_video';
+const SEARCH_AUDIO_API_URL = 'http://127.0.0.1:8000/media/search_audio';
+
+function fetchVideoOptions(query) {
+  return fetch(SEARCH_VIDEO_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query })
+  })
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(
+        `Could not reach the video-search server at ${SEARCH_VIDEO_API_URL} (${err.message}). ` +
+        `Start it with: python backend/server.py`
+      );
+    });
+}
+
+function fetchAudioOptions(query) {
+  return fetch(SEARCH_AUDIO_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query })
+  })
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(
+        `Could not reach the audio-search server at ${SEARCH_AUDIO_API_URL} (${err.message}). ` +
         `Start it with: python backend/server.py`
       );
     });
