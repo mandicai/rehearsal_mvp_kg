@@ -1,39 +1,114 @@
-"""LLM classification of extracted paper sections into a three-act
-documentary narrative arc (see server.py's /paper/narrative_arc route), for
-index.html's paper-extraction tool - triggered by that page's "Arrange into
-Narrative" button, over whichever sections the user hasn't excluded.
+"""LLM-ranked documentary narrative arc suggestions (see server.py's
+/paper/suggest_arcs route), for storyboard.html's arc-suggestion step.
+
+The presenter records themselves narrating their intent and/or picks a few
+suggested-focus statements; suggest_arcs_from_intent ranks a recommended arc
+(with reasoning tied to what they actually said) plus a few alternatives.
+Once they accept one, its named parts become the narrative-act groups shown
+right away (js/paper-extract.js's runAcceptArc) - there's no further LLM
+step to place paper sections into them; the presenter does that manually
+from there (dragging a section's chip into a row, or adding one directly).
 
 Same env vars as feedback_llm.py/ingest/objectives_llm.py:
     OPENAI_API_KEY    or OPENROUTER_API_KEY   (checked in that order)
     OPENAI_BASE_URL
     LLM_MODEL         default 'gpt-4o-mini'
 
-No local fallback - there's no non-LLM way to judge where a section belongs
-in a narrative arc, so this raises NarrativeArcLLMCallError if unconfigured.
+No local fallback - there's no non-LLM way to turn a spoken narration/focus
+statements into a narrative arc, so this raises NarrativeArcLLMCallError if
+unconfigured.
 """
 import json
 import os
+
+import httpx
 
 try:
     from openai import OpenAI
 except ImportError:  # openai isn't installed - client stays unconfigured
     OpenAI = None
 
-_ACTS = ('beginning', 'middle', 'end')
+# Kept in sync by convention with js/paper-extract.js's ARC_TEMPLATES - no
+# shared-config-loading mechanism exists in this small repo, and building
+# one for 5 short lists would be overkill. If you touch one, touch both.
+# Each part's `description` is shown to the presenter (see renderMovieEditor)
+# as a one-line reminder of what that part of the arc should illustrate.
+ARC_TEMPLATES = [
+    {
+        'name': 'Solving a problem or puzzle',
+        'sections': [
+            {'name': 'Puzzle or problem', 'description': 'Introduce the central puzzle or open question this research sets out to solve.'},
+            {'name': 'Background of problem', 'description': "Give the context and why this problem is hard or hasn't been solved yet."},
+            {'name': 'Struggle to solve problem', 'description': 'Walk through the approach being tried, and the obstacles along the way.'},
+            {'name': 'Turning point', 'description': 'The key insight or moment where the approach starts to click.'},
+            {'name': 'Solution', 'description': 'The resolution - what was found, and why it solves the puzzle.'},
+        ],
+    },
+    {
+        'name': 'Challenging an assumption',
+        'sections': [
+            {'name': 'Conventional belief', 'description': 'State the widely-held assumption this research questions.'},
+            {'name': 'Background of belief', 'description': 'Explain where that belief comes from and why it seemed reasonable.'},
+            {'name': 'Unexpected finding', 'description': 'The surprising result that contradicts the conventional belief.'},
+            {'name': 'Fallout of finding', 'description': 'What breaks or changes once the old belief no longer holds.'},
+            {'name': 'Revised understanding', 'description': 'The new, more accurate picture that replaces the old assumption.'},
+        ],
+    },
+    {
+        'name': "Following a person or team's journey",
+        'sections': [
+            {'name': 'Character introduced', 'description': 'Introduce the researcher(s) and what drew them to this work.'},
+            {'name': 'Character confronted with problem', 'description': 'The problem or challenge they set out to tackle.'},
+            {'name': 'Character tackles problem and faces setbacks', 'description': 'Their attempts, false starts, and setbacks along the way.'},
+            {'name': 'Character faces turning point', 'description': 'The moment their approach shifts or a breakthrough emerges.'},
+            {'name': 'Character learns lessons and deals with outcomes', 'description': 'What they found, and what they took away from the process.'},
+        ],
+    },
+    {
+        'name': 'Tracing a transformation',
+        'sections': [
+            {'name': 'Earlier state', 'description': 'Describe how things were before this change - the starting point.'},
+            {'name': 'Forces driving change', 'description': 'What pressures, needs, or discoveries pushed things to change.'},
+            {'name': 'Notable points of change', 'description': 'Key moments or milestones marking the transformation as it happened.'},
+            {'name': 'Present state', 'description': 'Where things stand now, as a result of this research.'},
+            {'name': 'Possible futures', 'description': 'Where this transformation could lead next.'},
+        ],
+    },
+    {
+        'name': 'Exposing a hidden system',
+        'sections': [
+            {'name': 'Surface experiences', 'description': 'What people notice day-to-day, without seeing the mechanism behind it.'},
+            {'name': 'Clues for what is hidden', 'description': 'The hints or anomalies that suggested something deeper was going on.'},
+            {'name': 'Underlying mechanism', 'description': 'The hidden system or process this research uncovers.'},
+            {'name': 'Who is affected by the mechanism', 'description': 'Who or what is shaped by this mechanism, and how.'},
+            {'name': 'Implications and what to do next', 'description': 'What this discovery means, and what should happen as a result.'},
+        ],
+    },
+]
 
-_SYSTEM_PROMPT = """You are helping a filmmaker plan a video essay based on an academic paper, by arranging its sections into a three-act documentary narrative arc. The three acts are:
-- "beginning": establishes the frame of reference - background, context, what's already known.
-- "middle": introduces the change or issue needing resolution - the motivating problem, and the approach/methods used to address it.
-- "end": summarizes or resolves the actions - what was found, and what it means.
+def _format_template(template):
+    parts = '; '.join(f'{s["name"]} ({s["description"]})' for s in template['sections'])
+    return f'- "{template["name"]}": {parts}'
 
-For example, related-work/background sections often fit "beginning"; a motivating problem or methods section often fits "middle"; findings/discussion/implications often fit "end" - but these are illustrative examples, not fixed rules. Use your own judgment based on each section's actual title and text, since papers vary widely in structure and section naming.
+_TEMPLATE_LINES = '\n'.join(_format_template(t) for t in ARC_TEMPLATES)
 
-You will be given a numbered list of sections (title + text). Respond with a single JSON object of the exact shape {"assignments": [{"index": <int>, "act": "beginning"|"middle"|"end"}, ...]}, with exactly one entry per section given, using each section's given index. Respond with only the JSON object, no other text."""
+# Used by suggest_arcs_from_intent below - reuses the ARC_TEMPLATES catalog
+# and its invent-if-none-fit instruction, but returns several ranked
+# candidates instead of committing to one, and asks for reasoning tied to
+# what the filmmaker actually said - the frontend shows that reasoning next
+# to the top pick, and the rest as alternative chips the presenter can pick
+# instead (see js/paper-extract.js's Record Your Intent flow).
+_SYSTEM_PROMPT_SUGGEST_ARCS = f"""You are helping a filmmaker plan a video essay based on an academic paper. The filmmaker has described what they want the documentary to convey - usually a spoken narration transcript, but they may instead (or also) have picked one or more short statements describing the kind of documentary they want to make. You'll be given whichever of those two they provided (always at least one). Your job is to recommend which narrative arc(s) best fit what they've described.
 
+Five common templates (name: parts (with descriptions)):
+{_TEMPLATE_LINES}
+
+Recommend the single best-fitting arc first, followed by 2-4 other reasonable alternative arcs, ranked roughly by fit. For each one, prefer reusing one of the five templates above verbatim (matching its exact name, part names, descriptions, spelling, and order) if it's a reasonable fit for what the filmmaker described; invent a new one (a short 3-8 word name of your own, plus 3-7 short named parts, in the order a viewer would encounter them, each with a one-sentence description) only if none of the five fit well - don't invent a near-duplicate of one that already fits. Only the top recommendation needs a written reason: write 1-3 sentences that concretely reference specific things the filmmaker actually said (in their narration and/or their chosen focus statement(s), whichever they gave you), explaining why this arc fits - don't invent details not present in what they gave you.
+
+Respond with a single JSON object of the exact shape {{"recommended": {{"arc_name": "<short name for this whole arc>", "sections": [{{"name": "<part name>", "description": "<one sentence on what this part should illustrate>"}}, ...], "reasoning": "<1-3 sentences>"}}, "alternatives": [{{"arc_name": "...", "sections": [{{"name": "...", "description": "..."}}, ...]}}, ...]}}, each sections list in narrative order, with 2-4 entries in alternatives. Respond with only the JSON object, no other text."""
 
 class NarrativeArcLLMCallError(Exception):
     pass
-
 
 class NarrativeArcLLMClient:
     def __init__(self, model=None):
@@ -47,30 +122,74 @@ class NarrativeArcLLMClient:
 
     def _get_client(self):
         if self._client is None:
-            kwargs = {'api_key': self.api_key}
+            # Explicit short connect timeout: a bare `timeout=N` sets N as
+            # the connect budget for *each* of the (often several) DNS-
+            # resolved IPs httpx tries in turn, so a fully unreachable host
+            # takes N*(IP count) to fail - observed as 120s to fail against
+            # a 30s bare timeout with 4 A records. A tight connect timeout
+            # (5s) with a more generous read timeout (30s, for a genuinely
+            # slow-but-working response) keeps the worst case bounded and
+            # fast. max_retries=0 because the retry loop below already
+            # retries once itself - the SDK's own default (2) would
+            # otherwise compound with it into a multi-minute hang that looks
+            # indistinguishable from a genuine freeze to the presenter.
+            kwargs = {
+                'api_key': self.api_key,
+                'timeout': httpx.Timeout(30.0, connect=5.0),
+                'max_retries': 0,
+            }
             if self.base_url:
                 kwargs['base_url'] = self.base_url
             self._client = OpenAI(**kwargs)
         return self._client
 
-    def assign_acts(self, sections, documentary_goal=''):
-        """sections: [{'index': int, 'title': str, 'text': str}, ...].
-        documentary_goal: optional free text, in the presenter's own words,
-        naming what they want the documentary's message/focus to be - used
-        to bias act placement toward what they've said they care about.
-        Returns {index: 'beginning'|'middle'|'end'} with one entry per
-        given section."""
+    def suggest_arcs_from_intent(self, transcript, focus_statements=None):
+        """transcript: the full text of a filmmaker's spoken narration -
+        optional (pass '' or None) if the presenter never recorded and only
+        picked focus_statements instead (see js/paper-extract.js's
+        updateComposeStoryboardVisibility, which lets either signal alone
+        advance past this step).
+        focus_statements: optional list of short strings describing the kind
+        of documentary the filmmaker wants (picked from suggested chips
+        and/or their own typed-in description) - additional signal alongside
+        the transcript when both are given, or the only signal when
+        transcript isn't. At least one of transcript/focus_statements must
+        be given - the caller (server.py's /paper/suggest_arcs route)
+        enforces this before calling.
+        Ranks the single best-fitting arc (with reasoning tied to what the
+        filmmaker actually said) plus a few alternatives, letting the
+        presenter accept the top pick or choose a different one - once
+        accepted, its named parts become the narrative-act groups the
+        frontend shows right away (js/paper-extract.js's runAcceptArc), with
+        no further LLM call to place paper sections into them.
+        Returns (recommended: {'arc_name': str, 'sections': [{'name': str, 'description': str}, ...], 'reasoning': str},
+        alternatives: [{'arc_name': str, 'sections': [...]}, ...]) - arc_name
+        is a short label for the whole arc (distinct from each part's own
+        name), so the frontend can show/label alternatives without having
+        to summarize a whole sections list itself."""
         if not self.is_configured():
             raise NarrativeArcLLMCallError('LLM client is not configured (missing API key or openai package)')
 
-        listing = '\n\n'.join(f"[{s['index']}] {s['title']}\n{s['text']}" for s in sections)
-        goal_line = (
-            f'\n\nThe presenter\'s stated documentary intent, in their own words: "{documentary_goal}"\n'
-            'Use this to inform which act each section best serves, without inventing content not present '
-            'in the sections themselves.'
-        ) if documentary_goal else ''
-        user_content = f'Sections:\n\n{listing}{goal_line}'
-        expected_indices = {s['index'] for s in sections}
+        parts = []
+        if transcript:
+            parts.append(f'Narration transcript:\n\n{transcript}')
+        if focus_statements:
+            bulleted = '\n'.join(f'- {s}' for s in focus_statements)
+            parts.append(f'Chosen focus statement(s):\n{bulleted}')
+        user_content = '\n\n'.join(parts)
+
+        def parse_arc(raw):
+            if not isinstance(raw, dict):
+                raise ValueError(f'bad arc entry: {raw!r}')
+            arc_name = (raw.get('arc_name') or '').strip()
+            if not arc_name:
+                raise ValueError(f'arc entry missing arc_name: {raw!r}')
+            sections_raw = raw.get('sections')
+            if (not isinstance(sections_raw, list) or not (2 <= len(sections_raw) <= 8)
+                    or not all(isinstance(s, dict) and isinstance(s.get('name'), str) and s.get('name').strip() for s in sections_raw)):
+                raise ValueError(f'bad sections list: {sections_raw!r}')
+            sections = [{'name': s['name'].strip(), 'description': (s.get('description') or '').strip()} for s in sections_raw]
+            return arc_name, sections
 
         last_error = None
         for _ in range(2):  # one retry on transient failure
@@ -79,41 +198,39 @@ class NarrativeArcLLMClient:
                 response = client.chat.completions.create(
                     model=self.model,
                     messages=[
-                        {'role': 'system', 'content': _SYSTEM_PROMPT},
+                        {'role': 'system', 'content': _SYSTEM_PROMPT_SUGGEST_ARCS},
                         {'role': 'user', 'content': user_content},
                     ],
                     response_format={'type': 'json_object'},
-                    temperature=0.2,
+                    temperature=0.3,
                 )
                 parsed = json.loads(response.choices[0].message.content)
-                assignments = parsed.get('assignments')
-                if not isinstance(assignments, list) or not assignments:
-                    raise ValueError(f'response missing assignments list: {parsed!r}')
 
-                # Tolerant on purpose: with ~20-40 sections in one JSON
-                # response, the model occasionally drops one index or
-                # returns one that wasn't in the given set at all (a known
-                # failure mode for long generated JSON arrays, not a sign
-                # the whole response is garbage). Silently drop anything
-                # not in expected_indices, then patch any indices the model
-                # left out below, rather than discarding an otherwise-good
-                # response and burning a retry over one bad entry.
-                result = {}
-                for entry in assignments:
-                    if not isinstance(entry, dict):
+                recommended_raw = parsed.get('recommended')
+                if not isinstance(recommended_raw, dict):
+                    raise ValueError(f'response missing recommended: {parsed!r}')
+                reasoning = (recommended_raw.get('reasoning') or '').strip()
+                if not reasoning:
+                    raise ValueError(f'recommended.reasoning was empty: {parsed!r}')
+                recommended_arc_name, recommended_sections = parse_arc(recommended_raw)
+                recommended = {'arc_name': recommended_arc_name, 'sections': recommended_sections, 'reasoning': reasoning}
+
+                alternatives_raw = parsed.get('alternatives')
+                if not isinstance(alternatives_raw, list) or not alternatives_raw:
+                    raise ValueError(f'response missing alternatives: {parsed!r}')
+                # Tolerant on purpose - drop one malformed alternative rather
+                # than burning a retry over an otherwise-good response.
+                alternatives = []
+                for alt in alternatives_raw:
+                    try:
+                        alt_arc_name, alt_sections = parse_arc(alt)
+                        alternatives.append({'arc_name': alt_arc_name, 'sections': alt_sections})
+                    except ValueError:
                         continue
-                    index = entry.get('index')
-                    act = entry.get('act')
-                    if index in expected_indices and act in _ACTS:
-                        result[index] = act
+                if not alternatives:
+                    raise ValueError(f'no valid alternatives in response: {alternatives_raw!r}')
 
-                if not result:
-                    raise ValueError(f'no valid assignments in response: {assignments!r}')
-
-                for index in expected_indices - result.keys():
-                    result[index] = 'middle'  # neutral default for the rare dropped index
-
-                return result
+                return recommended, alternatives
             except Exception as exc:  # network errors, malformed JSON, API errors
                 last_error = exc
-        raise NarrativeArcLLMCallError(f'Narrative arc arrangement failed after retry: {last_error}')
+        raise NarrativeArcLLMCallError(f'Arc suggestion failed after retry: {last_error}')

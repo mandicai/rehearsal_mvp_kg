@@ -12,31 +12,6 @@ gives the same {title, sections: [{title, text}]} shape js/paper-extract.js's
 client-side heuristic already produces for .txt/.md uploads (see
 buildSections there).
 
-Confirmed against real generated PDFs this session:
-- A heading Docling classifies as "section_header" rather than a separate
-  "title" item, which is why title detection below doesn't special-case
-  that label.
-- An empty heading immediately followed by another heading (an "umbrella"
-  header with no body text of its own, e.g. "Design Implications" ->
-  "Interface Considerations") - handled below by chaining the umbrella's
-  title onto that immediately-following heading, rather than discarding it.
-  (Tried making the umbrella persist across every subsequent heading until
-  the next umbrella, keyed off SectionHeaderItem.level - but that attribute
-  came back uniformly 1 in testing, even against a PDF built from genuine
-  Word "Heading 1"/"Heading 2" paragraph styles, so there's no reliable
-  depth signal to bound a wider scope. Backed out in favor of this
-  narrower, more predictable behavior.)
-- A picture/table's caption shows up as its own "caption"-labeled item
-  immediately after the figure in iterate_items()'s reading order (also
-  resolvable via PictureItem.caption_text(doc) - same string either way).
-  Occasionally, if a figure contains OCR-able text (e.g. in-chart labels),
-  Docling emits that as a stray TextItem out of true reading order - a
-  known, rare artifact this pass doesn't try to correct for.
-- A figure's actual image is NOT populated by PictureItem.get_image(doc) by
-  default (returns None) - it requires PdfPipelineOptions.generate_picture_
-  images=True at converter-construction time, confirmed by rebuilding the
-  converter with that flag and getting a real PIL image back.
-
 The DocumentConverter is constructed once at import time, not per-request -
 it lazily loads its layout/OCR models on first use, which is the expensive
 part (including a one-time model download, needing internet access once).

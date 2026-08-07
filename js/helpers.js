@@ -1,3 +1,44 @@
+//#region --- ARC SUGGESTION
+// --- index.html: ranked arc recommendations from a recorded narration
+// (backend/narrative_arc_llm.py's suggest_arcs_from_intent) ---
+// Doesn't commit to one arc - returns a top pick (with reasoning tied to
+// the transcript/focus statements) plus a few alternatives, letting the
+// presenter choose. Once they accept one (js/paper-extract.js's
+// runAcceptArc), its parts become the narrative-act groups shown right
+// away - no further server call to place paper sections into them.
+// focusStatements is optional (an array of short strings - suggested-focus
+// chips and/or a typed-in custom addition).
+
+const SUGGEST_ARCS_API_URL = 'http://127.0.0.1:8000/paper/suggest_arcs';
+
+function fetchSuggestArcs(transcript, focusStatements) {
+  return fetch(SUGGEST_ARCS_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      transcript,
+      ...(focusStatements && focusStatements.length ? { focus_statements: focusStatements } : {}),
+    })
+  })
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(
+        `Could not reach the arc-suggestion server at ${SUGGEST_ARCS_API_URL} (${err.message}). ` +
+        `Start it with: python backend/server.py`
+      );
+    });
+}
+
+//#endregion
+
+
+
+
+
+
+
+
 // Reusable, self-contained functions and data: text analysis, algorithms,
 // and DOM-building routines that take their target container/data as
 // parameters rather than reaching into page-specific global state.
@@ -1435,48 +1476,260 @@ function fetchPaperExtraction(file) {
     });
 }
 
-// --- index.html: narrative-arc arrangement (backend/narrative_arc_llm.py) ---
-// Unlike fetchPaperExtraction above, this is an LLM call (JSON body, no
-// file) that classifies each already-extracted section into one of three
-// documentary acts. Requires an LLM API key server-side; see
-// js/paper-extract.js's runArrangeNarrative.
-
-const NARRATIVE_ARC_API_URL = 'http://127.0.0.1:8000/paper/narrative_arc';
-
-function fetchNarrativeArc(sections, documentaryGoal) {
-  return fetch(NARRATIVE_ARC_API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sections, documentary_goal: documentaryGoal || '' })
-  })
-    .then(handleJsonResponse)
-    .catch(err => {
-      if (err.isServerError) throw err;
-      throw new Error(
-        `Could not reach the narrative-arc server at ${NARRATIVE_ARC_API_URL} (${err.message}). ` +
-        `Start it with: python backend/server.py`
-      );
-    });
-}
-
 // --- index.html: storyboard generation (backend/storyboard_llm.py) ---
-// Same shape as fetchNarrativeArc above, but each section must already
-// carry an "act" (beginning/middle/end) - see js/paper-extract.js's
-// runGenerateStoryboard, which only runs after a narrative-arc arrangement.
+// An LLM call (JSON body, no file) that drafts a visual + narration line
+// per section. Each section must already carry an "act" (one of the
+// accepted arc's named parts, once the presenter's placed it into a row -
+// see js/paper-extract.js's runAcceptArc/handleChipDrop) - sections with no
+// act yet just get sent without one. arcSections (the accepted arc's part
+// names, in order) is optional context for the prompt's pacing/positional
+// reasoning. Requires an LLM API key server-side.
 
 const STORYBOARD_API_URL = 'http://127.0.0.1:8000/paper/storyboard';
 
-function fetchStoryboard(sections, documentaryGoal) {
+function fetchStoryboard(sections, documentaryGoal, arcSections, documentaryMode) {
   return fetch(STORYBOARD_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sections, documentary_goal: documentaryGoal || '' })
+    body: JSON.stringify({
+      sections,
+      documentary_goal: documentaryGoal || '',
+      ...(arcSections ? { arc_sections: arcSections } : {}),
+      ...(documentaryMode ? { documentary_mode: documentaryMode } : {}),
+    })
   })
     .then(handleJsonResponse)
     .catch(err => {
       if (err.isServerError) throw err;
       throw new Error(
         `Could not reach the storyboard server at ${STORYBOARD_API_URL} (${err.message}). ` +
+        `Start it with: python backend/server.py`
+      );
+    });
+}
+
+// --- index.html: edit-plan generation (backend/edit_plan_llm.py) ---
+// Same shape as fetchStoryboard above, but only runs once a storyboard
+// already exists (see js/paper-extract.js's runGenerateEditPlan) - each
+// section must already carry visual/narration.
+
+const EDIT_PLAN_API_URL = 'http://127.0.0.1:8000/paper/edit_plan';
+
+function fetchEditPlan(sections, documentaryGoal, arcSections, documentaryMode) {
+  return fetch(EDIT_PLAN_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      sections,
+      documentary_goal: documentaryGoal || '',
+      ...(arcSections ? { arc_sections: arcSections } : {}),
+      ...(documentaryMode ? { documentary_mode: documentaryMode } : {}),
+    })
+  })
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(
+        `Could not reach the edit-plan server at ${EDIT_PLAN_API_URL} (${err.message}). ` +
+        `Start it with: python backend/server.py`
+      );
+    });
+}
+
+// --- index.html: Premiere Pro (UXP) file-based bridge (backend/premiere_bridge.py) ---
+// See js/paper-extract.js's runUploadFootage/runExportForPremiere. Both
+// calls accept an optional projectId (null on the very first call of a
+// session) and return whatever project_id the backend actually used -
+// callers remember it and pass it back in on every subsequent call so
+// everything lands in the same premiere_exports/<project_id>/ folder.
+
+const UPLOAD_FOOTAGE_API_URL = 'http://127.0.0.1:8000/premiere/upload_footage';
+const UPLOAD_NARRATION_API_URL = 'http://127.0.0.1:8000/premiere/upload_narration';
+const PREMIERE_EXPORT_API_URL = 'http://127.0.0.1:8000/premiere/export';
+
+function fetchUploadFootage(file, sectionIndex, projectId) {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('section_index', String(sectionIndex));
+  if (projectId) form.append('project_id', projectId);
+
+  return fetch(UPLOAD_FOOTAGE_API_URL, { method: 'POST', body: form })
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(
+        `Could not reach the footage-upload server at ${UPLOAD_FOOTAGE_API_URL} (${err.message}). ` +
+        `Start it with: python backend/server.py`
+      );
+    });
+}
+
+// Same optional-projectId-in/out convention as fetchUploadFootage above,
+// minus sectionIndex - see js/paper-extract.js's runTranscribeIntent. Saves
+// the recorded documentary-intent narration to disk; playback within the
+// current session uses the in-memory recording directly and doesn't wait
+// on this call.
+function fetchUploadNarration(blob, filename, projectId) {
+  const form = new FormData();
+  form.append('file', blob, filename);
+  if (projectId) form.append('project_id', projectId);
+
+  return fetch(UPLOAD_NARRATION_API_URL, { method: 'POST', body: form })
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(
+        `Could not reach the narration-upload server at ${UPLOAD_NARRATION_API_URL} (${err.message}). ` +
+        `Start it with: python backend/server.py`
+      );
+    });
+}
+
+// --- storyboard.html: "Your Media Bank" supplementary recorded/uploaded
+// audio or video clips (js/paper-extract.js's Record Audio/Record
+// Video/Upload File wiring) --- Same optional-projectId-in/out convention
+// as fetchUploadFootage/fetchUploadNarration above, but (like footage, not
+// narration) an open-ended list rather than a single fixed recording.
+
+const UPLOAD_MEDIA_BANK_ITEM_API_URL = 'http://127.0.0.1:8000/premiere/upload_media_bank_item';
+
+function fetchUploadMediaBankItem(file, projectId) {
+  const form = new FormData();
+  form.append('file', file);
+  if (projectId) form.append('project_id', projectId);
+
+  return fetch(UPLOAD_MEDIA_BANK_ITEM_API_URL, { method: 'POST', body: form })
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(
+        `Could not reach the media-bank-upload server at ${UPLOAD_MEDIA_BANK_ITEM_API_URL} (${err.message}). ` +
+        `Start it with: python backend/server.py`
+      );
+    });
+}
+
+// --- index.html: AI-generated storyboard reference image (backend/sketch_llm.py) ---
+// Same optional-projectId-in/out convention as fetchUploadFootage above -
+// lands in the same premiere_exports/<project_id>/ folder. No file to
+// upload here, so a plain JSON body instead of FormData.
+
+const GENERATE_SKETCH_API_URL = 'http://127.0.0.1:8000/paper/generate_sketch';
+
+function fetchGenerateSketch(sectionIndex, visual, projectId, documentaryMode) {
+  return fetch(GENERATE_SKETCH_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      section_index: sectionIndex,
+      visual,
+      ...(projectId ? { project_id: projectId } : {}),
+      ...(documentaryMode ? { documentary_mode: documentaryMode } : {}),
+    })
+  })
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(
+        `Could not reach the sketch server at ${GENERATE_SKETCH_API_URL} (${err.message}). ` +
+        `Start it with: python backend/server.py`
+      );
+    });
+}
+
+// --- storyboard.html: AI-generated animated storyboard preview (backend/animate_llm.py) ---
+// Same shape as fetchGenerateSketch above, but requires a projectId (a
+// sketch must already exist for this section - see runGenerateAnimatedSketch)
+// and a technique (one of backend/animate_llm.py's TECHNIQUES).
+
+const GENERATE_ANIMATED_SKETCH_API_URL = 'http://127.0.0.1:8000/paper/generate_animated_sketch';
+
+function fetchGenerateAnimatedSketch(sectionIndex, technique, projectId, documentaryMode) {
+  return fetch(GENERATE_ANIMATED_SKETCH_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      section_index: sectionIndex,
+      technique,
+      project_id: projectId,
+      ...(documentaryMode ? { documentary_mode: documentaryMode } : {}),
+    })
+  })
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(
+        `Could not reach the animate server at ${GENERATE_ANIMATED_SKETCH_API_URL} (${err.message}). ` +
+        `Start it with: python backend/server.py`
+      );
+    });
+}
+
+// Same route family as fetchGenerateAnimatedSketch above, but text-to-video
+// (no existing sketch needed) - takes `visual` instead of relying on a
+// project_id-addressed sketch file server-side.
+const GENERATE_VIDEO_FROM_TEXT_API_URL = 'http://127.0.0.1:8000/paper/generate_video_from_text';
+
+function fetchGenerateVideoFromText(sectionIndex, visual, technique, projectId, documentaryMode) {
+  return fetch(GENERATE_VIDEO_FROM_TEXT_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      section_index: sectionIndex,
+      visual,
+      technique,
+      ...(projectId ? { project_id: projectId } : {}),
+      ...(documentaryMode ? { documentary_mode: documentaryMode } : {}),
+    })
+  })
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(
+        `Could not reach the animate server at ${GENERATE_VIDEO_FROM_TEXT_API_URL} (${err.message}). ` +
+        `Start it with: python backend/server.py`
+      );
+    });
+}
+
+// Same route family again, but the cheaper crossfade-of-stills path (no
+// video model) - see backend/animate_llm.py's build_sequence_prompts/
+// compose_crossfade_video.
+const GENERATE_SKETCH_SEQUENCE_API_URL = 'http://127.0.0.1:8000/paper/generate_sketch_sequence';
+
+function fetchGenerateSketchSequence(sectionIndex, visual, technique, projectId, documentaryMode) {
+  return fetch(GENERATE_SKETCH_SEQUENCE_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      section_index: sectionIndex,
+      visual,
+      technique,
+      ...(projectId ? { project_id: projectId } : {}),
+      ...(documentaryMode ? { documentary_mode: documentaryMode } : {}),
+    })
+  })
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(
+        `Could not reach the animate server at ${GENERATE_SKETCH_SEQUENCE_API_URL} (${err.message}). ` +
+        `Start it with: python backend/server.py`
+      );
+    });
+}
+
+function fetchPremiereExport(sections, projectId) {
+  return fetch(PREMIERE_EXPORT_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sections, project_id: projectId || '' })
+  })
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(
+        `Could not reach the Premiere-export server at ${PREMIERE_EXPORT_API_URL} (${err.message}). ` +
         `Start it with: python backend/server.py`
       );
     });

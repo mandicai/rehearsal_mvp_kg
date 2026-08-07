@@ -7,3 +7,11 @@ system-build.png
 
 # Local Netlify folder
 .netlify
+
+# Premiere Pro UXP bridge - uploaded footage + exported rough cuts, can get
+# large and are user-specific per documentary project (see
+# backend/premiere_bridge.py).
+premiere_exports/
+premiere-plugin/
+
+other/

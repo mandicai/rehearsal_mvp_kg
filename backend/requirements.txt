@@ -5,10 +5,12 @@ spacy
 torch
 numpy
 openai
+httpx
 python-dotenv
 python-pptx
 PyMuPDF
 docling
 requests
+Pillow
 # Also requires LibreOffice (the `soffice` binary) on PATH for PPTX rendering
 # in ingest/pptx_render.py - not pip-installable, e.g. `brew install --cask libreoffice`

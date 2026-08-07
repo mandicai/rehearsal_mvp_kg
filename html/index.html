@@ -1,98 +1,113 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8">
-<title>Research Paper to Documentary</title>
-<!-- Cache-busting: this static site has no build step to fingerprint asset
+  <meta charset="UTF-8">
+  <title>Research Paper to Documentary</title>
+  <!-- Cache-busting: this static site has no build step to fingerprint asset
      URLs, so local CSS/JS is fetched fresh every load via a timestamped
      query string instead of relying on a hard-refresh after each edit. -->
-<script>window.CACHE_BUST = Date.now();</script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cabin+Sketch:wght@400;700&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
-<link href="https://fonts.googleapis.com/css2?family=Coral+Pixels&family=Parastoo:wght@400..700&family=Rubik+80s+Fade&display=swap" rel="stylesheet">
-<script>document.write('<link rel="stylesheet" href="/styles.css?t=' + window.CACHE_BUST + '">');</script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>window.CACHE_BUST = Date.now();</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Cabin+Sketch:wght@400;700&family=Source+Sans+3:wght@400;600;700&display=swap"
+    rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Coral+Pixels&family=Parastoo:wght@400..700&family=Rubik+80s+Fade&display=swap"
+    rel="stylesheet">
+  <script>document.write('<link rel="stylesheet" href="/styles-index.css?t=' + window.CACHE_BUST + '">');</script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
-<body class="collect-data-page">
 
-<div class="page-layout">
+<body class="pub-to-doc-page">
 
-<!-- Upload: left-side collapsible panel, mirrors presenter-view.html's
-     upload-sidebar but on the left - kept narrow/collapsible since it's
-     just the upload step, while the documentary-intent module + extracted
-     sections (the main-column, right) are what most of the screen is for.
-     Wrapped in .sidebar-stack so the documentary-intent module, once
-     relocated here (see js/paper-extract.js's runArrangeNarrative), sits
-     as its own separate card underneath rather than merging into this one. -->
-<div class="sidebar-stack">
-<aside id="upload-sidebar" class="upload-sidebar upload-sidebar-doc">
-  <div class="upload-sidebar-header">
-    <h2>Your research paper</h2>
-    <button id="upload-sidebar-toggle" class="sidebar-toggle-btn" type="button" title="Collapse">&raquo;</button>
-  </div>
-  <div class="upload-sidebar-body">
-    <div class="objectives-scope">
-      <p style="font-size: 12px; opacity: 0.75; margin: 0 0 12px;">
-        Upload a PDF of your research paper. Section titles and body text are
-        extracted for you to double-check on the right.
-      </p>
-      <div class="input-group">
-        <input type="file" id="paper-file-input" accept=".pdf,.txt,.md">
+  <div class="page-layout">
+
+    <div class="main-column">
+
+      <!-- Page 1 of 2 (see html/storyboard.html for the rest) - record/
+       choose intent, then upload + edit the paper's extracted sections.
+       A real page, not a same-page view swap - state that needs to survive
+       the navigation to storyboard.html is persisted via localStorage (see
+       js/paper-extract.js's saveDebugSession/restoreDebugSession, which
+       both pages call). -->
+
+      <!-- Documentary intent module -->
+      <div class="module-card" id="documentary-intent-module">
+        <h2>What do you want your documentary to focus on?</h2>
+        <p style="font-size: 12px; opacity: 0.75; margin: 0 0 12px;">
+          Record yourself describing and reflecting what the documentary should convey.
+        </p>
+
+        <div id="record-intent-row">
+          <button type="button" id="record-intent-btn" class="btn-primary">Record</button>
+          <button type="button" id="play-intent-btn" class="btn-primary" style="display: none;">▶ Play recording</button>
+          <div id="record-intent-status" class="status-line"></div>
+        </div>
+
+        <canvas id="intent-waveform-canvas" width="800" height="60" style="display: none; width: 100%; height: 60px; margin-top: 8px;"></canvas>
+
+        <div id="intent-transcript-display" style="display: none; margin-top: 12px;">
+          <div id="intent-transcript-text" class="intent-transcript-text"></div>
+        </div>
+
+        <p style="font-size: 12px; opacity: 0.75; margin: 20px 0 15px 0;">
+          Or choose a suggested focus:
+        </p>
+        <div id="intent-suggested-chips" class="chip-row"></div>
+      </div><!-- /#documentary-intent-module -->
+
+      <!-- Upload panel - the next step after stating intent above. -->
+      <aside id="upload-sidebar" class="upload-sidebar upload-sidebar-doc upload-sidebar-inline">
+        <div class="upload-sidebar-header">
+          <h2>Your research paper</h2>
+          <!-- <button id="upload-sidebar-toggle" class="sidebar-toggle-btn" type="button" title="Collapse">&raquo;</button> -->
+        </div>
+
+        <div class="upload-sidebar-body">
+          <div class="source-material">
+            <p style="font-size: 12px; opacity: 0.75; margin: 0 0 12px;">
+              Upload a PDF of your research paper, which will serve as source material.
+            </p>
+            <div class="input-group">
+              <input type="file" id="paper-file-input" accept=".pdf,.txt,.md">
+            </div>
+            <button id="extract-paper-btn" class="btn-primary" style="margin-top: 16px;">Extract</button>
+            <div id="paper-status" class="status-line"></div>
+          </div>
+
+          <!-- Extracted sections: one block per detected section (title +
+           body text) so the extraction can be sanity-checked against the
+           source paper, right underneath the file input, scrollable (see
+           .paper-sections-feed in styles-index.css) - edit headers/text,
+           click to exclude/restore, split or add new sections (see
+           js/paper-extract.js's renderSectionFeed/buildSectionBlock). -->
+          <div id="paper-sections"></div>
+        </div>
+      </aside>
+
+      <!-- Hidden until both a stated intent (a recording or a chosen focus
+       chip) and at least one extracted section exist (see
+       js/paper-extract.js's updateComposeStoryboardVisibility). Fixed to
+       the bottom-right of the viewport, above everything else on the page
+       (see #compose-storyboard-row in styles-index.css). Navigates to
+       html/storyboard.html once clicked - see composeStoryboardBtn's
+       handler. -->
+      <div id="compose-storyboard-row" style="display: none;">
+        <button type="button" id="compose-storyboard-btn" class="btn-primary">Compose Storyboard</button>
+        <div id="compose-storyboard-status" class="status-line"></div>
       </div>
-      <button id="extract-paper-btn" class="btn-primary" style="margin-top: 16px;">Extract</button>
-      <div id="paper-status" class="status-line"></div>
-    </div>
-  </div>
-</aside>
-</div><!-- /.sidebar-stack -->
 
-<div class="main-column">
+    </div><!-- /.main-column -->
 
-  <!-- Documentary intent module: what the presenter wants their documentary
-       to say, threaded into the narrative-arc/storyboard LLM prompts below
-       (see js/paper-extract.js's runArrangeNarrative/runGenerateStoryboard).
-       "Arrange into Narrative" and "Generate Storyboard" live here, under
-       the question, since they act on this stated intent. Hidden until an
-       extraction succeeds - there's nothing to arrange/storyboard before then. -->
-  <div class="module-card" id="documentary-intent-module" style="display: none;">
-    <h2>What's your documentary about?</h2>
-    <p style="font-size: 12px; opacity: 0.75; margin: 0 0 12px;">
-      What message do you want the audience of your documentary to take away? What aspect of your study do you want to focus on most? What do you want to <i>say</i>?
-    </p>
-    <div id="intent-suggested-chips" class="chip-row"></div>
-    <textarea id="documentary-intent-input" class="documentary-intent-input" rows="3" placeholder="Type your own, or pick a suggestion above"></textarea>
+  </div><!-- /.page-layout -->
 
-    <!-- Hidden until an extraction succeeds - operates on whatever's left
-         after any sections have been excluded. -->
-    <div id="paper-actions" style="display: none; margin-top: 16px;">
-      <button id="arrange-narrative-btn" class="btn-secondary">Arrange into Narrative</button>
-      <div id="narrative-status" class="status-line"></div>
-
-      <!-- Hidden until an arrangement succeeds - a storyboard needs to know
-           each section's act, which only exists after that step. -->
-      <div id="storyboard-action" style="display: none; margin-top: 12px;">
-        <button id="generate-storyboard-btn" class="btn-secondary">Generate Storyboard</button>
-        <div id="storyboard-status" class="status-line"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Extracted sections: one block per detected section (title + body
-       text) so the extraction can be sanity-checked against the source
-       paper. Each block has a corner button to exclude/restore it (see
-       js/paper-extract.js) - unwanted sections don't have to be perfect
-       going into the narrative-arc step above. -->
-  <div id="paper-sections"></div>
-
-</div><!-- /.main-column -->
-
-</div><!-- /.page-layout -->
-
-<script>
-  document.write('<script src="/js/helpers.js?t=' + window.CACHE_BUST + '"><\/script>');
-  document.write('<script src="/js/paper-extract.js?t=' + window.CACHE_BUST + '"><\/script>');
-</script>
+  <script>
+    document.write('<script src="/js/helpers.js?t=' + window.CACHE_BUST + '"><\/script>');
+    document.write('<script src="/js/paper-extract.js?t=' + window.CACHE_BUST + '"><\/script>');
+  </script>
 
 </body>
+
 </html>

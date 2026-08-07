@@ -1,0 +1,1706 @@
+* { box-sizing: border-box; }
+
+/* Temporarily hidden (not ready to surface yet) - overrides the inline
+   style.display JS sets on success (see js/paper-extract.js's
+   runGenerateStoryboardForSections/runGenerateEditPlanForSections), rather
+   than touching that logic or the HTML, so this is a one-line revert
+   (delete this rule) once Premiere export is ready to show again. */
+#premiere-export-action {
+  display: none !important;
+}
+
+/* Temporarily hidden ("Your Media" is pre-populated from assets/ instead
+   for now - see MEDIA_BANK_ASSET_DEFAULTS in js/paper-extract.js) - a
+   one-line revert (delete this rule) once recording is ready to show
+   again; Upload File stays available. */
+#record-media-audio-btn,
+#record-media-video-btn {
+  display: none !important;
+}
+
+/* Temporarily hidden on each shot card (see js/paper-extract.js's
+   buildSectionBlock) - Record Webcam records fresh footage per section,
+   and Find Footage searches stock video by query, both for now set aside
+   in favor of the pre-populated "Your Media" assets (see
+   MEDIA_BANK_ASSET_DEFAULTS) - a one-line revert (delete this rule) once
+   either's ready to show again. */
+.record-webcam-btn,
+.find-footage-btn {
+  display: none !important;
+}
+
+body {
+  --cd-bg: #F7F5F0;
+  --cd-panel-bg: #E5E3DE;
+  --cd-card-bg: #FFFFFF;
+  --cd-border: rgba(38, 37, 35, 0.14);
+  --cd-border-strong: rgba(38, 37, 35, 0.28);
+  --cd-text: #262523;
+  --cd-accent: #686c89;
+  --cd-accent-active: #686c89;
+  --cd-accent-hover: #ff1751;
+  --cd-accent-text: #FFFFFF;
+  --cd-success: #2E7D32;
+  --cd-font-heading: 'Coral Pixels', cursive;
+  --cd-font-body: 'Source Sans 3', sans-serif;
+
+  background: var(--cd-bg);
+  color: var(--cd-text);
+  font-family: var(--cd-font-body);
+  margin: 0;
+}
+
+.main-column {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* margin-top: 20px; */
+}
+
+/* #region OVERALL LAYOUT */
+.page-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 0 20px 40px;
+}
+/* #endregion */
+
+/* #region INTENT/LANDING PAGE */
+.module-card {
+  max-width: 700px;
+  margin: 10px auto 30px;
+  padding: 24px 28px;
+  border-radius: 8px;
+  background: var(--cd-card-bg);
+  border: 1px solid var(--cd-border);
+  box-shadow: 0 1px 4px rgba(38, 37, 35, 0.06);
+}
+
+/* Once relocated into the sidebar (see js/paper-extract.js's
+   relocateArcSuggestionToSidebar/relocateMediaBankToSidebar) - still its
+   own separate card (same background/border/shadow as always), just
+   without the 900px centering that only made sense as a full-width module.
+   Kept equal to .sidebar-stack's own width below, so a relocated card
+   fills its column rather than floating narrower inside it. */
+.module-card.module-card--in-sidebar {
+  max-width: 380px;
+  margin: 0;
+}
+
+.module-card h2 {
+  font-family: var(--cd-font-heading);
+  font-size: 20px;
+  letter-spacing: 0.05em;
+  margin: 0 0 16px;
+}
+
+/* --- html/index.html only: the documentary-intent module (a .module-card)
+   and the extracted-sections feed both live in .main-column, to the right
+   of the collapsible "Your research paper" upload-sidebar. */
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.chip-row-caption {
+  font-size: 11px;
+  opacity: 0.6;
+  margin: 0 0 6px;
+}
+
+#documentary-intent-module {
+  text-align: center;
+  /* margin: 0 0 20px 0;
+  max-width: 100%; */
+}
+
+.documentary-intent-input {
+  width: 100%;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #FFFFFF;
+  resize: vertical;
+}
+
+.documentary-intent-input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+#intent-waveform-canvas {
+  display: block;
+  border-radius: 4px;
+}
+
+/* Shown once a recording is transcribed (see js/paper-extract.js's
+   runTranscribeIntent) - the raw transcript text. */
+.intent-transcript-text {
+  font-size: 13px;
+  line-height: 1.5;
+  font-style: italic;
+  padding: 10px 12px;
+  border-radius: 4px;
+  background: var(--cd-panel-bg);
+  border: 1px solid var(--cd-border);
+  max-height: 160px;
+  overflow-y: auto;
+  text-align: left;
+}
+
+.upload-sidebar {
+  text-align: center;
+  margin: auto;
+  width: 700px;
+  background: var(--cd-panel-bg);
+  border-radius: 8px;
+  padding: 24px 24px 0px 24px;
+  overflow: hidden;
+}
+
+.upload-sidebar-header h2 {
+  font-family: var(--cd-font-heading);
+  font-size: 20px;
+  letter-spacing: 0.05em;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.upload-sidebar-body {
+  margin-top: 16px;
+}
+
+.source-material {
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--cd-border);
+}
+
+/* html/storyboard.html's "Source material" sidebar module
+   (#source-material-module) - a read-only reference listing of the
+   extracted paper sections (see js/paper-extract.js's
+   renderSourceMaterialList), scrollable rather than growing the sidebar
+   indefinitely for a long paper. */
+#source-material-list {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+/* Draggable onto a section's text field (see js/paper-extract.js's
+   buildSectionBlock drop handler) - same dashed-border "pick me up" hint
+   as .media-bank-item.draggable. */
+.source-material-item {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.15);
+  cursor: grab;
+  border: 1px dashed rgba(255, 255, 255, 0.4);
+}
+
+.source-material-item-title {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.source-material-item-excerpt {
+  font-size: 11px;
+  opacity: 0.7;
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+.sidebar-toggle-btn {
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 6px 10px;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.sidebar-toggle-btn:hover {
+  background: rgba(38, 37, 35, 0.08);
+}
+/* #endregion */
+
+/* #region RECORD YOUR FOCUS/INTENT */
+#intent-suggested-chips {
+  justify-content: center;
+}
+
+.input-group {
+  width: 50%;
+  margin: auto;
+  flex: 1 1 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.input-group input[type="text"] {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Every file upload in the app (paper upload here, Your Media's Upload
+   File, per-shot "upload your own footage") shares this same look, not
+   just this one's own .input-group wrapper - see the JS-built ones in
+   js/paper-extract.js (uploadFootageInput, #upload-media-input). */
+input[type="file"] {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+input[type="file"]::file-selector-button {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  margin-right: 10px;
+  border: 1px solid var(--cd-border-strong);
+  border-radius: 4px;
+  background: var(--cd-panel-bg);
+  color: var(--cd-text);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+input[type="file"]::file-selector-button:hover {
+  background: rgba(38, 37, 35, 0.12);
+}
+/* #endregion */
+
+/* #region EXTRACTED SOURCE MATERIAL */
+#paper-sections {
+  background: var(--cd-panel-bg);
+  padding: 24px 24px 24px 24px;
+  border-radius: 8px;
+  /* Overrides .upload-sidebar's text-align: center while this sits nested
+     in its .upload-sidebar-body (page 1, pre-arrangement) - harmless once
+     relocated to #page-storyboard (page 2), which doesn't center text. */
+  text-align: left;
+}
+
+/* Genuinely empty until renderSectionFeed (index.html) or
+   renderMovieEditor (storyboard.html) first populates it - without this,
+   the padding above alone would still render a visible gray box with
+   nothing in it. */
+#paper-sections:empty {
+  display: none;
+}
+
+.paper-source-label {
+  font-size: 12px;
+  opacity: 0.7;
+  margin-bottom: 14px;
+}
+
+#paper-sections h2 {
+  font-family: var(--cd-font-heading);
+  font-size: 20px;
+  letter-spacing: 0.05em;
+  margin: 0 0 16px;
+}
+
+/* Sized for its home under the upload module's file input (see
+   html/index.html's #paper-sections, inside .upload-sidebar-body) - a
+   compact scrollable list, not the near-full-viewport height that made
+   sense when this sat in its own full-width area. Only ever built by
+   renderSectionFeed (the pre-arrangement flat feed) - renderMovieEditor's
+   arranged view (once relocated to #page-storyboard) uses
+   .narrative-arc-rows instead, so this has no effect there. */
+.paper-sections-feed {
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 10px;
+  text-align: left;
+}
+
+.paper-section-block {
+  position: relative;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  padding: 16px 44px 16px 20px;
+  margin-bottom: 16px;
+  transition: opacity 0.15s ease;
+}
+
+.paper-section-block.removed {
+  opacity: 0.4;
+}
+
+.paper-section-block.removed .paper-section-title,
+.paper-section-block.removed .paper-section-text {
+  text-decoration: line-through;
+}
+
+.paper-section-block.selected {
+  box-shadow: 0 0 0 2px #f18700;
+}
+
+.paper-section-remove-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: transparent;
+  color: #FFFFFF;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.paper-section-remove-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Click-to-edit fields (title/text) - cursor:text + a dashed underline hint
+   on hover, so it's clear these are separate from the corner exclude button. */
+.editable-field {
+  cursor: text;
+  border-radius: 3px;
+  transition: background 0.15s ease;
+}
+
+.editable-field:hover {
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+
+.editable-field.editing {
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.5);
+  cursor: text;
+  outline: none;
+}
+
+.paper-section-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.paper-section-image {
+  display: block;
+  max-width: 100%;
+  border-radius: 6px;
+  margin: 8px 0 12px;
+}
+
+.paper-section-meta {
+  font-size: 11px;
+  opacity: 0.6;
+  margin-bottom: 10px;
+}
+
+.paper-section-text {
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  border-radius: 4px;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+/* #endregion */
+
+/* #region NARRATIVE ARC*/
+/* --- Narrative arc view (html/storyboard.html, once an arc's accepted) -
+   an "Arc outline" heading above a small outline on the left (one entry
+   per arc part, click to jump to it) next to the rows themselves, stacked
+   top-to-bottom in arc order. Each row splits into a label (left) and that
+   part's .paper-section-blocks (right, stacked one on top of the other) -
+   see renderMovieEditor. */
+
+/* Arc suggestion (see js/paper-extract.js's renderArcSuggestion) - the
+   current top pick/alternative/custom arc on offer, with its parts,
+   reasoning (top pick only), an accept button, alternative chips, and a
+   "suggest your own" row. */
+.arc-suggestion-card {
+  padding: 16px 18px;
+  border-radius: 8px;
+  background: var(--cd-panel-bg);
+  border: 1px solid var(--cd-border);
+  text-align: left;
+}
+
+.arc-suggestion-title {
+  font-family: var(--cd-font-heading);
+  font-size: 16px;
+  letter-spacing: 0.03em;
+  margin-bottom: 8px;
+}
+
+.arc-suggestion-parts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.arc-suggestion-part {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.arc-suggestion-reasoning {
+  font-size: 12px;
+  line-height: 1.5;
+  font-style: italic;
+  opacity: 0.75;
+  margin-bottom: 12px;
+}
+
+.arc-suggestion-custom-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  align-items: center;
+}
+
+.arc-suggestion-custom-input {
+  flex: 1 1 auto;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--cd-border-strong);
+  background: var(--cd-card-bg);
+  color: var(--cd-text);
+}
+
+/* Always shown above the arc rows once arranged (see renderMovieEditor) -
+  buttons to generate a storyboard/edit plan, targeting the current
+  selection when one exists, otherwise the whole arc - and (below them) a
+  status line per action. Sticky so it stays reachable while scrolling past
+  a long list of rows below it; solid (not translucent) background since
+  content scrolls underneath it. Orange-accented, matching this page's
+  #f18700 accent already used for drag-over/selection highlights elsewhere. */
+.action-bar {
+  display: none;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  background: #262523;
+  color: #FFFFFF;
+  border-radius: 8px;
+  border-left: 4px solid #f18700;
+  font-size: 13px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.action-bar-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+/* Inline next to their buttons (see js/paper-extract.js's renderMovieEditor)
+   rather than the base .status-line's stacked-below margin, which would
+   otherwise misalign it within this flex row. */
+.action-bar .status-line {
+  margin-top: 0;
+}
+
+body.pub-to-doc-page .action-bar {
+  background: var(--cd-card-bg);
+  color: var(--cd-text);
+  border: 1px solid var(--cd-border);
+  border-left: 4px solid var(--cd-accent);
+}
+
+.narrative-arc-layout {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.narrative-arc-outline {
+  flex: 0 0 160px;
+  min-width: 0;
+  position: sticky;
+  top: 70px; /* below the sticky .action-bar above it */
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.narrative-arc-outline h2 {
+  margin: 0 0 4px;
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.narrative-arc-outline h3 {
+  margin: 0 0 6px;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+/* Toggleable technique chips under the per-act jump buttons (see
+   DOCUMENTARY_TECHNIQUES/renderMovieEditor in js/paper-extract.js) - reuses
+   .chip/.chip-row/.chip.suggested as-is, just needs its own heading. */
+.narrative-arc-techniques {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.25);
+}
+
+.narrative-arc-techniques h3 {
+  margin: 0 0 6px;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+/* Styled like the suggested-arc chips (see .chip.suggested) rather than a
+   plain list, so jumping to a section and picking an arc read as the same
+   kind of interactive pill, just used for two different things. */
+.narrative-arc-outline-item {
+  font-family: inherit;
+  font-size: 12px;
+  /* font-weight: 700; */
+  text-align: left;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(38, 37, 35, 0.05);
+  border: 1px solid var(--cd-border);
+  color: var(--cd-text);
+  cursor: pointer;
+  white-space: normal;
+  line-height: 1.3;
+}
+
+.narrative-arc-outline-item:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Highlights whichever entry the presenter's currently scrolled past (see
+   js/paper-extract.js's renderMovieEditor/activeOutlineScrollHandler) -
+   same recipe as .narrative-act-row-chip.selected below, for the same
+   "this one's the current one" meaning. */
+.narrative-arc-outline-item.active {
+  background: var(--cd-accent-active);
+  color: var(--cd-accent-text);
+  border-color: var(--cd-accent-active);
+}
+
+/* Drop target for a documentary-technique chip or a Source material
+   excerpt (see js/paper-extract.js's buildSectionBlock). */
+.paper-section-text.drag-over {
+  background: rgba(241, 135, 0, 0.15);
+  box-shadow: 0 0 0 2px #f18700;
+}
+
+.paper-section-storyboard {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.25);
+}
+
+.paper-section-storyboard-line {
+  font-size: 12px;
+  line-height: 1.5;
+  margin-bottom: 6px;
+}
+
+.paper-section-storyboard-line:last-child {
+  margin-bottom: 0;
+}
+
+.paper-section-storyboard-label {
+  font-weight: 700;
+  opacity: 0.8;
+}
+
+/* --- Stock media ("Find Footage" - html/index.html, after "Generate
+   Storyboard") - a row of video thumbnails and a stacked list of audio
+   previews per section, fetched from Pexels/Freesound on demand. --- */
+/* .find-footage-btn {
+  margin-top: 10px;
+} */
+
+.paper-section-media {
+  margin-top: 10px;
+}
+
+/* --- Arranged-view "shot" card layout (buildSectionBlock, selectable=true) -
+   a visual box + footage controls + narration/audio on the left, the
+   original paper excerpt on the right. The pre-arrangement flat feed
+   (selectable=false) keeps the older single-column layout, so this only
+   applies to .paper-section-block-shot, not .paper-section-block generally. */
+.paper-section-block-shot {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  padding: 16px 20px;
+}
+
+.paper-section-media-col {
+  flex: 0 0 50%;
+  min-width: 0;
+}
+
+.paper-section-visual-box {
+  background: #000000;
+  border-radius: 6px;
+  min-height: 160px;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.paper-section-visual-media {
+  display: block;
+  max-width: 100%;
+  max-height: 220px;
+  border-radius: 4px;
+}
+
+.paper-section-visual-placeholder {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.paper-section-footage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.paper-section-footage-actions input[type="file"] {
+  font-family: inherit;
+  font-size: 13px;
+  color: inherit;
+  max-width: 100%;
+}
+
+/* Also the drop target for dragging an audio clip in from "Your Media" -
+   see js/paper-extract.js's buildSectionBlock. */
+.paper-section-narration-audio {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.paper-section-narration-audio.drag-over {
+  background: rgba(241, 135, 0, 0.15);
+  box-shadow: 0 0 0 2px #f18700;
+}
+
+.paper-section-narration {
+  font-size: 13px;
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+
+.paper-section-narration-audio-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.paper-section-audio-placeholder {
+  font-size: 11px;
+  opacity: 0.6;
+  font-style: italic;
+}
+
+.paper-section-narration-audio audio {
+  width: 100%;
+  height: 28px;
+}
+
+.paper-section-source-col {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-right: 24px; /* room for .paper-section-remove-btn's top-right corner */
+}
+
+.media-video-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.media-video-option {
+  position: relative;
+  width: 200px;
+  height: 120px;
+  border-radius: 4px;
+  overflow: hidden;
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.media-video-option video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.media-video-option.selected {
+  box-shadow: 0 0 0 2px #f18700;
+}
+
+/* The actual, discoverable way to pick a clip (see js/paper-extract.js's
+   buildMediaVideoOption) - the video fills this whole option, so clicking
+   it just plays/pauses; there's no other exposed area to click for
+   selecting instead. */
+.media-video-option-select-btn {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 4px 6px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  border: none;
+  border-radius: 0;
+  background: rgba(0, 0, 0, 0.7);
+  color: #FFFFFF;
+  cursor: pointer;
+}
+
+.media-video-option-select-btn:hover {
+  background: rgba(0, 0, 0, 0.85);
+}
+
+.media-video-option.selected .media-video-option-select-btn {
+  background: #f18700;
+}
+
+.media-option-link {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: #FFFFFF;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.media-option-link:hover {
+  background: rgba(0, 0, 0, 0.85);
+}
+
+.media-audio-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.media-audio-option {
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.media-audio-option.selected {
+  box-shadow: 0 0 0 2px #f18700;
+}
+
+.media-audio-option-label {
+  font-size: 11px;
+  opacity: 0.8;
+  margin-bottom: 4px;
+}
+
+.media-audio-option audio {
+  width: 100%;
+  height: 28px;
+}
+
+/* Smaller text specifically for the section cards inside the narrative-arc
+   rows - .paper-section-title/-text/-meta/-storyboard-line are shared with
+   the pre-arrangement flat feed (.paper-sections-feed), which keeps its own
+   larger size; only these more-compact excerpt cards get scaled down. */
+.narrative-act-row-cards .paper-section-title {
+  font-size: 13px;
+}
+
+.narrative-act-row-cards .paper-section-text {
+  font-size: 12px;
+}
+
+.narrative-act-row-cards .paper-section-meta {
+  font-size: 11px;
+}
+
+.narrative-act-row-cards .paper-section-storyboard-line {
+  font-size: 11px;
+}
+/* #endregion */
+
+/* #region BUTTONS */
+/* Sits above .page-layout on html/storyboard.html (see that file) rather
+   than inside .main-column, so it needs its own spacing to match
+   .page-layout's own 20px horizontal padding, which it no longer inherits. */
+#back-to-setup-btn {
+  margin: 16px 0 16px 20px;
+}
+
+button:not(.clear-debug-session-btn):not(.paper-section-remove-btn):not(.narrative-arc-outline-item):not(.chip),
+#back-to-setup-btn {
+  height: 24px;
+  padding: 0 22px;
+  border: none;
+  border-radius: 8px;
+  background: var(--cd-accent);
+  color: var(--cd-accent-text);
+  font-weight: 700;
+  box-shadow: 0 2px 6px rgba(235, 16, 0, 0.25);
+  transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+}
+
+button:not(.clear-debug-session-btn):not(.paper-section-remove-btn):not(.narrative-arc-outline-item):not(.chip):hover,
+#back-to-setup-btn:hover {
+  background: var(--cd-accent-hover);
+  box-shadow: 0 4px 10px rgba(235, 16, 0, 0.3);
+  transform: translateY(-1px);
+}
+
+button:not(.clear-debug-session-btn):not(.paper-section-remove-btn):not(.narrative-arc-outline-item):not(.chip):active,
+#back-to-setup-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(235, 16, 0, 0.2);
+}
+
+.btn-primary,
+.btn-secondary,
+#back-to-setup-btn {
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+body.pub-to-doc-page .chip.suggested {
+  background: rgba(38, 37, 35, 0.05);
+  border: 1px dashed var(--cd-border-strong);
+  color: var(--cd-text);
+}
+body.pub-to-doc-page .chip.suggested:hover {
+  background: rgba(38, 37, 35, 0.1);
+}
+body.pub-to-doc-page .chip.suggested.selected {
+  background: var(--cd-accent-active);
+  color: var(--cd-accent-text);
+  border-color: var(--cd-accent-active);
+}
+
+/* Floating, fixed to the bottom-right of the viewport rather than sitting
+   in .main-column's normal flow (see html/index.html) - the one control
+   that advances from page 1 (record/upload/edit) to page 2 (arc suggestion
+   + storyboard), so it stays reachable no matter how far down page 1 is
+   scrolled. z-index above every other z-indexed element on this page
+   (.split-floating-btn's 1000 is the next-highest) so nothing can cover it. */
+#compose-storyboard-row {
+  position: fixed;
+  bottom: 15px;
+  right: 20px;
+  z-index: 2000;
+  text-align: right;
+}
+/* #endregion */
+
+/* #region STATUSES */
+.status-line {
+  font-size: 12px;
+  opacity: 0.75;
+  min-height: 16px;
+  margin-top: 14px;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.status-line.error {
+  color: #B3261E;
+}
+/* #endregion */
+
+/* #region SIDEBAR */
+/* html/storyboard.html's left sidebar - empty until an arc's accepted,
+   then holds #storyboard-arc-module/#media-bank-module/
+   #source-material-module, all relocated in from .main-column (see
+   js/paper-extract.js's relocateArcSuggestionToSidebar and friends) -
+   #storyboard-arc-module always inserted first regardless of relocation
+   order. */
+.sidebar-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  flex: 0 0 380px;
+  min-width: 0;
+}
+
+/* Empty at page load - without this, the flex-basis above would still
+   reserve a blank 380px-wide column next to the main column before an
+   arc's been accepted. */
+.sidebar-stack:empty {
+  display: none;
+}
+
+/* Shared box model so every button lines up regardless of its own fill/
+   border below - this was missing (buttons were falling back to native
+   unstyled height/padding/cursor) until this was added back. */
+
+/* .btn-primary {
+  border: 1px solid rgba(38, 37, 35, 0.28);
+  color: var(--cd-text);
+}
+.btn-primary:hover {
+  background: rgba(38, 37, 35, 0.06);
+} */
+
+/* Dev-only "restore last session across a reload" affordance (html/index.html
+   only - see js/paper-extract.js's saveDebugSession/restoreDebugSession). */
+.clear-debug-session-btn {
+  display: block;
+  margin-top: 16px;
+  margin-bottom: 16px;
+  font-family: inherit;
+  font-size: 11px;
+  opacity: 0.6;
+  background: none;
+  border: none;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+  color: inherit;
+}
+
+.clear-debug-session-btn:hover {
+  opacity: 1;
+}
+
+.clear-debug-session-btn:disabled {
+  cursor: default;
+  text-decoration: none;
+}
+/* #endregion */
+
+
+
+
+
+
+
+body.pub-to-doc-page #transcript-panel,
+body.pub-to-doc-page .module-card,
+body.pub-to-doc-page .graph-panel {
+  background: var(--cd-card-bg);
+  border: 1px solid var(--cd-border);
+  box-shadow: 0 1px 4px rgba(38, 37, 35, 0.06);
+}
+
+body.pub-to-doc-page #transcript-panel .timestamp-edit-row input[type="number"],
+body.pub-to-doc-page #transcript-panel .transcript-text-input,
+body.pub-to-doc-page #audience-input,
+body.pub-to-doc-page input[type="file"],
+body.pub-to-doc-page .input-group input[type="text"],
+body.pub-to-doc-page .documentary-intent-input,
+body.pub-to-doc-page .animate-method-select {
+  background: var(--cd-card-bg);
+  border: 1px solid var(--cd-border-strong);
+  color: var(--cd-text);
+}
+
+.animate-method-select {
+  font-family: inherit;
+  font-size: 13px;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+body.pub-to-doc-page #audience-input::placeholder,
+body.pub-to-doc-page .input-group input[type="text"]::placeholder,
+body.pub-to-doc-page .documentary-intent-input::placeholder {
+  color: rgba(38, 37, 35, 0.45);
+}
+
+/* body.pub-to-doc-page .btn-primary {
+  background: var(--cd-accent);
+  color: var(--cd-accent-text);
+}
+body.pub-to-doc-page .btn-primary:hover {
+  background: var(--cd-accent-hover);
+}
+
+body.pub-to-doc-page .btn-secondary {
+  border: 1px solid var(--cd-border-strong);
+  color: var(--cd-text);
+}
+body.pub-to-doc-page .btn-secondary:hover {
+  background: rgba(38, 37, 35, 0.06);
+}
+body.pub-to-doc-page .btn-secondary.active {
+  background: var(--cd-accent);
+  color: var(--cd-accent-text);
+  border-color: var(--cd-accent);
+} */
+
+body.pub-to-doc-page .graph-edge-label {
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--cd-text);
+  border: 1px solid var(--cd-border);
+}
+body.pub-to-doc-page .graph-node {
+  box-shadow: 0 2px 6px rgba(38, 37, 35, 0.15);
+}
+body.pub-to-doc-page .graph-node.active {
+  border-color: var(--cd-accent);
+}
+
+body.pub-to-doc-page .paper-section-block {
+  background: var(--cd-card-bg);
+  border: 1px solid var(--cd-border);
+  box-shadow: 0 1px 4px rgba(38, 37, 35, 0.06);
+}
+
+body.pub-to-doc-page .editable-field:hover {
+  background: var(--cd-panel-bg);
+  box-shadow: 0 0 0 1px var(--cd-border-strong);
+}
+
+body.pub-to-doc-page .editable-field.editing {
+  background: var(--cd-panel-bg);
+  box-shadow: 0 0 0 1px var(--cd-accent);
+}
+
+body.pub-to-doc-page .paper-section-remove-btn {
+  border-color: var(--cd-border-strong);
+  color: var(--cd-text);
+}
+
+body.pub-to-doc-page .paper-section-remove-btn:hover {
+  background: var(--cd-panel-bg);
+}
+
+body.pub-to-doc-page .paper-section-storyboard {
+  border-top-color: var(--cd-border);
+}
+
+body.pub-to-doc-page .paper-section-narration-audio {
+  border-top-color: var(--cd-border);
+}
+
+body.pub-to-doc-page .narrative-arc-techniques {
+  border-top-color: var(--cd-border);
+}
+
+body.pub-to-doc-page .media-video-option {
+  background: var(--cd-panel-bg);
+  border: 1px solid var(--cd-border);
+}
+
+body.pub-to-doc-page .media-audio-option {
+  background: var(--cd-panel-bg);
+  border: 1px solid var(--cd-border);
+}
+
+body.pub-to-doc-page .narrative-act-row {
+  background: var(--cd-panel-bg);
+  border: 1px solid var(--cd-border);
+}
+
+body.pub-to-doc-page .narrative-act-row-chip {
+  background: rgba(38, 37, 35, 0.05);
+  border: 1px dashed var(--cd-border-strong);
+  color: var(--cd-text);
+}
+body.pub-to-doc-page .narrative-act-row-chip.selected {
+  background: var(--cd-accent);
+  color: var(--cd-accent-text);
+  border-color: var(--cd-accent);
+}
+
+/* body.pub-to-doc-page .narrative-arc-outline-item {
+  background: var(--cd-panel-bg);
+  color: var(--cd-text);
+}
+body.pub-to-doc-page .narrative-arc-outline-item:hover {
+  background: var(--cd-accent);
+  color: var(--cd-accent-text);
+} */
+
+body.pub-to-doc-page .graph-panel ul li::before {
+  background: var(--cd-border-strong);
+}
+
+.chip {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 999px;
+}
+
+.chip.suggested {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px dashed rgba(255, 255, 255, 0.55);
+  color: #FFFFFF;
+  cursor: pointer;
+}
+
+.chip.suggested:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.chip.suggested.selected {
+  background: #FFFFFF;
+  color: #EB1000;
+  border: 1px solid #FFFFFF;
+}
+
+/* Not used by feedback.html's own UI right now (it's built around the
+   progressive timeline instead - see #feedback-timeline below), but kept
+   alongside js/helpers.js's fetchFeedback()/renderFeedbackResult() (the
+   one-shot retrospective mode, still a working, independently-callable
+   feature) so that pairing stays self-consistent rather than silently
+   broken if it's ever reused. */
+.feedback-response-card {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 16px 18px;
+}
+
+.feedback-response-header {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 10px;
+  opacity: 0.9;
+}
+
+.feedback-response-text {
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.segments-section {
+  margin-bottom: 24px;
+}
+
+.segments-section:last-child {
+  margin-bottom: 0;
+}
+
+.narrative-arc-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.narrative-act-row-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Sits above the row (not as a side label running its full height) - a
+   title plus a short reminder of what this part of the arc should
+   illustrate (see act.description in js/paper-extract.js). */
+.narrative-act-heading {
+  padding-left: 4px;
+}
+
+.narrative-act-title {
+  font-size: 20px;
+  font-weight: 700;
+  font-family: var(--cd-font-heading);
+}
+
+.narrative-act-description {
+  font-size: 12px;
+  opacity: 0.7;
+  margin-top: 2px;
+}
+
+.narrative-act-row {
+  display: flex;
+  align-items: flex-start;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.narrative-act-row.drag-over {
+  box-shadow: 0 0 0 2px #f18700;
+  background: rgba(241, 135, 0, 0.15);
+}
+
+.narrative-act-row-cards {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Compact per-row chip strip - a smaller, quicker click target alongside
+   each section's full card below (see buildArcRowChip/handleSectionClick
+   in js/paper-extract.js) - both select the same way. */
+.narrative-act-row-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.narrative-act-row-chip {
+  max-width: 160px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: grab;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px dashed rgba(255, 255, 255, 0.4);
+}
+
+.narrative-act-row-chip.dragging {
+  opacity: 0.4;
+}
+
+.narrative-act-row-chip.selected {
+  background: #FFFFFF;
+  color: #EB1000;
+  border: 1px solid #FFFFFF;
+}
+
+/* "+ Add Section" (one per narrative-act-row) shares .insert-section-
+   divider's low-key, text-only look below rather than looking like a
+   regular action button - see js/paper-extract.js's renderMovieEditor. */
+.insert-section-divider,
+.add-section-btn {
+  display: block;
+  width: 100%;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 0;
+  border: none;
+  background: none;
+  color: var(--cd-text);
+  opacity: 0.35;
+  cursor: pointer;
+  text-align: center;
+  transition: opacity 0.15s ease;
+}
+
+/* Sits in the gap between two adjacent section cards in the pre-arrangement
+   flat feed (see buildInsertSectionDivider in js/paper-extract.js) - the
+   negative top margin pulls it up into that gap. .add-section-btn isn't
+   between two cards (it's always last in its row), so it keeps a normal
+   top margin instead. */
+.insert-section-divider {
+  margin: -8px 0 8px;
+}
+
+.add-section-btn {
+  margin-top: 8px;
+}
+
+.insert-section-divider:hover,
+.add-section-btn:hover {
+  opacity: 1;
+}
+
+/* Popover shown near the cursor when text is highlighted inside a section's
+   body (see the splitFloatingBtn wiring in js/paper-extract.js) - positioned
+   via inline style.left/top, absolute so it scrolls with the page. */
+.split-floating-btn {
+  position: absolute;
+  z-index: 1000;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: none;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  background: #262523;
+  color: #FFFFFF;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.split-floating-btn:hover {
+  background: #3a3936;
+}
+
+.segment-card .chip.entity,
+.segment-card .chip.keyphrase,
+.graph-panel .chip.entity,
+.graph-panel .chip.keyphrase {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+}
+
+.segment-card .chip.keyphrase,
+.graph-panel .chip.keyphrase {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  color: #FFFFFF;
+}
+
+/* --- segmentation_carta inspector (carta.html): chunk entity mentions --- */
+.carta-entity-header {
+  font-size: 11px;
+  font-weight: 700;
+  /* text-transform: uppercase; */
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+  margin: 12px 0 8px;
+}
+
+.carta-entity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.carta-entity {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.carta-entity-name-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.carta-entity-name {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.carta-entity-name-row .chip.keyphrase {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+}
+
+.carta-entity-description {
+  font-size: 12px;
+  opacity: 0.85;
+  line-height: 1.4;
+}
+
+.carta-entity-subheader {
+  font-size: 10px;
+  font-weight: 700;
+  /* text-transform: uppercase; */
+  letter-spacing: 0.04em;
+  opacity: 0.65;
+  margin: 10px 0 4px;
+}
+
+.carta-entity-evidence-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.carta-entity-evidence-list li {
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 3px 0 3px 14px;
+  position: relative;
+}
+
+.carta-entity-evidence-list li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 11px;
+  width: 8px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.carta-entity-related-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* --- Knowledge graph (entity/predicate relations) --- */
+.graph-section {
+  margin-bottom: 32px;
+}
+
+.graph-section:last-child {
+  margin-bottom: 0;
+}
+
+.graph-empty-note {
+  font-size: 13px;
+  font-style: italic;
+  opacity: 0.75;
+}
+
+.graph-scroll {
+  overflow-x: auto;
+  padding-bottom: 4px;
+  margin-bottom: 20px;
+}
+
+.graph-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+.graph-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 4px;
+}
+.graph-scroll::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.graph-wrap {
+  position: relative;
+  width: 100%;
+  height: 300px;
+}
+
+.graph-edge-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #FFFFFF;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.graph-node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  transition: border-color 0.15s ease;
+}
+
+.graph-node img {
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+.graph-node-lines {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+/* --- participant-view.html: slide-image (or, for a drawn-region piece, its
+   own cropped close-up - see cropRegionThumbnail()) icon shown on a "piece"
+   node in the link graph, so it's recognizable at a glance which slide/part
+   it's from - not just a text label. Sized to actually show a circled
+   region clearly, not just a tiny "there's an image here" hint. --- */
+.graph-node-icon {
+  width: 60px;
+  height: 60px;
+  /* border-radius: 50%; */
+  /* border: 2px solid #FFFFFF; */
+  object-fit: cover;
+  flex: 0 0 auto;
+}
+
+/* Drawn-region pieces (a "Portion" of a slide) show their cropped close-up
+   as a circle instead of a square, to read as a spotlighted portion rather
+   than a full-slide thumbnail. */
+.graph-node-icon-circle {
+  border-radius: 50%;
+}
+
+.graph-node.active {
+  border-color: #FFFFFF;
+}
+
+.graph-node-entity {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 12px;
+  background: #FFFFFF;
+  color: #EB1000;
+  max-width: 130px;
+}
+
+.graph-panel {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 16px 18px;
+}
+
+.graph-panel-title {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.graph-panel-subtitle {
+  font-size: 12px;
+  opacity: 0.7;
+  margin-bottom: 12px;
+}
+
+.graph-panel ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.graph-panel ul li {
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 5px 0 5px 16px;
+  position: relative;
+}
+
+.graph-panel ul li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 13px;
+  width: 10px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.4);
+}
+
+/* html/storyboard.html's "Your media" module (#media-bank-module) - Record
+   Audio/Record Video/Upload File, then a running list of whatever's been
+   gathered (see js/paper-extract.js's renderMediaBankItems). */
+.media-bank-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 30px;
+}
+
+/* Live self-view while recording video (see js/paper-extract.js's
+   #record-media-video-btn handler) - not the module's fixed 280px shot-card
+   width, since this sits in the (currently 380px) sidebar column instead. */
+#media-bank-video-preview {
+  display: block;
+  width: 100%;
+  border-radius: 6px;
+  margin-top: 10px;
+}
+
+/* Capped and scrollable rather than growing with the item count (13
+   pre-populated clips by default - see MEDIA_BANK_ASSET_DEFAULTS in
+   js/paper-extract.js) - otherwise this sidebar module would push
+   everything below it far down the page. */
+#media-bank-list {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.media-bank-item {
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+/* Audio items only (see js/paper-extract.js's renderMediaBankItems) - drag
+   onto a section's narration area to use as that shot's narration. */
+.media-bank-item.draggable {
+  cursor: grab;
+  border: 1px dashed rgba(255, 255, 255, 0.4);
+}
+
+.media-bank-item-label {
+  font-size: 12px;
+  opacity: 0.75;
+  margin-bottom: 6px;
+  overflow-wrap: anywhere;
+}
+
+.media-bank-item video {
+  display: block;
+  width: 100%;
+  border-radius: 4px;
+}
+
+.media-bank-item audio {
+  display: block;
+  width: 100%;
+  height: 32px;
+}

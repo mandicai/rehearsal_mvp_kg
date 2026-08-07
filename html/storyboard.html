@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Compose Storyboard - Research Paper to Documentary</title>
+  <!-- Cache-busting: this static site has no build step to fingerprint asset
+     URLs, so local CSS/JS is fetched fresh every load via a timestamped
+     query string instead of relying on a hard-refresh after each edit. -->
+  <script>window.CACHE_BUST = Date.now();</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Cabin+Sketch:wght@400;700&family=Source+Sans+3:wght@400;600;700&display=swap"
+    rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Coral+Pixels&family=Parastoo:wght@400..700&family=Rubik+80s+Fade&display=swap"
+    rel="stylesheet">
+  <script>document.write('<link rel="stylesheet" href="/styles-index.css?t=' + window.CACHE_BUST + '">');</script>
+  <!-- No pdf.js here - PDF parsing only happens on html/index.html's upload step. -->
+</head>
+
+<body class="pub-to-doc-page">
+
+  <!-- Page 2 of 2 (see html/index.html for the rest). A real page, arrived
+   at from index.html's "Compose Storyboard" button - all state needed
+   here (recordedTranscript, selectedFocusStatements, currentSections, ...)
+   is restored from localStorage on load (see js/paper-extract.js's
+   restoreDebugSession). Sits above .page-layout (not inside .main-column)
+   so it stays a full-width, unmistakably page-level control once the
+   sidebar fills in (see relocateArcSuggestionToSidebar and friends) -
+   nested in the main column, it would otherwise sit at the same height as
+   the sidebar, beside it rather than above it. -->
+  <a href="index.html" id="back-to-setup-btn" class="btn-secondary" style="text-decoration: none;">&laquo; Back to
+    setup</a>
+
+  <div class="page-layout">
+
+    <!-- Empty until an arc's accepted - #storyboard-arc-module,
+     #media-bank-module, and #source-material-module (all starting in
+     .main-column below, hidden) relocate in here once one is (see
+     runAcceptArc/relocateArcSuggestionToSidebar and friends), freeing the
+     main column for the arranged view while keeping the suggestion panel
+     visible/clickable (a different arc can still be accepted from here
+     afterward). #storyboard-arc-module always inserted first (see that
+     function's own comment), so it stays above the other two regardless
+     of relocation order. -->
+    <div class="sidebar-stack" id="storyboard-sidebar"></div>
+
+    <div class="main-column">
+
+      <div class="module-card" id="storyboard-arc-module">
+        <!-- Fires automatically whenever restoreDebugSession finds a
+         stated intent, whether or not an arc's already been accepted -
+         see js/paper-extract.js's page-2 init - so switching to a
+         different arc stays available even after arranging (this module
+         then relocates into the left sidebar - see
+         relocateArcSuggestionToSidebar). #suggest-arcs-btn stays hidden
+         (runSuggestArcs still uses it internally to disable/re-enable
+         itself while a request is in flight, but there's no visible
+         button to click - just the status line below it, since every
+         fresh landing on this page already re-triggers a suggestion). -->
+        <h2>Suggested narrative arc</h2>
+
+        <div id="suggest-arcs-row" style="display: none;">
+          <button type="button" id="suggest-arcs-btn" class="btn-primary" style="display: none;">Suggest Narrative
+            Arcs</button>
+          <div id="suggest-arcs-status" class="status-line"></div>
+        </div>
+
+        <div id="arc-suggestion-panel" style="display: none;"></div>
+
+        <!-- Hidden until an arc is accepted (see runAcceptArc) - just a
+         container for the edit-plan/Premiere-export panels below, both
+         hidden until a storyboard succeeds. Generate Storyboard/Generate
+         Edit Plan themselves live in the sticky action bar at the top of
+         the arranged view (see js/paper-extract.js's renderMovieEditor) -
+         it's always visible while scrolling that (often long) list, unlike
+         this module. -->
+        <div id="paper-actions" style="display: none; margin-top: 16px;">
+          <!-- Hidden until a storyboard succeeds (from the sticky action bar). -->
+          <div id="edit-plan-action" style="display: none; margin-top: 12px;">
+            <div id="edit-plan-overall-notes" class="status-line"></div>
+
+            <!-- Hidden until a storyboard succeeds - writes edit_plan.json +
+             any uploaded footage to premiere_exports/ for the Premiere Pro
+             UXP plugin (see premiere-plugin/) to read from disk. Including
+             an edit plan is optional (Export works from a storyboard alone),
+             so this doesn't wait specifically on an edit plan existing. -->
+            <div id="premiere-export-action" style="display: none; margin-top: 12px;">
+              <button id="export-premiere-btn" class="btn-primary">Export for Premiere</button>
+              <div id="premiere-export-status" class="status-line"></div>
+              <div id="premiere-export-folder" class="status-line"></div>
+
+              <!-- Manual refresh, not a push - nothing here can be notified
+               the moment the Premiere plugin finishes exporting rough_cut.mp4
+               into the same folder (see premiere-plugin/README.md). -->
+              <button id="check-preview-btn" class="btn-primary" style="margin-top: 8px;">Check for Exported
+                Preview</button>
+              <div id="preview-status" class="status-line"></div>
+              <video id="preview-video" controls style="display: none; margin-top: 8px; max-width: 100%;"></video>
+            </div>
+          </div>
+        </div>
+      </div><!-- /#storyboard-arc-module -->
+
+      <!-- Hidden until an arc's accepted (see relocateMediaBankToSidebar) -
+       once shown, relocates into the sidebar rather than staying here. A
+       standing place to record or upload reference audio/video and play
+       any of it back, not just the one documentary-intent recording. -->
+      <div class="module-card" id="media-bank-module" style="display: none;">
+        <h2>Your media</h2>
+
+        <!-- Same id/click handler as index.html's own button (see
+         js/paper-extract.js) - recording happens there, playback works on
+         either page. -->
+        <button type="button" id="play-intent-btn" class="btn-primary" style="display: none;">▶ Play recording</button>
+
+        <div id="intent-transcript-display" style="display: none; margin-top: 12px;">
+          <div id="intent-transcript-text" class="intent-transcript-text"></div>
+        </div>
+
+        <div id="media-bank-list"></div>
+
+        <div class="media-bank-add-row">
+          <button type="button" id="record-media-audio-btn" class="btn-secondary">Record Audio</button>
+          <button type="button" id="record-media-video-btn" class="btn-secondary">Record Video</button>
+          <input type="file" id="upload-media-input" accept="audio/*,video/*">
+        </div>
+        <div id="media-bank-status" class="status-line"></div>
+
+        <!-- Live self-view while #record-media-video-btn is recording -
+         removed once recording stops (see js/paper-extract.js). -->
+        <video id="media-bank-video-preview" autoplay muted playsinline style="display: none;"></video>
+      </div><!-- /#media-bank-module -->
+
+      <!-- Hidden until an arc's accepted (see
+       relocateSourceMaterialToSidebar) - once shown, relocates into the
+       sidebar rather than staying here, right under #media-bank-module. A
+       read-only reference listing of the extracted paper sections (see
+       js/paper-extract.js's renderSourceMaterialList), kept in sync
+       whenever currentSections changes on this page (adding/reassigning a
+       section from within the arranged view). Not built from
+       buildSectionBlock/renderSectionFeed like index.html's own editable
+       feed - those hardcode their re-render target to #paper-sections
+       (the movie editor here), so reusing them in a second, simultaneous
+       location on this page would clobber it. -->
+      <div class="module-card" id="source-material-module" style="display: none;">
+        <h2>Source material</h2>
+        <div id="source-material-list"></div>
+      </div><!-- /#source-material-module -->
+
+      <!-- The movie editor (js/paper-extract.js's renderMovieEditor) renders
+       into this once an arc is arranged. -->
+      <div id="paper-sections"></div>
+
+    </div><!-- /.main-column -->
+
+  </div><!-- /.page-layout -->
+
+  <script>
+    document.write('<script src="/js/helpers.js?t=' + window.CACHE_BUST + '"><\/script>');
+    document.write('<script src="/js/paper-extract.js?t=' + window.CACHE_BUST + '"><\/script>');
+  </script>
+
+</body>
+
+</html>

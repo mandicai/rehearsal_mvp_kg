@@ -22,8 +22,9 @@
 4. **Start both servers** (two separate terminals, both from the repo root):
    ```
    python3 backend/server.py      # backend Flask API, http://127.0.0.1:8000
-   python3 -m http.server 5500    # frontend static files, http://localhost:5500
+   python3 serve.py 5500           # frontend static files, http://localhost:5500
    ```
+   `serve.py` is a drop-in replacement for `python3 -m http.server` that adds HTTP Range support (206 Partial Content) - the standard library's version lacks it entirely, which can silently break playback of recorded/uploaded video and audio (served from `premiere_exports/`, under this same root) in browsers - Safari in particular - that require it. Plain `python3 -m http.server 5500` still works for everything else if you'd rather not use it.
 
 5. **Open `http://localhost:5500/html/index.html`** in your browser. Upload an academic paper (PDF) and extract its section titles and body text for review. PDFs are parsed server-side by Docling.
 
@@ -32,7 +33,7 @@
    - `http://localhost:5500/html/index.html` - upload an academic paper (PDF/text/Markdown) and extract its section titles and body text for review. PDFs are parsed server-side by Docling; `.txt`/`.md` uploads use a client-side heuristic instead (Docling only handles PDFs).
    - `http://localhost:5500/html/knowledge.html`, `.../feedback.html`, `.../carta.html` - the other tools described below. -->
 
-HTML pages live in `html/` and JS files live in `js/`; both are served as static files from the repo root by the `http.server` command above, so page/script/asset references use root-absolute paths (e.g. `/js/helpers.js`, `/slides.json`) rather than paths relative to `html/`.
+HTML pages live in `html/` and JS files live in `js/`; both are served as static files from the repo root by the `serve.py`/`http.server` command above, so page/script/asset references use root-absolute paths (e.g. `/js/helpers.js`, `/slides.json`) rather than paths relative to `html/`.
 
 <!-- ## `backend/segmentation/*.py`
 
