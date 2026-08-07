@@ -35,6 +35,20 @@
 
 HTML pages live in `html/` and JS files live in `js/`; both are served as static files from the repo root by the `serve.py`/`http.server` command above, so page/script/asset references use root-absolute paths (e.g. `/js/helpers.js`, `/slides.json`) rather than paths relative to `html/`.
 
+## Deploying the backend
+
+This site's frontend deploys to Netlify (`netlify.toml`), but Netlify only runs short-lived serverless functions - not a persistent process like `python backend/server.py`, which several routes need (long-polling a video-generation job, `ffmpeg`/Docling model calls that can take longer than a function timeout, etc.). So the backend deploys separately, to [Render](https://render.com), as an always-running Docker container:
+
+1. On Render: **New +** → **Blueprint** → point it at this repo. Render reads `render.yaml` and creates the `rehearsal-mvp-kg-backend` web service from `backend/Dockerfile`.
+2. Render will prompt for the env vars marked `sync: false` in `render.yaml` (`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `PEXELS_API_KEY`, `FREESOUND_API_KEY`) - same values as your local `backend/.env`, entered directly in Render's dashboard instead (never committed).
+3. Once deployed, copy the service's `https://<name>.onrender.com` URL into `window.API_BASE_URL` near the top of `html/index.html` and `html/storyboard.html` (both currently have this commented out, defaulting to `http://127.0.0.1:8000` for local dev - see `js/helpers.js`'s `API_BASE_URL`).
+4. Redeploy the frontend to Netlify so it picks up that change.
+
+A couple of things worth knowing about this setup:
+- Render's free tier spins the service down when idle and cold-starts on the next request - expect the first request after a while to be slow (heavy imports: torch/spacy/docling).
+- `premiere_exports/` (generated sketches, uploaded footage, animated previews) lives on the container's own ephemeral disk - it's wiped on every restart/redeploy. Fine for now since nothing in the live UI depends on that persisting across deploys; a paid Render plan's persistent disk would fix this if it ever needs to.
+- `LibreOffice` isn't installed in `backend/Dockerfile` (see `backend/requirements.txt`'s own comment) - that's only needed for `ingest/pptx_render.py`'s PPTX rendering, which isn't wired to any button on the current live pages.
+
 <!-- ## `backend/segmentation/*.py`
 
 Handles segmentation of input documents or a Wikipedia URL (placeholder for now, as an example of "common knowledge")

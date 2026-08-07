@@ -1,0 +1,9 @@
+# Secrets - Render sets these as real environment variables in the
+# dashboard instead (see render.yaml's env vars, sync: false); baking .env
+# into the image would leak the API keys into every layer/registry copy.
+.env
+
+.DS_Store
+.gitignore
+__pycache__/
+*.pyc

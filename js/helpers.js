@@ -1,3 +1,13 @@
+// Backend base URL - every *_API_URL constant below is built from this.
+// Defaults to this app's local Flask dev server (backend/server.py, see
+// README.md), unchanged from before this existed. In production, the
+// static frontend deploys to Netlify while the backend deploys separately
+// to Render (see render.yaml/backend/Dockerfile) - Netlify can't run a
+// persistent server. Set window.API_BASE_URL to that Render URL in
+// html/index.html and html/storyboard.html's own <head> (right beside
+// window.CACHE_BUST) once the backend's deployed; this file only reads it.
+const API_BASE_URL = window.API_BASE_URL || 'http://127.0.0.1:8000';
+
 //#region --- ARC SUGGESTION
 // --- index.html: ranked arc recommendations from a recorded narration
 // (backend/narrative_arc_llm.py's suggest_arcs_from_intent) ---
@@ -9,7 +19,7 @@
 // focusStatements is optional (an array of short strings - suggested-focus
 // chips and/or a typed-in custom addition).
 
-const SUGGEST_ARCS_API_URL = 'http://127.0.0.1:8000/paper/suggest_arcs';
+const SUGGEST_ARCS_API_URL = `${API_BASE_URL}/paper/suggest_arcs`;
 
 function fetchSuggestArcs(transcript, focusStatements) {
   return fetch(SUGGEST_ARCS_API_URL, {
@@ -78,7 +88,7 @@ function computeInferredAudiences(slideData) {
 // (backend/server.py) — this function just calls it. Start it with
 // `python backend/server.py` before using the upload/URL extractor.
 
-const SEGMENT_API_URL = 'http://127.0.0.1:8000/segment';
+const SEGMENT_API_URL = `${API_BASE_URL}/segment`;
 
 function fetchSegments(text, documentId) {
   return fetch(SEGMENT_API_URL, {
@@ -173,7 +183,7 @@ function renderSegmentation(container, result, sourceLabel) {
 // mentioned within that evidence. No local fallback server-side anywhere
 // past chunking, so a missing LLM key surfaces as a 503 here.
 
-const CARTA_API_URL = 'http://127.0.0.1:8000/segment_carta';
+const CARTA_API_URL = `${API_BASE_URL}/segment_carta`;
 
 function fetchCartaResult(text, documentId) {
   return fetch(CARTA_API_URL, {
@@ -1178,7 +1188,7 @@ function prepareSlidePayload(slideData, maxWidth) {
 // local Python backend (backend/server.py), which forwards the transcript +
 // slide images to a vision-capable LLM role-playing as the chosen audience.
 
-const FEEDBACK_API_URL = 'http://127.0.0.1:8000/feedback';
+const FEEDBACK_API_URL = `${API_BASE_URL}/feedback`;
 
 function fetchFeedback(audience, prompt, slidePayload) {
   return fetch(FEEDBACK_API_URL, {
@@ -1229,7 +1239,7 @@ function renderFeedbackResult(container, audience, feedbackText) {
 // knowledge of what's still to come - see backend/feedback_llm.py's
 // get_progressive_reaction.
 
-const FEEDBACK_PROGRESSIVE_API_URL = 'http://127.0.0.1:8000/feedback/progressive_step';
+const FEEDBACK_PROGRESSIVE_API_URL = `${API_BASE_URL}/feedback/progressive_step`;
 
 function fetchProgressiveReaction(audience, prompt, messages, slide, goal) {
   return fetch(FEEDBACK_PROGRESSIVE_API_URL, {
@@ -1357,11 +1367,11 @@ function fetchWikipediaUrl(rawUrl) {
 // helpers send FormData and must NOT set a Content-Type header themselves -
 // the browser sets its own multipart boundary.
 
-const INGEST_PPTX_API_URL = 'http://127.0.0.1:8000/ingest/pptx';
-const TRANSCRIBE_API_URL = 'http://127.0.0.1:8000/transcribe';
-const ALIGN_API_URL = 'http://127.0.0.1:8000/align';
-const SAVE_PROJECT_API_URL = 'http://127.0.0.1:8000/projects/save';
-const SUGGEST_OBJECTIVES_API_URL = 'http://127.0.0.1:8000/learning_objectives/suggest';
+const INGEST_PPTX_API_URL = `${API_BASE_URL}/ingest/pptx`;
+const TRANSCRIBE_API_URL = `${API_BASE_URL}/transcribe`;
+const ALIGN_API_URL = `${API_BASE_URL}/align`;
+const SAVE_PROJECT_API_URL = `${API_BASE_URL}/projects/save`;
+const SUGGEST_OBJECTIVES_API_URL = `${API_BASE_URL}/learning_objectives/suggest`;
 
 function handleJsonResponse(res) {
   if (!res.ok) {
@@ -1459,7 +1469,7 @@ function fetchSuggestObjectives(audience, scopeLabel, slidesForScope) {
 // upload though, so this follows fetchIngestPptx's shape exactly. .txt/.md
 // uploads never hit this; see js/paper-extract.js's client-side heuristic.
 
-const PAPER_EXTRACT_API_URL = 'http://127.0.0.1:8000/paper/extract';
+const PAPER_EXTRACT_API_URL = `${API_BASE_URL}/paper/extract`;
 
 function fetchPaperExtraction(file) {
   const form = new FormData();
@@ -1485,7 +1495,7 @@ function fetchPaperExtraction(file) {
 // names, in order) is optional context for the prompt's pacing/positional
 // reasoning. Requires an LLM API key server-side.
 
-const STORYBOARD_API_URL = 'http://127.0.0.1:8000/paper/storyboard';
+const STORYBOARD_API_URL = `${API_BASE_URL}/paper/storyboard`;
 
 function fetchStoryboard(sections, documentaryGoal, arcSections, documentaryMode) {
   return fetch(STORYBOARD_API_URL, {
@@ -1513,7 +1523,7 @@ function fetchStoryboard(sections, documentaryGoal, arcSections, documentaryMode
 // already exists (see js/paper-extract.js's runGenerateEditPlan) - each
 // section must already carry visual/narration.
 
-const EDIT_PLAN_API_URL = 'http://127.0.0.1:8000/paper/edit_plan';
+const EDIT_PLAN_API_URL = `${API_BASE_URL}/paper/edit_plan`;
 
 function fetchEditPlan(sections, documentaryGoal, arcSections, documentaryMode) {
   return fetch(EDIT_PLAN_API_URL, {
@@ -1543,9 +1553,9 @@ function fetchEditPlan(sections, documentaryGoal, arcSections, documentaryMode) 
 // callers remember it and pass it back in on every subsequent call so
 // everything lands in the same premiere_exports/<project_id>/ folder.
 
-const UPLOAD_FOOTAGE_API_URL = 'http://127.0.0.1:8000/premiere/upload_footage';
-const UPLOAD_NARRATION_API_URL = 'http://127.0.0.1:8000/premiere/upload_narration';
-const PREMIERE_EXPORT_API_URL = 'http://127.0.0.1:8000/premiere/export';
+const UPLOAD_FOOTAGE_API_URL = `${API_BASE_URL}/premiere/upload_footage`;
+const UPLOAD_NARRATION_API_URL = `${API_BASE_URL}/premiere/upload_narration`;
+const PREMIERE_EXPORT_API_URL = `${API_BASE_URL}/premiere/export`;
 
 function fetchUploadFootage(file, sectionIndex, projectId) {
   const form = new FormData();
@@ -1591,7 +1601,7 @@ function fetchUploadNarration(blob, filename, projectId) {
 // as fetchUploadFootage/fetchUploadNarration above, but (like footage, not
 // narration) an open-ended list rather than a single fixed recording.
 
-const UPLOAD_MEDIA_BANK_ITEM_API_URL = 'http://127.0.0.1:8000/premiere/upload_media_bank_item';
+const UPLOAD_MEDIA_BANK_ITEM_API_URL = `${API_BASE_URL}/premiere/upload_media_bank_item`;
 
 function fetchUploadMediaBankItem(file, projectId) {
   const form = new FormData();
@@ -1614,7 +1624,7 @@ function fetchUploadMediaBankItem(file, projectId) {
 // lands in the same premiere_exports/<project_id>/ folder. No file to
 // upload here, so a plain JSON body instead of FormData.
 
-const GENERATE_SKETCH_API_URL = 'http://127.0.0.1:8000/paper/generate_sketch';
+const GENERATE_SKETCH_API_URL = `${API_BASE_URL}/paper/generate_sketch`;
 
 function fetchGenerateSketch(sectionIndex, visual, projectId, documentaryMode) {
   return fetch(GENERATE_SKETCH_API_URL, {
@@ -1642,7 +1652,7 @@ function fetchGenerateSketch(sectionIndex, visual, projectId, documentaryMode) {
 // sketch must already exist for this section - see runGenerateAnimatedSketch)
 // and a technique (one of backend/animate_llm.py's TECHNIQUES).
 
-const GENERATE_ANIMATED_SKETCH_API_URL = 'http://127.0.0.1:8000/paper/generate_animated_sketch';
+const GENERATE_ANIMATED_SKETCH_API_URL = `${API_BASE_URL}/paper/generate_animated_sketch`;
 
 function fetchGenerateAnimatedSketch(sectionIndex, technique, projectId, documentaryMode) {
   return fetch(GENERATE_ANIMATED_SKETCH_API_URL, {
@@ -1668,7 +1678,7 @@ function fetchGenerateAnimatedSketch(sectionIndex, technique, projectId, documen
 // Same route family as fetchGenerateAnimatedSketch above, but text-to-video
 // (no existing sketch needed) - takes `visual` instead of relying on a
 // project_id-addressed sketch file server-side.
-const GENERATE_VIDEO_FROM_TEXT_API_URL = 'http://127.0.0.1:8000/paper/generate_video_from_text';
+const GENERATE_VIDEO_FROM_TEXT_API_URL = `${API_BASE_URL}/paper/generate_video_from_text`;
 
 function fetchGenerateVideoFromText(sectionIndex, visual, technique, projectId, documentaryMode) {
   return fetch(GENERATE_VIDEO_FROM_TEXT_API_URL, {
@@ -1695,7 +1705,7 @@ function fetchGenerateVideoFromText(sectionIndex, visual, technique, projectId, 
 // Same route family again, but the cheaper crossfade-of-stills path (no
 // video model) - see backend/animate_llm.py's build_sequence_prompts/
 // compose_crossfade_video.
-const GENERATE_SKETCH_SEQUENCE_API_URL = 'http://127.0.0.1:8000/paper/generate_sketch_sequence';
+const GENERATE_SKETCH_SEQUENCE_API_URL = `${API_BASE_URL}/paper/generate_sketch_sequence`;
 
 function fetchGenerateSketchSequence(sectionIndex, visual, technique, projectId, documentaryMode) {
   return fetch(GENERATE_SKETCH_SEQUENCE_API_URL, {
@@ -1741,8 +1751,8 @@ function fetchPremiereExport(sections, projectId) {
 // both in parallel via Promise.allSettled so one failing doesn't blank out
 // the other.
 
-const SEARCH_VIDEO_API_URL = 'http://127.0.0.1:8000/media/search_video';
-const SEARCH_AUDIO_API_URL = 'http://127.0.0.1:8000/media/search_audio';
+const SEARCH_VIDEO_API_URL = `${API_BASE_URL}/media/search_video`;
+const SEARCH_AUDIO_API_URL = `${API_BASE_URL}/media/search_audio`;
 
 function fetchVideoOptions(query) {
   return fetch(SEARCH_VIDEO_API_URL, {
@@ -1778,10 +1788,10 @@ function fetchAudioOptions(query) {
 
 // --- presenter-view.html: Simulate Audience module (backend/ingest/assessment_llm.py) ---
 
-const GENERATE_QUESTION_API_URL = 'http://127.0.0.1:8000/assessment/generate_question';
-const SIMULATE_ANSWER_API_URL = 'http://127.0.0.1:8000/assessment/simulate_answer';
-const GRADE_ANSWERS_API_URL = 'http://127.0.0.1:8000/assessment/grade_answers';
-const SUGGEST_FIX_API_URL = 'http://127.0.0.1:8000/assessment/suggest_fix';
+const GENERATE_QUESTION_API_URL = `${API_BASE_URL}/assessment/generate_question`;
+const SIMULATE_ANSWER_API_URL = `${API_BASE_URL}/assessment/simulate_answer`;
+const GRADE_ANSWERS_API_URL = `${API_BASE_URL}/assessment/grade_answers`;
+const SUGGEST_FIX_API_URL = `${API_BASE_URL}/assessment/suggest_fix`;
 
 function fetchGenerateQuestion(objectiveText, scopeLabel, slidesForScope) {
   return fetch(GENERATE_QUESTION_API_URL, {

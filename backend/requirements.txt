@@ -1,16 +1,27 @@
-flask
-flask-cors
-sentence-transformers
-spacy
-torch
-numpy
-openai
-httpx
-python-dotenv
-python-pptx
-PyMuPDF
-docling
-requests
-Pillow
-# Also requires LibreOffice (the `soffice` binary) on PATH for PPTX rendering
-# in ingest/pptx_render.py - not pip-installable, e.g. `brew install --cask libreoffice`
+Flask==3.1.3
+flask-cors==6.0.5
+sentence-transformers==5.1.2
+spacy==3.8.11
+torch==2.8.0
+numpy==2.0.2
+openai==2.44.0
+httpx==0.28.1
+python-dotenv==1.2.1
+python-pptx==1.0.2
+PyMuPDF==1.26.5
+docling==2.69.1
+requests==2.32.5
+Pillow==11.3.0
+# Pinned to versions verified working locally (see the Dockerfile for the
+# deployed build) - torch/sentence-transformers/spacy/docling are all prone
+# to breaking across versions, so this isn't just tidiness.
+#
+# Also requires ffmpeg on PATH (used by premiere_bridge.py/animate_llm.py)
+# - installed in the Dockerfile, `brew install ffmpeg` locally.
+#
+# LibreOffice (the `soffice` binary, for ingest/pptx_render.py's PPTX
+# rendering) is NOT installed in the deployed Dockerfile - that route isn't
+# wired to any button on the current live pages (index.html/
+# storyboard.html only), presenter-view.html having been removed. Add
+# `apt-get install libreoffice` back to the Dockerfile if that feature is
+# revived; `brew install --cask libreoffice` locally.

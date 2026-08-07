@@ -1,0 +1,27 @@
+# Render Blueprint for the Flask backend (see backend/Dockerfile) - the
+# static frontend (html/js/css) deploys separately to Netlify (see
+# netlify.toml), which can't run a persistent server like this one.
+#
+# To use: on Render, "New +" -> "Blueprint" -> point at this repo. Render
+# reads this file and creates the service below; you'll be prompted for
+# the envVars marked sync: false (never committed - see backend/.env.example
+# for what each one is/where to get it). After the first deploy, copy the
+# service's *.onrender.com URL into html/index.html and
+# html/storyboard.html's window.API_BASE_URL (see js/helpers.js's own
+# comment on that variable).
+services:
+  - type: web
+    name: rehearsal-mvp-kg-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_BASE_URL
+        sync: false
+      - key: PEXELS_API_KEY
+        sync: false
+      - key: FREESOUND_API_KEY
+        sync: false

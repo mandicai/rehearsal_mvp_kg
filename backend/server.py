@@ -78,6 +78,7 @@ already serves at /premiere_exports/... (no separate route needed for that
 direction - see premiere-plugin/README.md for the full round trip).
 """
 import json
+import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
@@ -1220,7 +1221,14 @@ def save_project_route():
 
 
 if __name__ == '__main__':
+    # host 0.0.0.0 + $PORT (falling back to 127.0.0.1:8000 for local dev,
+    # unchanged from before) - Render (see backend/Dockerfile) assigns its
+    # own port via $PORT and routes external traffic to it; binding only to
+    # 127.0.0.1 there would make the service unreachable from outside the
+    # container.
     # threaded=True: without it, a single slow/hung request (e.g. an LLM call
     # stuck on a broken network path) blocks every other request - including
     # completely unrelated ones - until it resolves or times out.
-    app.run(host='127.0.0.1', port=8000, threaded=True)
+    port = int(os.environ.get('PORT', 8000))
+    host = '0.0.0.0' if 'PORT' in os.environ else '127.0.0.1'
+    app.run(host=host, port=port, threaded=True)
