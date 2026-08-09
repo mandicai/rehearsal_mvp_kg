@@ -90,8 +90,8 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
-from segmentation import PipelineConfig, SegmentationPipeline
-from segmentation_carta import CartaConfig, CartaPipeline
+from segmentation import PipelineConfig
+from segmentation_carta import CartaConfig
 from segmentation_carta.llm import CartaLLMClient, CartaLLMCallError
 from feedback_llm import FeedbackLLMClient, LLMCallError as FeedbackLLMCallError
 from ingest import IngestConfig, render_pptx_to_slides, PptxRenderError, SofficeNotFoundError
@@ -189,8 +189,44 @@ app = Flask(__name__)
 CORS(app)
 app.config['MAX_CONTENT_LENGTH'] = max(MAX_PPTX_SIZE_MB, MAX_AUDIO_SIZE_MB, MAX_PAPER_SIZE_MB, MAX_FOOTAGE_SIZE_MB) * 1024 * 1024
 
-pipeline = SegmentationPipeline(PipelineConfig())
-carta_pipeline = CartaPipeline(CartaConfig())
+# Lazy, not module-level like every client below - SegmentationPipeline
+# eagerly loads a full sentence-transformers model (~all-MiniLM-L6-v2) plus
+# spaCy, and CartaPipeline loads spaCy too (see segmentation/pipeline.py,
+# segmentation_carta/pipeline.py) - real memory (spaCy is tens of MB,
+# sentence-transformers' torch dependency alone is far more), not just
+# import time. /segment and /segment_carta below (for the now-removed
+# carta.html/knowledge.html) aren't reachable from any page js/paper-
+# extract.js actually wires up - constructing these eagerly at process
+# start paid that memory cost on every deploy for two routes nothing calls,
+# which is what pushed the deployed container over Render's free-tier
+# 512MB limit. Built the exact same way as every *_client's own lazy
+# _get_client() elsewhere in this codebase, just at module scope since
+# these aren't instance methods.
+_pipeline = None
+_carta_pipeline = None
+
+
+def _get_pipeline():
+    global _pipeline
+    if _pipeline is None:
+        # Imported here, not at module top (see segmentation/__init__.py's
+        # own comment) - .pipeline is what actually pulls in spacy/
+        # sentence-transformers, so this import itself is part of what
+        # needs to stay deferred, not just the SegmentationPipeline(...) call.
+        from segmentation.pipeline import SegmentationPipeline
+        _pipeline = SegmentationPipeline(PipelineConfig())
+    return _pipeline
+
+
+def _get_carta_pipeline():
+    global _carta_pipeline
+    if _carta_pipeline is None:
+        # See _get_pipeline's own comment - same reasoning, spacy this time.
+        from segmentation_carta.pipeline import CartaPipeline
+        _carta_pipeline = CartaPipeline(CartaConfig())
+    return _carta_pipeline
+
+
 feedback_client = FeedbackLLMClient()
 ingest_config = IngestConfig()
 transcription_client = TranscriptionClient(model=ingest_config.transcription_model)
@@ -220,7 +256,7 @@ def segment():
         text = text[:MAX_CHARS]
 
     try:
-        segments = pipeline.run(text, document_id=document_id)
+        segments = _get_pipeline().run(text, document_id=document_id)
     except Exception as exc:
         return jsonify({'error': str(exc)}), 500
 
@@ -245,6 +281,7 @@ def segment_carta():
     if truncated:
         text = text[:MAX_CARTA_CHARS]
 
+    carta_pipeline = _get_carta_pipeline()
     if not carta_pipeline.llm_client.is_configured():
         return jsonify({
             'error': 'segmentation_carta requires an LLM API key (no local fallback). Set OPENAI_API_KEY (or OPENROUTER_API_KEY) in backend/.env.'

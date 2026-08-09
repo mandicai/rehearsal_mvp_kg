@@ -12,17 +12,23 @@ gives the same {title, sections: [{title, text}]} shape js/paper-extract.js's
 client-side heuristic already produces for .txt/.md uploads (see
 buildSections there).
 
-The DocumentConverter is constructed once at import time, not per-request -
-it lazily loads its layout/OCR models on first use, which is the expensive
-part (including a one-time model download, needing internet access once).
+Both docling's own imports and the DocumentConverter they build are
+deferred to first use (inside _get_converter/extract_sections below), not
+done at module import time - even just importing docling.document_converter
+(before constructing anything) already pulls its real backend (torch/
+transformers/opencv) into memory, ~370MB, measured live via a plain
+`from paper_extraction import extract_sections` in isolation with these as
+top-level imports. Deferring that to first actual use means a process that
+never serves a /paper/extract request (e.g. Render at cold start, before
+any request has come in) doesn't pay that cost just from importing this
+module - the difference between fitting in Render's free-tier 512MB and
+getting OOM-killed before the server can even bind a port. Its layout/OCR
+models load lazily on top of that, on first real conversion (including a
+one-time download, needing internet access once) - a separate, further
+cost this doesn't change.
 """
 import base64
 import io
-
-from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import PdfPipelineOptions
-from docling.document_converter import DocumentConverter, PdfFormatOption
-from docling_core.types.io import DocumentStream
 
 _HEADING_LABELS = {'section_header', 'title'}
 _BODY_LABELS = {'text', 'paragraph', 'list_item', 'footnote', 'formula', 'code'}
@@ -31,9 +37,20 @@ _CAPTION_LABEL = 'caption'
 _NO_CAPTION_PLACEHOLDER = '(no caption captured for this figure)'
 _PREAMBLE_TITLE = 'Title / Preamble'
 
-_pipeline_options = PdfPipelineOptions()
-_pipeline_options.generate_picture_images = True  # otherwise PictureItem.get_image() is always None
-_converter = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=_pipeline_options)})
+_converter = None
+
+
+def _get_converter():
+    global _converter
+    if _converter is None:
+        from docling.datamodel.base_models import InputFormat
+        from docling.datamodel.pipeline_options import PdfPipelineOptions
+        from docling.document_converter import DocumentConverter, PdfFormatOption
+
+        pipeline_options = PdfPipelineOptions()
+        pipeline_options.generate_picture_images = True  # otherwise PictureItem.get_image() is always None
+        _converter = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)})
+    return _converter
 
 
 class PaperExtractionError(Exception):
@@ -67,8 +84,9 @@ def extract_sections(pdf_bytes, filename):
     heading. `image` is a data: URL for figure/table/chart sections when
     Docling could produce one, else None."""
     try:
+        from docling_core.types.io import DocumentStream
         stream = DocumentStream(name=filename, stream=io.BytesIO(pdf_bytes))
-        result = _converter.convert(stream)
+        result = _get_converter().convert(stream)
     except Exception as exc:  # corrupt PDF, unsupported content, etc.
         raise PaperExtractionError(f'Failed to extract "{filename}": {exc}')
 
