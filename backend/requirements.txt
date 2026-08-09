@@ -3,6 +3,7 @@ flask-cors==6.0.5
 sentence-transformers==5.1.2
 spacy==3.8.11
 torch==2.8.0
+torchvision==0.23.0
 numpy==2.0.2
 openai==2.44.0
 httpx==0.28.1
@@ -14,7 +15,12 @@ requests==2.32.5
 Pillow==11.3.0
 # Pinned to versions verified working locally (see the Dockerfile for the
 # deployed build) - torch/sentence-transformers/spacy/docling are all prone
-# to breaking across versions, so this isn't just tidiness.
+# to breaking across versions, so this isn't just tidiness. torch/
+# torchvision specifically must be installed together from the same
+# CPU-only index (see the Dockerfile's own comment) - a plain
+# `pip install -r requirements.txt` here (e.g. for local dev) pulls both
+# from the default PyPI index instead, which works fine on its own but
+# isn't what's actually deployed.
 #
 # Also requires ffmpeg on PATH (used by premiere_bridge.py/animate_llm.py)
 # - installed in the Dockerfile, `brew install ffmpeg` locally.

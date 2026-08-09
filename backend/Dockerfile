@@ -17,12 +17,19 @@ WORKDIR /app
 
 COPY requirements.txt .
 
-# CPU-only torch first - pip's default resolution (triggered transitively
-# by sentence-transformers below) pulls torch's CUDA build, which is
-# multiple GB and pointless on Render's CPU-only containers. Installing
-# the CPU wheel at the exact pinned version up front satisfies that same
-# requirement later without ever downloading the CUDA one.
-RUN pip install --no-cache-dir torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
+# CPU-only torch (+ torchvision, pulled in transitively by
+# docling-ibm-models/sentence-transformers below) from the SAME index,
+# pinned together - pip's default resolution otherwise pulls torch's CUDA
+# build (multiple GB, pointless on Render's CPU-only containers) AND, worse,
+# can mix a CPU-only torch with a torchvision wheel built against a
+# different torch variant from the default PyPI index. That mismatch is
+# silent on arm64 (aarch64 PyPI wheels are CPU-only either way) but fails
+# loudly on Render's x86_64 containers at import time: "RuntimeError:
+# operator torchvision::nms does not exist" - torchvision's compiled
+# extension expects torch internals that don't match a differently-built
+# torch. Verified live (built + ran with --platform linux/amd64) that
+# installing both from the CPU index together fixes it.
+RUN pip install --no-cache-dir torch==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cpu
 
 RUN pip install --no-cache-dir -r requirements.txt
 
