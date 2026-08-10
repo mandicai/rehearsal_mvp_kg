@@ -1,12 +1,39 @@
 // Backend base URL - every *_API_URL constant below is built from this.
-// Defaults to this app's local Flask dev server (backend/server.py, see
-// README.md), unchanged from before this existed. In production, the
-// static frontend deploys to Netlify while the backend deploys separately
-// to Render (see render.yaml/backend/Dockerfile) - Netlify can't run a
-// persistent server. Set window.API_BASE_URL to that Render URL in
-// html/index.html and html/storyboard.html's own <head> (right beside
-// window.CACHE_BUST) once the backend's deployed; this file only reads it.
-const API_BASE_URL = window.API_BASE_URL || 'http://127.0.0.1:8000';
+// Auto-detected from where this page itself was loaded from, since the
+// same static files (html/index.html, html/storyboard.html) serve local
+// dev, a VS Code/Codespaces forwarded port, and the deployed Netlify site
+// alike - hardcoding one of these (as an earlier version of this file did)
+// silently breaks whichever of the others isn't the hardcoded one.
+//   - localhost/127.0.0.1 (plain local dev, see README.md) -> this app's
+//     local Flask dev server, http://127.0.0.1:8000.
+//   - a VS Code Dev Tunnels/Codespaces forwarded-port hostname - both
+//     encode the forwarded port right in the hostname (e.g.
+//     my-tunnel-5500.app.github.dev, or the -devtunnels.ms equivalent) -
+//     swap that port for 8000 (this backend's own default port) to get the
+//     backend's own forwarded URL, ASSUMING port 8000 has also been
+//     forwarded from that same VS Code window/session. A forwarded port is
+//     a relay back to your machine, not independent hosting, so both the
+//     frontend's and backend's local processes still need to actually be
+//     running for this to work at all.
+//   - anything else (the deployed Netlify site) -> the deployed Render
+//     backend (see render.yaml/backend/Dockerfile).
+// window.API_BASE_URL, if a page sets it before this file loads, always
+// wins over all of the above - a manual escape hatch, not needed for any
+// of the 3 cases above.
+function _detectApiBaseUrl() {
+  const { hostname, protocol } = window.location;
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'http://127.0.0.1:8000';
+  }
+  const portForwardMatch = hostname.match(/^(.*)-\d+(\..+)$/);
+  if (portForwardMatch) {
+    const [, prefix, suffix] = portForwardMatch;
+    return `${protocol}//${prefix}-8000${suffix}`;
+  }
+  return 'https://rehearsal-mvp-kg-backend.onrender.com';
+}
+
+const API_BASE_URL = window.API_BASE_URL || _detectApiBaseUrl();
 
 //#region --- ARC SUGGESTION
 // --- index.html: ranked arc recommendations from a recorded narration
