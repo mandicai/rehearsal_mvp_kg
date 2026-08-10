@@ -26,6 +26,8 @@ import base64
 import os
 from pathlib import Path
 
+import httpx
+
 try:
     from openai import OpenAI
 except ImportError:  # openai isn't installed - client stays unconfigured
@@ -53,7 +55,18 @@ class TranscriptionClient:
 
     def _get_client(self):
         if self._client is None:
-            kwargs = {'api_key': self.api_key}
+            # Same convention as every other LLM client in this codebase
+            # (e.g. narrative_arc_llm.py) - was missing here entirely,
+            # which meant a slow/unresponsive proxy hung for the SDK's own
+            # default (up to 600s) instead of failing fast with a clear
+            # error. max_retries=0 so the SDK's own retries don't compound
+            # with a caller-level retry into a much longer wait than either
+            # alone.
+            kwargs = {
+                'api_key': self.api_key,
+                'timeout': httpx.Timeout(60.0, connect=5.0),
+                'max_retries': 0,
+            }
             if self.base_url:
                 kwargs['base_url'] = self.base_url
             self._client = OpenAI(**kwargs)
