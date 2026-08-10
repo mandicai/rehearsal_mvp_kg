@@ -45,7 +45,8 @@ This site's frontend deploys to Netlify (`netlify.toml`), but Netlify only runs 
 4. Redeploy the frontend to Netlify so it picks up that change.
 
 A couple of things worth knowing about this setup:
-- Render's free tier spins the service down when idle and cold-starts on the next request - expect the first request after a while to be slow (heavy imports: torch/spacy/docling).
+- Render's free tier spins the service down when idle and cold-starts on the next request - expect the first request after a while to be slow.
+- **`/paper/extract` (PDF upload) is memory-tight on Render's free tier (512MB) and can still OOM-kill the whole instance** - which then fails every *other* request too until Render restarts it, not just PDF uploads. `paper_extraction.py`'s heavy imports (torch/transformers/opencv, via Docling) are deferred to first use rather than loaded at startup, and Docling's OCR path is disabled (`do_ocr = False` - not needed for papers with real embedded text, and RapidOCR's own torch-based models were a big chunk of the peak), but even with both fixes, extracting a single trivial one-page test PDF measured at ~505MB/512MB peak - a real multi-page paper with figures/tables will likely exceed it. If this keeps happening, upgrade the Render service's instance type for more RAM (Starter or above) - that's the real fix, the code-level mitigations above just buy headroom.
 - `premiere_exports/` (generated sketches, uploaded footage, animated previews) lives on the container's own ephemeral disk - it's wiped on every restart/redeploy. Fine for now since nothing in the live UI depends on that persisting across deploys; a paid Render plan's persistent disk would fix this if it ever needs to.
 - `LibreOffice` isn't installed in `backend/Dockerfile` (see `backend/requirements.txt`'s own comment) - that's only needed for `ingest/pptx_render.py`'s PPTX rendering, which isn't wired to any button on the current live pages.
 

@@ -49,6 +49,16 @@ def _get_converter():
 
         pipeline_options = PdfPipelineOptions()
         pipeline_options.generate_picture_images = True  # otherwise PictureItem.get_image() is always None
+        # OCR (RapidOCR, its own separate torch-based model download/load -
+        # see this module's own docstring) is for scanned image PDFs with no
+        # embedded text - not the case for the academic papers this tool
+        # actually targets, which already have real embedded text Docling
+        # extracts directly. Turning it off measurably cuts peak memory
+        # during extraction (verified live) - necessary, but on its own
+        # NOT sufficient to reliably fit Render's free tier (512MB); see
+        # README.md's deployment notes. Revisit if a scanned/image-only
+        # PDF ever needs support.
+        pipeline_options.do_ocr = False
         _converter = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)})
     return _converter
 
