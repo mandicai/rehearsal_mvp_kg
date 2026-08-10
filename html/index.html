@@ -9,10 +9,16 @@
      query string instead of relying on a hard-refresh after each edit. -->
   <script>window.CACHE_BUST = Date.now();</script>
   <!-- Backend base URL - js/helpers.js reads this (falling back to
-     http://127.0.0.1:8000 if unset). Points at the deployed Render backend
-     (see render.yaml/backend/Dockerfile) - comment this out (falls back to
-     127.0.0.1:8000) for local dev against `python backend/server.py`. -->
-  <script>window.API_BASE_URL = 'https://rehearsal-mvp-kg-backend.onrender.com';</script>
+     http://127.0.0.1:8000 if unset). Auto-detected rather than hardcoded -
+     this same file serves both local dev (via serve.py/http.server, see
+     README.md) and the deployed Netlify site, so a hardcoded Render URL
+     here would silently point local dev at the deployed backend too
+     (unwanted - local dev should hit your local `python backend/server.py`). -->
+  <script>
+    if (location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+      window.API_BASE_URL = 'https://rehearsal-mvp-kg-backend.onrender.com';
+    }
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
