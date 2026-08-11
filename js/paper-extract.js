@@ -1987,16 +1987,31 @@ function buildMediaVideoOption(section, video) {
   selectBtn.textContent = isSelected ? '✓ Selected' : 'Use this clip';
   selectBtn.addEventListener('click', event => {
     event.stopPropagation();
-    section.selectedVideo = video;
-    // Picking a found-footage frame is a deliberate choice - see
-    // buildVisualBox's visualSource lookup (same reasoning as
-    // runUploadFootage/runGenerateSketch's own).
-    section.visualSource = 'stockVideo';
-    // Full re-render (rather than just toggling .selected in place) so the
-    // visual box picks up the new selection immediately - see buildVisualBox.
-    const remaining = currentSections.filter(s => !s.removed);
-    renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
-    saveDebugSession();
+    if (selectBtn.disabled) return;
+    selectBtn.disabled = true;
+    selectBtn.textContent = 'Downloading ...';
+    // A pick is a bare remote URL until it's actually downloaded to disk -
+    // neither export path (the Premiere plugin or the ffmpeg render) can
+    // use a URL directly. See fetchDownloadStockMedia's own comment.
+    fetchDownloadStockMedia(section.index, 'video', video.video_url, premiereProjectId)
+      .then(({ project_id, preview_url }) => {
+        premiereProjectId = project_id;
+        section.selectedVideo = { ...video, localPreviewUrl: preview_url };
+        // Picking a found-footage frame is a deliberate choice - see
+        // buildVisualBox's visualSource lookup (same reasoning as
+        // runUploadFootage/runGenerateSketch's own).
+        section.visualSource = 'stockVideo';
+        // Full re-render (rather than just toggling .selected in place) so the
+        // visual box picks up the new selection immediately - see buildVisualBox.
+        const remaining = currentSections.filter(s => !s.removed);
+        renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+        saveDebugSession();
+      })
+      .catch(err => {
+        selectBtn.disabled = false;
+        selectBtn.textContent = 'Use this clip';
+        window.alert(`Could not use this clip: ${err.message}`);
+      });
   });
   option.appendChild(selectBtn);
 
@@ -2022,12 +2037,25 @@ function buildMediaAudioOption(section, audio) {
 
   option.addEventListener('click', event => {
     event.stopPropagation(); // don't let this bubble to the card's own click-to-select handler
-    section.selectedAudio = audio;
-    // Full re-render so the audio placeholder under the visual box (see
-    // buildSectionBlock) picks up the new player immediately.
-    const remaining = currentSections.filter(s => !s.removed);
-    renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
-    saveDebugSession();
+    if (option.classList.contains('downloading')) return;
+    option.classList.add('downloading');
+    // A pick is a bare remote URL until it's actually downloaded to disk -
+    // neither export path (the Premiere plugin or the ffmpeg render) can
+    // use a URL directly. See fetchDownloadStockMedia's own comment.
+    fetchDownloadStockMedia(section.index, 'audio', audio.preview_url, premiereProjectId)
+      .then(({ project_id, preview_url }) => {
+        premiereProjectId = project_id;
+        section.selectedAudio = { ...audio, localPreviewUrl: preview_url };
+        // Full re-render so the audio placeholder under the visual box (see
+        // buildSectionBlock) picks up the new player immediately.
+        const remaining = currentSections.filter(s => !s.removed);
+        renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+        saveDebugSession();
+      })
+      .catch(err => {
+        option.classList.remove('downloading');
+        window.alert(`Could not use this sound: ${err.message}`);
+      });
   });
 
   return option;
@@ -3172,6 +3200,7 @@ function runExportForPremiere() {
     title: section.title,
     act: currentAssignments[section.index],
     narration: section.narration,
+    narration_audio_path: section.narrationAudioPreviewUrl || null,
     uploaded_footage_path: section.uploadedFootagePath || null,
     selected_video: section.selectedVideo || null,
     selected_audio: section.selectedAudio || null,

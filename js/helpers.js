@@ -1571,6 +1571,7 @@ function fetchEditPlan(sections, documentaryGoal, arcSections, documentaryMode) 
 const UPLOAD_FOOTAGE_API_URL = `${API_BASE_URL}/premiere/upload_footage`;
 const UPLOAD_NARRATION_API_URL = `${API_BASE_URL}/premiere/upload_narration`;
 const PREMIERE_EXPORT_API_URL = `${API_BASE_URL}/premiere/export`;
+const DOWNLOAD_STOCK_MEDIA_API_URL = `${API_BASE_URL}/premiere/download_stock_media`;
 
 function fetchUploadFootage(file, sectionIndex, projectId) {
   const form = new FormData();
@@ -1748,6 +1749,26 @@ function fetchPremiereExport(sections, projectId) {
       if (err.isServerError) throw err;
       throw new Error(
         `Could not reach the Premiere-export server at ${PREMIERE_EXPORT_API_URL} (${err.message}). Check that the backend is running and reachable.`
+      );
+    });
+}
+
+// A stock-media pick (see buildMediaVideoOption/buildMediaAudioOption in
+// js/paper-extract.js) is a bare remote URL until this fires - neither
+// export path (the Premiere plugin or the ffmpeg render) can use a URL
+// directly, so this downloads it to a real local file at pick-time.
+// Mirrors fetchUploadFootage's projectId in/out convention above.
+function fetchDownloadStockMedia(sectionIndex, kind, url, projectId) {
+  return fetch(DOWNLOAD_STOCK_MEDIA_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ section_index: sectionIndex, kind, url, project_id: projectId || '' })
+  })
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(
+        `Could not reach the stock-media-download server at ${DOWNLOAD_STOCK_MEDIA_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }

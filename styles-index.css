@@ -970,6 +970,11 @@ body.pub-to-doc-page .action-bar {
   box-shadow: 0 0 0 2px #f18700;
 }
 
+.media-audio-option.downloading {
+  opacity: 0.5;
+  cursor: wait;
+}
+
 .media-audio-option-label {
   font-size: 11px;
   opacity: 0.8;

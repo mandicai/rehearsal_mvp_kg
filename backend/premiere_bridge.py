@@ -21,6 +21,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+import requests
+
 PREMIERE_EXPORTS_DIR = Path(__file__).resolve().parent.parent / 'premiere_exports'
 
 # Extensions ffmpeg's mp4 muxer understands - -movflags +faststart (moves
@@ -123,3 +125,61 @@ def premiere_media_bank_dir(project_id):
     collection, not tied to any specific shot the way footage/ is, and not
     limited to one file the way narration/ is."""
     return premiere_project_dir(project_id) / 'media_bank'
+
+
+def premiere_stock_media_dir(project_id):
+    """Stock-media picks (Pexels/Internet Archive/Library of Congress
+    video, Freesound audio - see server.py's /premiere/download_stock_media
+    and js/paper-extract.js's buildMediaVideoOption/buildMediaAudioOption)
+    downloaded to a real local file the moment they're picked, rather than
+    left as a bare remote URL - a URL alone isn't usable by either export
+    path (the Premiere plugin or the ffmpeg render). A sibling of footage/,
+    not the same directory, since these came from a search result, not the
+    presenter's own upload."""
+    return premiere_project_dir(project_id) / 'stock_media'
+
+
+# Third-party URLs (Pexels/Internet Archive/Library of Congress/Freesound),
+# not pre-validated - a hard cap keeps one oversized/misbehaving response
+# from filling the disk, same spirit as MAX_FOOTAGE_SIZE_MB in server.py
+# for a direct upload.
+_MAX_STOCK_MEDIA_DOWNLOAD_BYTES = 200 * 1024 * 1024
+
+
+def download_stock_media_to_disk(url, dest_path):
+    """Streams a stock-media pick's URL to dest_path - see
+    premiere_stock_media_dir's own comment on why this needs to happen at
+    all. Raises requests.RequestException/ValueError on failure (bad URL,
+    non-2xx, oversized response) - callers are expected to surface that as
+    a clean error to the presenter (a dead search result is disappointing,
+    not fatal), not retry silently."""
+    with requests.get(url, stream=True, timeout=30) as response:
+        response.raise_for_status()
+        written = 0
+        with open(dest_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=256 * 1024):
+                written += len(chunk)
+                if written > _MAX_STOCK_MEDIA_DOWNLOAD_BYTES:
+                    raise ValueError(f'download exceeded {_MAX_STOCK_MEDIA_DOWNLOAD_BYTES} bytes')
+                f.write(chunk)
+
+
+def resolve_static_preview_path(preview_url):
+    """Inverts the `'/' + saved_path.relative_to(PREMIERE_EXPORTS_DIR.parent).as_posix()`
+    convention every upload route (and download_stock_media_to_disk's own
+    caller) uses to build a preview_url in the first place - given a
+    client-supplied preview_url (e.g. section.narrationAudioPreviewUrl,
+    round-tripping through a /render/start or /premiere/export payload),
+    returns the real absolute Path it points to, or None if it doesn't
+    resolve to somewhere genuinely under premiere_exports/. A client can
+    send any string here, so this rejects anything that escapes that tree
+    (e.g. a `../` traversal) rather than blindly joining it - not just a
+    convenience lookup, a trust boundary."""
+    if not preview_url or not isinstance(preview_url, str):
+        return None
+    candidate = (PREMIERE_EXPORTS_DIR.parent / preview_url.lstrip('/')).resolve()
+    try:
+        candidate.relative_to(PREMIERE_EXPORTS_DIR.resolve())
+    except ValueError:
+        return None
+    return candidate if candidate.is_file() else None

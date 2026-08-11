@@ -84,9 +84,14 @@ direction - see premiere-plugin/README.md for the full round trip).
 """
 import json
 import os
+import re
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from pathlib import Path
+from urllib.parse import urlparse
 
+import requests
 from dotenv import load_dotenv
 
 load_dotenv()  # populate os.environ from backend/.env, if present, before any env var is read
@@ -116,7 +121,11 @@ from animate_llm import (
 )
 from documentary_modes import DOCUMENTARY_MODE_KEYS
 from stock_media import PexelsClient, InternetArchiveClient, LibraryOfCongressClient, FreesoundClient, StockMediaCallError
-from premiere_bridge import next_premiere_project_id, premiere_project_dir, premiere_footage_dir, premiere_sketch_dir, premiere_animated_sketch_dir, premiere_narration_dir, premiere_media_bank_dir, remux_for_reliable_playback, PREMIERE_EXPORTS_DIR
+from premiere_bridge import (
+    next_premiere_project_id, premiere_project_dir, premiere_footage_dir, premiere_sketch_dir,
+    premiere_animated_sketch_dir, premiere_narration_dir, premiere_media_bank_dir, premiere_stock_media_dir,
+    remux_for_reliable_playback, download_stock_media_to_disk, resolve_static_preview_path, PREMIERE_EXPORTS_DIR,
+)
 
 # Structural parsing + NER run in roughly linear time, but boundary scoring
 # and refinement are O(n^2)-ish over base units, so this caps worst-case
@@ -921,6 +930,57 @@ def premiere_upload_footage():
     return jsonify({'project_id': project_id, 'footage_path': str(saved_path), 'preview_url': preview_url})
 
 
+_STOCK_MEDIA_EXTENSION_RE = re.compile(r'^[a-z0-9]{1,5}$')
+
+
+@app.route('/premiere/download_stock_media', methods=['POST'])
+def premiere_download_stock_media():
+    # Downloads a stock-media pick (Pexels/Internet Archive/Library of
+    # Congress video, Freesound audio - see js/paper-extract.js's
+    # buildMediaVideoOption/buildMediaAudioOption) to a real local file the
+    # moment it's picked, rather than leaving it as a bare remote URL - see
+    # premiere_bridge.py's own comment on why neither export path
+    # (Premiere or the ffmpeg render) can use a URL directly. Mirrors
+    # /premiere/upload_footage's response shape (project_id + preview_url),
+    # just sourced by download instead of a multipart upload.
+    data = request.get_json(silent=True) or {}
+
+    try:
+        section_index = int(data.get('section_index'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'section_index is required and must be an integer'}), 400
+
+    kind = data.get('kind')
+    if kind not in ('video', 'audio'):
+        return jsonify({'error': "kind must be 'video' or 'audio'"}), 400
+
+    url = (data.get('url') or '').strip()
+    if not url:
+        return jsonify({'error': 'url is required'}), 400
+
+    project_id = (data.get('project_id') or '').strip() or next_premiere_project_id()
+
+    # Extension from the URL's own path if it looks like a real one,
+    # otherwise a sane default per kind - a Freesound/Pexels/archive.org
+    # URL's path segment is usually the real filename, but not guaranteed.
+    url_extension = Path(urlparse(url).path).suffix.lstrip('.').lower()
+    extension = url_extension if _STOCK_MEDIA_EXTENSION_RE.match(url_extension) else ('mp4' if kind == 'video' else 'mp3')
+
+    stock_dir = premiere_stock_media_dir(project_id)
+    stock_dir.mkdir(parents=True, exist_ok=True)
+    saved_path = stock_dir / f'{section_index}_{kind}.{extension}'
+
+    try:
+        download_stock_media_to_disk(url, saved_path)
+    except (requests.RequestException, ValueError, OSError) as exc:
+        return jsonify({'error': f'Could not download media: {exc}'}), 502
+    remux_for_reliable_playback(saved_path)
+
+    preview_url = '/' + saved_path.relative_to(PREMIERE_EXPORTS_DIR.parent).as_posix()
+
+    return jsonify({'project_id': project_id, 'preview_url': preview_url})
+
+
 @app.route('/premiere/upload_narration', methods=['POST'])
 def premiere_upload_narration():
     # Persists the presenter's recorded documentary-intent narration to
@@ -1018,6 +1078,12 @@ def premiere_export():
             'title': title,
             'act': act,
             'narration': (section.get('narration') or '').strip(),
+            # Real local path to the recorded/dragged narration audio (see
+            # js/paper-extract.js's runExportForPremiere) - written here too,
+            # even though the plugin itself has no audio support yet, so
+            # this file doesn't silently drop the one piece of audio every
+            # other pipeline (the ffmpeg render in particular) depends on.
+            'narration_audio_path': section.get('narration_audio_path') or None,
             # Uploaded footage (a real local path this machine's Premiere can
             # import directly) takes priority; otherwise this just notes
             # which Pexels clip was picked - the file itself isn't
