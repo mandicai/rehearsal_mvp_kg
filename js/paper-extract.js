@@ -1779,13 +1779,24 @@ function buildMediaVideoOption(section, video) {
   player.addEventListener('click', event => event.stopPropagation()); // let play/pause/scrub work without also selecting this option
   option.appendChild(player);
 
+  // Which provider this came from (see server.py's /media/search_video,
+  // which tags every result before returning it) - Pexels (modern stock
+  // footage) vs. Internet Archive/Library of Congress (real archival
+  // footage) isn't obvious from the thumbnail alone.
+  if (video.source) {
+    const sourceLabel = document.createElement('div');
+    sourceLabel.className = 'media-video-option-source';
+    sourceLabel.textContent = video.source;
+    option.appendChild(sourceLabel);
+  }
+
   const link = document.createElement('a');
   link.className = 'media-option-link';
   link.href = video.source_url;
   link.target = '_blank';
   link.rel = 'noopener noreferrer';
   link.textContent = '↗';
-  link.title = 'Open on Pexels';
+  link.title = video.source ? `Open on ${video.source}` : 'Open source';
   link.addEventListener('click', event => event.stopPropagation());
   option.appendChild(link);
 

@@ -882,6 +882,27 @@ body.pub-to-doc-page .action-bar {
   background: #f18700;
 }
 
+/* Which of /media/search_video's providers this clip came from (see
+   js/paper-extract.js's buildMediaVideoOption) - Pexels vs. real archival
+   footage (Internet Archive/Library of Congress) isn't obvious from the
+   thumbnail alone, so this is a small always-visible label rather than
+   something only revealed by hover. pointer-events: none so it doesn't
+   block clicking through to the player it sits on top of. */
+.media-video-option-source {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #FFFFFF;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
 .media-option-link {
   position: absolute;
   top: 2px;
@@ -995,7 +1016,7 @@ button:not(.clear-debug-session-btn):not(.paper-section-remove-btn):not(.narrati
   padding: 0 16px;
   font-family: inherit;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   border-radius: 8px;
   cursor: pointer;
 }

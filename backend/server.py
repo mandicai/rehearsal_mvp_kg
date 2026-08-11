@@ -64,10 +64,14 @@ Also exposes animate_llm.py's 3 interchangeable ways to animate a shot's
     animated GIF locally with Pillow - no video model involved, cheaper
     than the other two, and returns an actual .gif rather than an .mp4.
 
-Also exposes stock_media.py's Pexels/Freesound search at /media/search_video
-and /media/search_audio, for that same tool's per-section "Find Footage"
-action - each needs its own API key (PEXELS_API_KEY/FREESOUND_API_KEY),
-returns 503 independently without one.
+Also exposes stock_media.py's video/audio search at /media/search_video and
+/media/search_audio, for that same tool's per-section "Find Footage"
+action. /media/search_video queries 3 providers concurrently - Pexels
+(modern stock footage, needs PEXELS_API_KEY, silently skipped without one)
+and Internet Archive + Library of Congress (real archival/historical
+footage, no key needed at all) - and tags each result with its source.
+/media/search_audio (Freesound) needs FREESOUND_API_KEY, returns 503
+without one.
 
 Also exposes premiere_bridge.py's file-based hand-off to a Premiere Pro UXP
 plugin (see premiere-plugin/) at /premiere/upload_footage,
@@ -110,7 +114,7 @@ from animate_llm import (
     build_sequence_prompts, compose_gif,
 )
 from documentary_modes import DOCUMENTARY_MODE_KEYS
-from stock_media import PexelsClient, FreesoundClient, StockMediaCallError
+from stock_media import PexelsClient, InternetArchiveClient, LibraryOfCongressClient, FreesoundClient, StockMediaCallError
 from premiere_bridge import next_premiere_project_id, premiere_project_dir, premiere_footage_dir, premiere_sketch_dir, premiere_animated_sketch_dir, premiere_narration_dir, premiere_media_bank_dir, remux_for_reliable_playback, PREMIERE_EXPORTS_DIR
 
 # Structural parsing + NER run in roughly linear time, but boundary scoring
@@ -239,6 +243,8 @@ sketch_client = SketchLLMClient()
 animate_client = AnimateLLMClient()
 carta_entity_client = CartaLLMClient()
 pexels_client = PexelsClient()
+internet_archive_client = InternetArchiveClient()
+library_of_congress_client = LibraryOfCongressClient()
 freesound_client = FreesoundClient()
 
 
@@ -800,9 +806,6 @@ def paper_generate_sketch_sequence():
     return jsonify({'project_id': project_id, 'preview_url': preview_url})
 
 
-_PEXELS_NOT_CONFIGURED_ERROR = (
-    'Video search requires a Pexels API key. Set PEXELS_API_KEY in backend/.env (free at pexels.com/api).'
-)
 _FREESOUND_NOT_CONFIGURED_ERROR = (
     'Audio search requires a Freesound API key. Set FREESOUND_API_KEY in backend/.env '
     '(free at freesound.org/apiv2/apply - non-commercial use only).'
@@ -811,19 +814,44 @@ _FREESOUND_NOT_CONFIGURED_ERROR = (
 
 @app.route('/media/search_video', methods=['POST'])
 def media_search_video():
+    # 3 providers, each independently optional/best-effort - Pexels (modern
+    # stock footage, needs PEXELS_API_KEY) alongside Internet Archive and
+    # Library of Congress (real archival/historical footage, no key needed
+    # at all - see stock_media.py's own module docstring for why these two
+    # need no configuration check the way Pexels does below). Run
+    # concurrently (same ThreadPoolExecutor fan-out convention as
+    # /paper/storyboard's per-section entity extraction above) since
+    # Archive/LOC each make several sequential follow-up requests per
+    # search on top of Pexels' own single one - sequentially, this route
+    # would be as slow as its slowest provider times three.
     data = request.get_json(silent=True) or {}
     query = (data.get('query') or '').strip()
 
     if not query:
         return jsonify({'error': 'query is required'}), 400
 
-    if not pexels_client.is_configured():
-        return jsonify({'error': _PEXELS_NOT_CONFIGURED_ERROR}), 503
+    providers = [('Internet Archive', internet_archive_client), ('Library of Congress', library_of_congress_client)]
+    if pexels_client.is_configured():
+        providers.append(('Pexels', pexels_client))
 
-    try:
-        videos = pexels_client.search_videos(query)
-    except StockMediaCallError as exc:
-        return jsonify({'error': str(exc)}), 500
+    videos = []
+    errors = []
+    with ThreadPoolExecutor(max_workers=len(providers)) as executor:
+        future_to_source = {executor.submit(client.search_videos, query): source for source, client in providers}
+        for future in future_to_source:
+            source = future_to_source[future]
+            try:
+                for video in future.result():
+                    video['source'] = source
+                    videos.append(video)
+            except StockMediaCallError as exc:
+                errors.append(f'{source}: {exc}')
+
+    # Only a total failure (every provider errored, none returned even a
+    # partial result) is worth surfacing as an error - one provider being
+    # down/misconfigured shouldn't hide results the others found fine.
+    if not videos and errors:
+        return jsonify({'error': '; '.join(errors)}), 500
 
     return jsonify({'videos': videos})
 
