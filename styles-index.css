@@ -138,8 +138,18 @@ body {
 }
 
 /* Shown once a recording is transcribed (see js/paper-extract.js's
-   runTranscribeIntent) - the raw transcript text. */
+   runTranscribeIntent) - the raw transcript text alongside #play-intent-btn
+   (see that element's own comment in html/index.html), not just the text
+   alone - hence the flex row on the shared wrapper below. */
+#intent-transcript-display {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
 .intent-transcript-text {
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 13px;
   line-height: 1.5;
   font-style: italic;
@@ -150,6 +160,19 @@ body {
   max-height: 160px;
   overflow-y: auto;
   text-align: left;
+}
+
+/* Icon-only (see js/paper-extract.js's onNarrationPlaybackStateChange) -
+   sized as a small square rather than .btn-primary's normal text padding,
+   and pinned to not shrink when the transcript text above wraps to
+   multiple lines. */
+#play-intent-btn {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
 }
 
 .upload-sidebar {
@@ -535,77 +558,130 @@ body.pub-to-doc-page .action-bar {
 
 .narrative-arc-layout {
   display: flex;
+  flex-direction: column;
   gap: 20px;
-  align-items: flex-start;
 }
 
-.narrative-arc-outline {
-  flex: 0 0 160px;
-  min-width: 0;
+/* Premiere-style A-roll/B-roll timeline (see js/paper-extract.js's
+   buildNarrativeTimeline) - replaces the old vertical .narrative-arc-outline
+   sidebar (a jump-list of acts) with a horizontal one grouped by act,
+   individual clips per section. Sticky at the same top offset the old
+   outline used (just below the sticky .action-bar above it), so it stays
+   reachable while scrolling a long list of rows, same utility as before. */
+.premiere-timeline {
   position: sticky;
-  top: 70px; /* below the sticky .action-bar above it */
+  top: 70px;
+  z-index: 15;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
+  padding: 10px;
+  border-radius: 8px;
+  background: #1b1a19;
+  border: 1px solid var(--cd-border-strong);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
-.narrative-arc-outline h2 {
-  margin: 0 0 4px;
+.premiere-timeline-ruler {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 4px;
+}
+
+.premiere-timeline-act {
+  min-width: 0; /* lets it shrink below its own label's width for ellipsis truncation, matching a narrow act's actual flex-basis:0 share */
+  font-size: 11px;
   font-weight: 700;
-  font-size: 16px;
+  color: rgba(255, 255, 255, 0.75);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 2px 6px;
+  border-left: 2px solid rgba(255, 255, 255, 0.3);
 }
 
-.narrative-arc-outline h3 {
-  margin: 0 0 6px;
+.premiere-timeline-track {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.premiere-timeline-track-label {
+  flex: 0 0 52px;
+  font-size: 10px;
   font-weight: 700;
-  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.5);
+  display: flex;
+  align-items: center;
 }
 
-/* Toggleable technique chips under the per-act jump buttons (see
-   DOCUMENTARY_TECHNIQUES/renderMovieEditor in js/paper-extract.js) - reuses
-   .chip/.chip-row/.chip.suggested as-is, just needs its own heading. */
+.premiere-timeline-track-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  gap: 2px;
+}
+
+.premiere-timeline-act-group {
+  display: flex;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* Unfilled by default (nothing recorded/assigned for this shot yet on
+   this track) - .drafted/.filled below layer on top as that shot gets a
+   text-only draft, then a real recorded/generated asset. */
+.premiere-timeline-clip {
+  flex: 1 1 0;
+  min-width: 4px;
+  height: 22px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px dashed rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.premiere-timeline-clip:hover {
+  transform: scaleY(1.15);
+}
+
+.premiere-timeline-clip.drafted {
+  background: rgba(241, 135, 0, 0.35);
+  border-style: solid;
+  border-color: rgba(241, 135, 0, 0.5);
+}
+
+.premiere-timeline-clip.filled {
+  background: var(--cd-accent);
+  border-style: solid;
+  border-color: var(--cd-accent);
+}
+
+/* Highlights whichever section the presenter's currently scrolled past
+   (see js/paper-extract.js's renderMovieEditor/activeOutlineScrollHandler)
+   - same "this one's the current one" meaning .narrative-arc-outline-item
+   used to carry, just on a clip instead of a list entry now. */
+.premiere-timeline-clip.active {
+  outline: 2px solid #FFFFFF;
+  outline-offset: 1px;
+}
+
+/* Relocated out of the old .narrative-arc-outline sidebar (removed above) -
+   now its own plain block between the timeline and the rows, rather than
+   nested in a sticky sidebar. */
 .narrative-arc-techniques {
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px dashed rgba(255, 255, 255, 0.25);
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--cd-card-bg);
+  border: 1px solid var(--cd-border);
 }
 
 .narrative-arc-techniques h3 {
-  margin: 0 0 6px;
+  margin: 0 0 8px;
   font-weight: 700;
   font-size: 13px;
-}
-
-/* Styled like the suggested-arc chips (see .chip.suggested) rather than a
-   plain list, so jumping to a section and picking an arc read as the same
-   kind of interactive pill, just used for two different things. */
-.narrative-arc-outline-item {
-  font-family: inherit;
-  font-size: 12px;
-  /* font-weight: 700; */
-  text-align: left;
-  padding: 6px 12px;
-  border-radius: 8px;
-  background: rgba(38, 37, 35, 0.05);
-  border: 1px solid var(--cd-border);
-  color: var(--cd-text);
-  cursor: pointer;
-  white-space: normal;
-  line-height: 1.3;
-}
-
-.narrative-arc-outline-item:hover {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-/* Highlights whichever entry the presenter's currently scrolled past (see
-   js/paper-extract.js's renderMovieEditor/activeOutlineScrollHandler) -
-   same recipe as .narrative-act-row-chip.selected below, for the same
-   "this one's the current one" meaning. */
-.narrative-arc-outline-item.active {
-  background: var(--cd-accent-active);
-  color: var(--cd-accent-text);
-  border-color: var(--cd-accent-active);
 }
 
 /* Drop target for a documentary-technique chip or a Source material
@@ -987,6 +1063,14 @@ body.pub-to-doc-page .chip.suggested.selected {
    reserve a blank 380px-wide column next to the main column before an
    arc's been accepted. */
 .sidebar-stack:empty {
+  display: none;
+}
+
+/* Manually collapsed via #toggle-panels-btn (see js/paper-extract.js) -
+   .main-column (flex: 1 1 auto, the same .page-layout flex row) naturally
+   expands to fill the freed width once this sibling is gone, no extra
+   rule needed on that side. */
+.sidebar-stack.collapsed {
   display: none;
 }
 

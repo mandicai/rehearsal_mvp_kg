@@ -103,8 +103,8 @@ const intentSuggestedChipsEl = document.getElementById('intent-suggested-chips')
 // --- SUGGESTED FOCUS CHIPS
 const FOCUS_STATEMENTS = [
   'A behind-the-scenes look at the research process',
-  'Your research findings through vivid visuals',
-  'A call-to-action that discusses implications of your research',
+  'An illustration of the research problem and your findings',
+  'A call-to-action that discusses the implications of this research',
 ];
 
 let selectedFocusStatements = new Set();
@@ -249,7 +249,11 @@ function playAudioBuffer(audioBuffer, owner, onStop, startSeconds, endSeconds) {
 }
 
 function onNarrationPlaybackStateChange() {
-  playIntentBtn.textContent = playbackState.isPlaying ? '⏸ Pause' : '▶ Play recording';
+  // Icon-only (see html/index.html's own comment on #play-intent-btn) -
+  // title carries the label a sighted mouse-hover would've gotten from the
+  // old text, and doubles as the accessible name screen readers announce.
+  playIntentBtn.textContent = playbackState.isPlaying ? '⏸' : '▶';
+  playIntentBtn.title = playbackState.isPlaying ? 'Pause' : 'Play recording';
 }
 
 // Plays [startSeconds, endSeconds) of the intent recording (or the whole
@@ -1756,9 +1760,7 @@ function runAcceptArc(arc) {
   previewVideoEl.style.display = 'none';
   previewVideoEl.removeAttribute('src');
 
-  relocateArcSuggestionToSidebar();
-  relocateMediaBankToSidebar();
-  relocateSourceMaterialToSidebar();
+  relocateAllSidebarModules();
   saveDebugSession();
 }
 //#endregion
@@ -1938,10 +1940,126 @@ function buildArcRowChip(section) {
   return chip;
 }
 
-// Roughly where .narrative-arc-outline's own sticky top sits (see
+// Roughly where .premiere-timeline's own sticky top sits (see
 // renderMovieEditor's scroll listener below) - just below the sticky
 // .action-bar above it.
 const OUTLINE_ACTIVE_THRESHOLD_PX = 90;
+
+// Premiere-style A-roll/B-roll timeline, replacing the old vertical
+// .narrative-arc-outline sidebar (a jump-list of acts) - one act-sized
+// group per arc part, one equal-width clip per section within it. There's
+// no real per-shot duration data to size clips by (this is a storyboard,
+// not an edited timeline yet), so clip width is proportional to shot
+// COUNT per act, not time - still gives the "how much of the film is this
+// act" read a real timeline gives, just on a coarser axis.
+//
+// A-roll reflects narration state, B-roll reflects visual state, each on
+// its own 3-step ladder (see buildVisualBox/VISUAL_BOX_RENDERERS and
+// finishAssigningNarrationAudio for the same "real asset > drafted text
+// only > nothing" distinction made elsewhere): unfilled (dashed, nothing
+// yet) -> .drafted (an LLM-suggested line/description, no real asset
+// attached) -> .filled (real recorded/dragged audio, or a real assigned
+// visual). Both tracks share the same section ordering/widths, so a
+// vertical slice through both tracks is one shot - same idea as a real
+// timeline's synced audio/video tracks.
+//
+// Returns a Map from section.index to that section's [aRollClip, bRollClip]
+// pair - renderMovieEditor's scroll listener uses this to highlight
+// whichever's currently scrolled past.
+function buildNarrativeTimeline(timelineEl, sections, assignmentsByIndex) {
+  timelineEl.innerHTML = '';
+
+  const ruler = document.createElement('div');
+  ruler.className = 'premiere-timeline-ruler';
+  timelineEl.appendChild(ruler);
+
+  const aRollTrack = document.createElement('div');
+  aRollTrack.className = 'premiere-timeline-track';
+  const aRollLabel = document.createElement('div');
+  aRollLabel.className = 'premiere-timeline-track-label';
+  aRollLabel.textContent = 'A-ROLL';
+  aRollTrack.appendChild(aRollLabel);
+  const aRollBody = document.createElement('div');
+  aRollBody.className = 'premiere-timeline-track-body';
+  aRollTrack.appendChild(aRollBody);
+  timelineEl.appendChild(aRollTrack);
+
+  const bRollTrack = document.createElement('div');
+  bRollTrack.className = 'premiere-timeline-track';
+  const bRollLabel = document.createElement('div');
+  bRollLabel.className = 'premiere-timeline-track-label';
+  bRollLabel.textContent = 'B-ROLL';
+  bRollTrack.appendChild(bRollLabel);
+  const bRollBody = document.createElement('div');
+  bRollBody.className = 'premiere-timeline-track-body';
+  bRollTrack.appendChild(bRollBody);
+  timelineEl.appendChild(bRollTrack);
+
+  const clipsBySectionIndex = new Map();
+
+  currentArcSections.forEach(act => {
+    const rowSections = sections.filter(s => assignmentsByIndex[s.index] === act.key);
+    if (rowSections.length === 0) return; // renderMovieEditor auto-populates blank rows before this runs
+
+    // flex-basis pinned to 0 (not the "grow"-only shorthand's implied
+    // auto) on all three - otherwise the ruler label's own text width
+    // would compete with its flex-grow share, throwing off its width
+    // relative to the plain, content-less clips in the two tracks below
+    // and misaligning the ruler against them.
+    const actFlex = `${rowSections.length} 1 0`;
+
+    const rulerGroup = document.createElement('div');
+    rulerGroup.className = 'premiere-timeline-act';
+    rulerGroup.style.flex = actFlex;
+    rulerGroup.textContent = act.label;
+    ruler.appendChild(rulerGroup);
+
+    const aRollGroup = document.createElement('div');
+    aRollGroup.className = 'premiere-timeline-act-group';
+    aRollGroup.style.flex = actFlex;
+    aRollBody.appendChild(aRollGroup);
+
+    const bRollGroup = document.createElement('div');
+    bRollGroup.className = 'premiere-timeline-act-group';
+    bRollGroup.style.flex = actFlex;
+    bRollBody.appendChild(bRollGroup);
+
+    rowSections.forEach(section => {
+      const hasNarrationAudio = !!section.narrationAudioPreviewUrl;
+      const hasNarrationText = !!(section.narration && section.narration.trim());
+      const hasRealVisual = !!section.visualSource;
+      const hasVisualText = !!(section.visual && section.visual.trim());
+
+      const aRollClip = document.createElement('div');
+      aRollClip.className = 'premiere-timeline-clip';
+      aRollClip.classList.toggle('filled', hasNarrationAudio);
+      aRollClip.classList.toggle('drafted', !hasNarrationAudio && hasNarrationText);
+      aRollClip.title = section.title;
+      aRollGroup.appendChild(aRollClip);
+
+      const bRollClip = document.createElement('div');
+      bRollClip.className = 'premiere-timeline-clip';
+      bRollClip.classList.toggle('filled', hasRealVisual);
+      bRollClip.classList.toggle('drafted', !hasRealVisual && hasVisualText);
+      bRollClip.title = section.title;
+      bRollGroup.appendChild(bRollClip);
+
+      // Double-click (not single) so a click doesn't fight with the
+      // hover/scale affordance above, and matches the explicit ask this
+      // was built for - scroll to the real section card, not just select it.
+      const scrollToSection = () => {
+        const target = document.querySelector(`.paper-section-block[data-section-index="${section.index}"]`);
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      };
+      aRollClip.addEventListener('dblclick', scrollToSection);
+      bRollClip.addEventListener('dblclick', scrollToSection);
+
+      clipsBySectionIndex.set(section.index, [aRollClip, bRollClip]);
+    });
+  });
+
+  return clipsBySectionIndex;
+}
 
 // The current render's window scroll listener for highlighting the
 // narrative-arc outline entry the presenter's scrolled past - module-level
@@ -2086,29 +2204,61 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
   actionBar.appendChild(topRow);
   container.appendChild(actionBar);
 
-  // A small always-visible outline of the whole arc, to the left of the
-  // rows - one entry per arc part, click to jump straight to it (useful
-  // once the row list is long enough to need scrolling).
+  // Premiere-style A-roll/B-roll timeline (see buildNarrativeTimeline) -
+  // sits above the rows, one act-sized group per arc part with individual
+  // clips per section - replaces the old vertical .narrative-arc-outline
+  // sidebar as the "jump to a part of the arc" affordance. Built AFTER the
+  // row loop below (not interleaved with it), since that loop is what
+  // auto-populates any still-empty act with a blank placeholder section -
+  // the timeline needs that final, post-auto-populate section list, not
+  // the possibly-incomplete one from before the loop runs.
   const arcLayout = document.createElement('div');
   arcLayout.className = 'narrative-arc-layout';
 
-  const outline = document.createElement('div');
-  outline.className = 'narrative-arc-outline';
-  arcLayout.appendChild(outline);
+  const timelineEl = document.createElement('div');
+  timelineEl.className = 'premiere-timeline';
+  arcLayout.appendChild(timelineEl);
 
-  const arcTitle = document.createElement('h3');
-  arcTitle.textContent = 'Arc outline';
-  outline.appendChild(arcTitle);
+  // Toggleable technique chips - see DOCUMENTARY_TECHNIQUES above for what
+  // these are/aren't. Its own plain block now, not nested inside the
+  // removed .narrative-arc-outline sidebar.
+  const techniquesBlock = document.createElement('div');
+  techniquesBlock.className = 'narrative-arc-techniques';
+
+  const techniquesTitle = document.createElement('h3');
+  techniquesTitle.textContent = 'Documentary techniques';
+  techniquesBlock.appendChild(techniquesTitle);
+
+  const techniquesRow = document.createElement('div');
+  techniquesRow.className = 'chip-row';
+  DOCUMENTARY_TECHNIQUES.forEach(technique => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'chip suggested';
+    chip.classList.toggle('selected', selectedTechniques.has(technique));
+    chip.textContent = technique;
+    chip.addEventListener('click', () => {
+      if (selectedTechniques.has(technique)) selectedTechniques.delete(technique);
+      else selectedTechniques.add(technique);
+      chip.classList.toggle('selected', selectedTechniques.has(technique));
+      saveDebugSession();
+    });
+    // Also draggable onto a section's text field (see buildSectionBlock's
+    // drop handler) - a quick way to drop a reminder of this technique
+    // right into the shot's own working text.
+    chip.draggable = true;
+    chip.addEventListener('dragstart', event => {
+      event.dataTransfer.setData('application/x-technique', technique);
+      event.dataTransfer.effectAllowed = 'copy';
+    });
+    techniquesRow.appendChild(chip);
+  });
+  techniquesBlock.appendChild(techniquesRow);
+  arcLayout.appendChild(techniquesBlock);
 
   const arcRows = document.createElement('div');
   arcRows.className = 'narrative-arc-rows';
   arcLayout.appendChild(arcRows);
-
-  // Pairs each act's row with its outline button, so the scroll listener
-  // set up after this loop can tell which button to highlight for
-  // whichever row the presenter's currently scrolled past (see
-  // updateActiveOutlineItem below).
-  const outlineEntries = [];
 
   currentArcSections.forEach(act => {
     let rowSections = sections.filter(s => assignmentsByIndex[s.index] === act.key);
@@ -2192,79 +2342,46 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
     row.appendChild(rowCards);
 
     arcRows.appendChild(rowGroup);
-
-    const outlineItem = document.createElement('button');
-    outlineItem.type = 'button';
-    outlineItem.className = 'narrative-arc-outline-item';
-    outlineItem.textContent = `${act.label} (${rowSections.length})`;
-    outlineItem.addEventListener('click', () => {
-      rowGroup.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-    outline.appendChild(outlineItem);
-    outlineEntries.push({ rowGroup, outlineItem });
   });
 
-  // Toggleable technique chips, under the per-act jump buttons - see
-  // DOCUMENTARY_TECHNIQUES above for what these are/aren't.
-  const techniquesBlock = document.createElement('div');
-  techniquesBlock.className = 'narrative-arc-techniques';
-
-  const techniquesTitle = document.createElement('h3');
-  techniquesTitle.textContent = 'Documentary techniques';
-  techniquesBlock.appendChild(techniquesTitle);
-
-  const techniquesRow = document.createElement('div');
-  techniquesRow.className = 'chip-row';
-  DOCUMENTARY_TECHNIQUES.forEach(technique => {
-    const chip = document.createElement('button');
-    chip.type = 'button';
-    chip.className = 'chip suggested';
-    chip.classList.toggle('selected', selectedTechniques.has(technique));
-    chip.textContent = technique;
-    chip.addEventListener('click', () => {
-      if (selectedTechniques.has(technique)) selectedTechniques.delete(technique);
-      else selectedTechniques.add(technique);
-      chip.classList.toggle('selected', selectedTechniques.has(technique));
-      saveDebugSession();
-    });
-    // Also draggable onto a section's text field (see buildSectionBlock's
-    // drop handler) - a quick way to drop a reminder of this technique
-    // right into the shot's own working text.
-    chip.draggable = true;
-    chip.addEventListener('dragstart', event => {
-      event.dataTransfer.setData('application/x-technique', technique);
-      event.dataTransfer.effectAllowed = 'copy';
-    });
-    techniquesRow.appendChild(chip);
-  });
-  techniquesBlock.appendChild(techniquesRow);
-  outline.appendChild(techniquesBlock);
+  // Now that every act's row has its final section list (including any
+  // just-auto-populated blanks above), build the timeline against it.
+  const clipsBySectionIndex = buildNarrativeTimeline(timelineEl, sections, assignmentsByIndex);
 
   container.appendChild(arcLayout);
 
   const selectedCard = container.querySelector('.narrative-act-row-cards .paper-section-block.selected');
   if (selectedCard) selectedCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
-  // Highlights whichever outline entry the presenter's currently scrolled
-  // past - the last row group whose top has crossed above
-  // OUTLINE_ACTIVE_THRESHOLD_PX (roughly where .narrative-arc-outline's own
-  // sticky top sits, just below the sticky .action-bar above it), same
-  // idea as a typical scrollspy table of contents. A fresh render tears
-  // down and rebuilds every row/outline element, so the previous render's
-  // listener (still closed over its now-detached elements) is removed
-  // first - see activeOutlineScrollHandler below.
+  // Highlights whichever section's timeline clips the presenter's
+  // currently scrolled past - the last section block whose top has
+  // crossed above OUTLINE_ACTIVE_THRESHOLD_PX (roughly where
+  // .premiere-timeline's own sticky top sits, just below the sticky
+  // .action-bar above it), same idea as a typical scrollspy table of
+  // contents - just keyed per section now instead of per act, so the
+  // timeline can highlight the specific shot scrolled past rather than
+  // just its whole act. A fresh render tears down and rebuilds every row/
+  // timeline element, so the previous render's listener (still closed
+  // over its now-detached elements) is removed first.
   if (activeOutlineScrollHandler) {
     window.removeEventListener('scroll', activeOutlineScrollHandler);
     activeOutlineScrollHandler = null;
   }
-  if (outlineEntries.length > 0) {
-    const updateActiveOutlineItem = () => {
-      let activeEntry = outlineEntries[0];
-      outlineEntries.forEach(entry => {
-        if (entry.rowGroup.getBoundingClientRect().top <= OUTLINE_ACTIVE_THRESHOLD_PX) activeEntry = entry;
+  const sectionScrollEntries = Array.from(arcRows.querySelectorAll('.paper-section-block[data-section-index]'))
+    .map(block => {
+      const clips = clipsBySectionIndex.get(parseInt(block.dataset.sectionIndex, 10));
+      return clips ? { block, clips } : null;
+    })
+    .filter(Boolean);
+  if (sectionScrollEntries.length > 0) {
+    const updateActiveTimelineClip = () => {
+      let activeEntry = sectionScrollEntries[0];
+      sectionScrollEntries.forEach(entry => {
+        if (entry.block.getBoundingClientRect().top <= OUTLINE_ACTIVE_THRESHOLD_PX) activeEntry = entry;
       });
-      outlineEntries.forEach(entry => {
-        entry.outlineItem.classList.toggle('active', entry === activeEntry);
+      sectionScrollEntries.forEach(entry => {
+        const isActive = entry === activeEntry;
+        entry.clips.forEach(clip => clip.classList.toggle('active', isActive));
       });
     };
     let ticking = false;
@@ -2272,12 +2389,12 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
       if (ticking) return;
       ticking = true;
       requestAnimationFrame(() => {
-        updateActiveOutlineItem();
+        updateActiveTimelineClip();
         ticking = false;
       });
     };
     window.addEventListener('scroll', activeOutlineScrollHandler, { passive: true });
-    updateActiveOutlineItem();
+    updateActiveTimelineClip();
   }
 
   // Keeps the sidebar's read-only listing in sync with every change that
@@ -2818,6 +2935,7 @@ const storyboardArcModuleEl = document.getElementById('storyboard-arc-module');
 const mediaBankModuleEl = document.getElementById('media-bank-module');
 const sourceMaterialModuleEl = document.getElementById('source-material-module');
 const sidebarStackEl = document.getElementById('storyboard-sidebar');
+const togglePanelsBtn = document.getElementById('toggle-panels-btn');
 const recordMediaAudioBtn = document.getElementById('record-media-audio-btn');
 const recordMediaVideoBtn = document.getElementById('record-media-video-btn');
 const mediaBankVideoPreviewEl = document.getElementById('media-bank-video-preview');
@@ -3066,11 +3184,13 @@ function runGenerateEditPlanForSections(sectionsToUse, triggerBtn) {
 // depending on the recording pipeline. Kept in sync by convention with
 // assets/'s actual contents - no build step scans the directory, so a
 // file added/removed there needs a matching edit here.
+// Kept in sync by hand with what's actually in assets/ - listing a
+// filename here that isn't actually there gives a list entry whose player
+// can never load anything (verified live: assets/ only ever had 5 of an
+// originally-intended 13 clips).
 const MEDIA_BANK_ASSET_DEFAULTS = [
   'IMG_2387.mp4', 'IMG_2388.mp4', 'IMG_2389.mp4', 'IMG_2390.mp4',
-  'IMG_2391.mp4', 'IMG_2392.mp4', 'IMG_2393.mp4', 'IMG_2394.mp4',
-  'IMG_2395.mp4', 'IMG_2396.mp4', 'IMG_2397.mp4', 'IMG_2398.mp4',
-  'IMG_2399.mp4',
+  'IMG_2391.mp4',
 ].map(filename => ({ kind: 'video', label: filename, previewUrl: `/assets/${filename}` }));
 
 //#region --- YOUR MEDIA (storyboard.html only) - a running collection of
@@ -3301,6 +3421,29 @@ function relocateSourceMaterialToSidebar() {
   sidebarStackEl.appendChild(sourceMaterialModuleEl);
 }
 
+// Runs all 3 relocations together (both call sites always wanted all 3
+// anyway) and reveals #toggle-panels-btn - there's nothing worth
+// collapsing before the sidebar actually has content.
+function relocateAllSidebarModules() {
+  relocateArcSuggestionToSidebar();
+  relocateMediaBankToSidebar();
+  relocateSourceMaterialToSidebar();
+  if (togglePanelsBtn) togglePanelsBtn.style.display = '';
+}
+
+// Collapses/expands #storyboard-arc-module + #media-bank-module +
+// #source-material-module together, by hiding the one shared container
+// they've all relocated into (see relocateAllSidebarModules) rather than
+// each individually - #main-column (the same flex row's other child)
+// naturally expands to fill the freed width, no extra rule needed for that
+// side (see styles-index.css's .sidebar-stack.collapsed).
+if (togglePanelsBtn) {
+  togglePanelsBtn.addEventListener('click', () => {
+    const collapsed = sidebarStackEl.classList.toggle('collapsed');
+    togglePanelsBtn.textContent = collapsed ? 'Show panels' : 'Hide panels';
+  });
+}
+
 // Collapsible left-side upload panel - purely a display toggle, no state
 // beyond the CSS class (same pattern as presenter-view.js's upload sidebar).
 const uploadSidebar = document.getElementById('upload-sidebar');
@@ -3478,9 +3621,7 @@ if (restoredSession) {
     if (currentArcSections.length > 0) {
       renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
       paperActionsEl.style.display = '';
-      relocateArcSuggestionToSidebar();
-      relocateMediaBankToSidebar();
-      relocateSourceMaterialToSidebar();
+      relocateAllSidebarModules();
     }
     if (recordedTranscript || selectedFocusStatements.size > 0) {
       suggestArcsRowEl.style.display = '';

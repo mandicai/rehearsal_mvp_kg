@@ -61,8 +61,7 @@ function fetchSuggestArcs(transcript, focusStatements) {
     .catch(err => {
       if (err.isServerError) throw err;
       throw new Error(
-        `Could not reach the arc-suggestion server at ${SUGGEST_ARCS_API_URL} (${err.message}). ` +
-        `Start it with: python backend/server.py`
+        `Could not reach the arc-suggestion server at ${SUGGEST_ARCS_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }
@@ -133,8 +132,7 @@ function fetchSegments(text, documentId) {
     })
     .catch(err => {
       throw new Error(
-        `Could not reach the segmentation server at ${SEGMENT_API_URL} (${err.message}). ` +
-        `Start it with: python backend/server.py`
+        `Could not reach the segmentation server at ${SEGMENT_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }
@@ -228,8 +226,7 @@ function fetchCartaResult(text, documentId) {
     })
     .catch(err => {
       throw new Error(
-        `Could not reach the segmentation_carta server at ${CARTA_API_URL} (${err.message}). ` +
-        `Start it with: python backend/server.py`
+        `Could not reach the segmentation_carta server at ${CARTA_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }
@@ -1234,8 +1231,7 @@ function fetchFeedback(audience, prompt, slidePayload) {
     .then(data => data.feedback)
     .catch(err => {
       throw new Error(
-        `Could not reach the feedback server at ${FEEDBACK_API_URL} (${err.message}). ` +
-        `Start it with: python backend/server.py`
+        `Could not reach the feedback server at ${FEEDBACK_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }
@@ -1284,8 +1280,7 @@ function fetchProgressiveReaction(audience, prompt, messages, slide, goal) {
     })
     .catch(err => {
       throw new Error(
-        `Could not reach the feedback server at ${FEEDBACK_PROGRESSIVE_API_URL} (${err.message}). ` +
-        `Start it with: python backend/server.py`
+        `Could not reach the feedback server at ${FEEDBACK_PROGRESSIVE_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }
@@ -1425,8 +1420,7 @@ function fetchIngestPptx(file) {
     .then(handleJsonResponse)
     .catch(err => {
       throw new Error(
-        `Could not reach the ingest server at ${INGEST_PPTX_API_URL} (${err.message}). ` +
-        `Start it with: python backend/server.py`
+        `Could not reach the ingest server at ${INGEST_PPTX_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }
@@ -1439,8 +1433,7 @@ function fetchTranscription(audioBlob, filename) {
     .then(handleJsonResponse)
     .catch(err => {
       throw new Error(
-        `Could not reach the transcription server at ${TRANSCRIBE_API_URL} (${err.message}). ` +
-        `Start it with: python backend/server.py`
+        `Could not reach the transcription server at ${TRANSCRIBE_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }
@@ -1454,8 +1447,7 @@ function fetchAlignment(payload) {
     .then(handleJsonResponse)
     .catch(err => {
       throw new Error(
-        `Could not reach the alignment server at ${ALIGN_API_URL} (${err.message}). ` +
-        `Start it with: python backend/server.py`
+        `Could not reach the alignment server at ${ALIGN_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }
@@ -1469,8 +1461,7 @@ function fetchSaveProject(payload) {
     .then(handleJsonResponse)
     .catch(err => {
       throw new Error(
-        `Could not reach the save server at ${SAVE_PROJECT_API_URL} (${err.message}). ` +
-        `Start it with: python backend/server.py`
+        `Could not reach the save server at ${SAVE_PROJECT_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }
@@ -1484,8 +1475,7 @@ function fetchSuggestObjectives(audience, scopeLabel, slidesForScope) {
     .then(handleJsonResponse)
     .catch(err => {
       throw new Error(
-        `Could not reach the takeaway-suggestion server at ${SUGGEST_OBJECTIVES_API_URL} (${err.message}). ` +
-        `Start it with: python backend/server.py`
+        `Could not reach the takeaway-suggestion server at ${SUGGEST_OBJECTIVES_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }
@@ -1507,8 +1497,7 @@ function fetchPaperExtraction(file) {
     .catch(err => {
       if (err.isServerError) throw err;
       throw new Error(
-        `Could not reach the paper-extraction server at ${PAPER_EXTRACT_API_URL} (${err.message}). ` +
-        `Start it with: python backend/server.py`
+        `Could not reach the paper-extraction server at ${PAPER_EXTRACT_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }
@@ -1539,8 +1528,7 @@ function fetchStoryboard(sections, documentaryGoal, arcSections, documentaryMode
     .catch(err => {
       if (err.isServerError) throw err;
       throw new Error(
-        `Could not reach the storyboard server at ${STORYBOARD_API_URL} (${err.message}). ` +
-        `Start it with: python backend/server.py`
+        `Could not reach the storyboard server at ${STORYBOARD_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }
@@ -1567,8 +1555,7 @@ function fetchEditPlan(sections, documentaryGoal, arcSections, documentaryMode) 
     .catch(err => {
       if (err.isServerError) throw err;
       throw new Error(
-        `Could not reach the edit-plan server at ${EDIT_PLAN_API_URL} (${err.message}). ` +
-        `Start it with: python backend/server.py`
+        `Could not reach the edit-plan server at ${EDIT_PLAN_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }
@@ -1595,8 +1582,7 @@ function fetchUploadFootage(file, sectionIndex, projectId) {
     .catch(err => {
       if (err.isServerError) throw err;
       throw new Error(
-        `Could not reach the footage-upload server at ${UPLOAD_FOOTAGE_API_URL} (${err.message}). ` +
-        `Start it with: python backend/server.py`
+        `Could not reach the footage-upload server at ${UPLOAD_FOOTAGE_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }
@@ -1616,8 +1602,7 @@ function fetchUploadNarration(blob, filename, projectId) {
     .catch(err => {
       if (err.isServerError) throw err;
       throw new Error(
-        `Could not reach the narration-upload server at ${UPLOAD_NARRATION_API_URL} (${err.message}). ` +
-        `Start it with: python backend/server.py`
+        `Could not reach the narration-upload server at ${UPLOAD_NARRATION_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }
@@ -1640,8 +1625,7 @@ function fetchUploadMediaBankItem(file, projectId) {
     .catch(err => {
       if (err.isServerError) throw err;
       throw new Error(
-        `Could not reach the media-bank-upload server at ${UPLOAD_MEDIA_BANK_ITEM_API_URL} (${err.message}). ` +
-        `Start it with: python backend/server.py`
+        `Could not reach the media-bank-upload server at ${UPLOAD_MEDIA_BANK_ITEM_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }
@@ -1668,8 +1652,7 @@ function fetchGenerateSketch(sectionIndex, visual, projectId, documentaryMode) {
     .catch(err => {
       if (err.isServerError) throw err;
       throw new Error(
-        `Could not reach the sketch server at ${GENERATE_SKETCH_API_URL} (${err.message}). ` +
-        `Start it with: python backend/server.py`
+        `Could not reach the sketch server at ${GENERATE_SKETCH_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }
@@ -1696,8 +1679,7 @@ function fetchGenerateAnimatedSketch(sectionIndex, technique, projectId, documen
     .catch(err => {
       if (err.isServerError) throw err;
       throw new Error(
-        `Could not reach the animate server at ${GENERATE_ANIMATED_SKETCH_API_URL} (${err.message}). ` +
-        `Start it with: python backend/server.py`
+        `Could not reach the animate server at ${GENERATE_ANIMATED_SKETCH_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }
@@ -1723,8 +1705,7 @@ function fetchGenerateVideoFromText(sectionIndex, visual, technique, projectId, 
     .catch(err => {
       if (err.isServerError) throw err;
       throw new Error(
-        `Could not reach the animate server at ${GENERATE_VIDEO_FROM_TEXT_API_URL} (${err.message}). ` +
-        `Start it with: python backend/server.py`
+        `Could not reach the animate server at ${GENERATE_VIDEO_FROM_TEXT_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }
@@ -1750,8 +1731,7 @@ function fetchGenerateSketchSequence(sectionIndex, visual, technique, projectId,
     .catch(err => {
       if (err.isServerError) throw err;
       throw new Error(
-        `Could not reach the animate server at ${GENERATE_SKETCH_SEQUENCE_API_URL} (${err.message}). ` +
-        `Start it with: python backend/server.py`
+        `Could not reach the animate server at ${GENERATE_SKETCH_SEQUENCE_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }
@@ -1766,8 +1746,7 @@ function fetchPremiereExport(sections, projectId) {
     .catch(err => {
       if (err.isServerError) throw err;
       throw new Error(
-        `Could not reach the Premiere-export server at ${PREMIERE_EXPORT_API_URL} (${err.message}). ` +
-        `Start it with: python backend/server.py`
+        `Could not reach the Premiere-export server at ${PREMIERE_EXPORT_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }
@@ -1791,8 +1770,7 @@ function fetchVideoOptions(query) {
     .catch(err => {
       if (err.isServerError) throw err;
       throw new Error(
-        `Could not reach the video-search server at ${SEARCH_VIDEO_API_URL} (${err.message}). ` +
-        `Start it with: python backend/server.py`
+        `Could not reach the video-search server at ${SEARCH_VIDEO_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }
@@ -1807,8 +1785,7 @@ function fetchAudioOptions(query) {
     .catch(err => {
       if (err.isServerError) throw err;
       throw new Error(
-        `Could not reach the audio-search server at ${SEARCH_AUDIO_API_URL} (${err.message}). ` +
-        `Start it with: python backend/server.py`
+        `Could not reach the audio-search server at ${SEARCH_AUDIO_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }
@@ -1829,8 +1806,7 @@ function fetchGenerateQuestion(objectiveText, scopeLabel, slidesForScope) {
     .then(handleJsonResponse)
     .catch(err => {
       throw new Error(
-        `Could not reach the question-generation server at ${GENERATE_QUESTION_API_URL} (${err.message}). ` +
-        `Start it with: python backend/server.py`
+        `Could not reach the question-generation server at ${GENERATE_QUESTION_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }
@@ -1844,8 +1820,7 @@ function fetchSimulateAnswer(audience, question, cumulativeSlides) {
     .then(handleJsonResponse)
     .catch(err => {
       throw new Error(
-        `Could not reach the answer-simulation server at ${SIMULATE_ANSWER_API_URL} (${err.message}). ` +
-        `Start it with: python backend/server.py`
+        `Could not reach the answer-simulation server at ${SIMULATE_ANSWER_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }
@@ -1859,8 +1834,7 @@ function fetchGradeAnswers(question, rubric, referenceAnswer, answers) {
     .then(handleJsonResponse)
     .catch(err => {
       throw new Error(
-        `Could not reach the grading server at ${GRADE_ANSWERS_API_URL} (${err.message}). ` +
-        `Start it with: python backend/server.py`
+        `Could not reach the grading server at ${GRADE_ANSWERS_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }
@@ -1880,8 +1854,7 @@ function fetchSuggestFix(objectiveText, scopeLabel, slidesForScope, gradedSample
     .then(handleJsonResponse)
     .catch(err => {
       throw new Error(
-        `Could not reach the fix-suggestion server at ${SUGGEST_FIX_API_URL} (${err.message}). ` +
-        `Start it with: python backend/server.py`
+        `Could not reach the fix-suggestion server at ${SUGGEST_FIX_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }

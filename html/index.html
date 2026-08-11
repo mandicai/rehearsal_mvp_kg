@@ -45,14 +45,19 @@
 
         <div id="record-intent-row">
           <button type="button" id="record-intent-btn" class="btn-primary">Record</button>
-          <button type="button" id="play-intent-btn" class="btn-primary" style="display: none;">▶ Play recording</button>
           <div id="record-intent-status" class="status-line"></div>
         </div>
 
         <canvas id="intent-waveform-canvas" width="800" height="60" style="display: none; width: 100%; height: 60px; margin-top: 8px;"></canvas>
 
+        <!-- #play-intent-btn sits here (not in #record-intent-row above)
+         so it's beside the transcript it plays back, not the Record
+         button - icon-only (▶/⏸, see js/paper-extract.js's
+         onNarrationPlaybackStateChange), same id/behavior on both pages
+         (see html/storyboard.html's own copy). -->
         <div id="intent-transcript-display" style="display: none; margin-top: 12px;">
           <div id="intent-transcript-text" class="intent-transcript-text"></div>
+          <button type="button" id="play-intent-btn" class="btn-primary" style="display: none;">▶</button>
         </div>
 
         <p style="font-size: 12px; opacity: 0.75; margin: 20px 0 15px 0;">

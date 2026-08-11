@@ -36,6 +36,16 @@
   <a href="index.html" id="back-to-setup-btn" class="btn-secondary" style="text-decoration: none;">&laquo; Back to
     setup</a>
 
+  <!-- Hidden until the sidebar actually has content (see
+   relocateAllSidebarModules) - collapses/expands #storyboard-sidebar as a
+   whole (Suggested narrative arc + Your media + Source material all
+   relocate into that one shared container - see relocateAllSidebarModules)
+   so #paper-sections can take the full page width. Sits up here rather
+   than inside .main-column so it's still reachable once the sidebar
+   itself is display:none - a button inside the thing being hidden
+   couldn't un-hide it. -->
+  <button type="button" id="toggle-panels-btn" class="btn-secondary" style="display: none;">Hide panels</button>
+
   <div class="page-layout">
 
     <!-- Empty until an arc's accepted - #storyboard-arc-module,
@@ -115,11 +125,11 @@
 
         <!-- Same id/click handler as index.html's own button (see
          js/paper-extract.js) - recording happens there, playback works on
-         either page. -->
-        <button type="button" id="play-intent-btn" class="btn-primary" style="display: none;">▶ Play recording</button>
-
+         either page. Icon-only, beside the transcript it plays back - see
+         html/index.html's own copy of this comment. -->
         <div id="intent-transcript-display" style="display: none; margin-top: 12px;">
           <div id="intent-transcript-text" class="intent-transcript-text"></div>
+          <button type="button" id="play-intent-btn" class="btn-primary" style="display: none;">▶</button>
         </div>
 
         <div id="media-bank-list"></div>
