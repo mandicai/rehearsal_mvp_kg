@@ -1091,13 +1091,12 @@ function buildSectionBlock(section, selectable) {
   });
 
   if (selectable) {
-    // --- Left: the shot - a visual box, footage-source controls beneath
-    // it, then narration + audio (see buildVisualBox). ---
-    const mediaCol = document.createElement('div');
-    mediaCol.className = 'paper-section-media-col';
-
+    // Built here, appended in reading order at the bottom of this branch:
+    // title -> narration -> the paper's own text (labeled "Scene Notes"
+    // there) -> the visual box/footage actions (see buildVisualBox) - a
+    // presenter reads what the shot's about and what to say before acting
+    // on how to actually shoot/find it.
     const visualBox = buildVisualBox(section);
-    mediaCol.appendChild(visualBox);
 
     const footageActions = document.createElement('div');
     footageActions.className = 'paper-section-footage-actions';
@@ -1289,10 +1288,6 @@ function buildSectionBlock(section, selectable) {
     });
     footageActions.appendChild(uploadFootageInput);
 
-    mediaCol.appendChild(footageActions);
-    mediaCol.appendChild(footageStatus);
-    mediaCol.appendChild(mediaResults);
-
     // Underneath the visual box: narration + audio.
     const narrationAudio = document.createElement('div');
     narrationAudio.className = 'paper-section-narration-audio';
@@ -1458,26 +1453,34 @@ function buildSectionBlock(section, selectable) {
     //   if (plan.textOverlay) appendStoryboardLine(narrationAudio, 'Overlay', plan.textOverlay);
     // }
 
-    mediaCol.appendChild(narrationAudio);
-    block.appendChild(mediaCol);
+    // Reading order: title, then narration (what to say), then the
+    // paper's own text - reference material the shot is grounded in, not
+    // shot direction, hence its own "Scene Notes" label rather than
+    // reusing meta/body's original unlabeled look - then the visual box/
+    // footage actions last, once the presenter knows what the shot's
+    // about and what they're saying over it.
+    block.appendChild(removeBtn);
+    block.appendChild(title);
+    block.appendChild(narrationAudio);
 
-    // --- Right: the source material - the original paper excerpt this
-    // shot is based on. ---
-    const sourceCol = document.createElement('div');
-    sourceCol.className = 'paper-section-source-col';
-    sourceCol.appendChild(removeBtn);
-    sourceCol.appendChild(title);
-    sourceCol.appendChild(meta);
-    sourceCol.appendChild(body);
+    const sceneNotesLabel = document.createElement('div');
+    sceneNotesLabel.className = 'paper-section-text-label';
+    sceneNotesLabel.textContent = 'Scene Notes';
+    block.appendChild(sceneNotesLabel);
+    block.appendChild(meta);
+    block.appendChild(body);
 
     if (section.entities && section.entities.length) {
       const entitiesLine = document.createElement('div');
       entitiesLine.className = 'paper-section-storyboard';
       appendStoryboardLine(entitiesLine, 'Entities', section.entities.map(e => e.name).join(', '));
-      sourceCol.appendChild(entitiesLine);
+      block.appendChild(entitiesLine);
     }
 
-    block.appendChild(sourceCol);
+    block.appendChild(visualBox);
+    block.appendChild(footageActions);
+    block.appendChild(footageStatus);
+    block.appendChild(mediaResults);
   } else {
     // Pre-arrangement flat feed - just the source material, no shot
     // production details yet (there's no act/shot concept before an
@@ -2149,6 +2152,23 @@ const OUTLINE_ACTIVE_THRESHOLD_PX = 90;
 // Returns a Map from section.index to that section's [aRollClip, bRollClip]
 // pair - renderMovieEditor's scroll listener uses this to highlight
 // whichever's currently scrolled past.
+// One track builder shared by all 4 rows below - same label/body/group
+// structure every time, just a different label and a different per-section
+// fill/draft predicate (see the TRACK_DEFS array in buildNarrativeTimeline).
+function buildTimelineTrack(timelineEl, label) {
+  const track = document.createElement('div');
+  track.className = 'premiere-timeline-track';
+  const trackLabel = document.createElement('div');
+  trackLabel.className = 'premiere-timeline-track-label';
+  trackLabel.textContent = label;
+  track.appendChild(trackLabel);
+  const body = document.createElement('div');
+  body.className = 'premiere-timeline-track-body';
+  track.appendChild(body);
+  timelineEl.appendChild(track);
+  return body;
+}
+
 function buildNarrativeTimeline(timelineEl, sections, assignmentsByIndex) {
   timelineEl.innerHTML = '';
 
@@ -2156,27 +2176,34 @@ function buildNarrativeTimeline(timelineEl, sections, assignmentsByIndex) {
   ruler.className = 'premiere-timeline-ruler';
   timelineEl.appendChild(ruler);
 
-  const aRollTrack = document.createElement('div');
-  aRollTrack.className = 'premiere-timeline-track';
-  const aRollLabel = document.createElement('div');
-  aRollLabel.className = 'premiere-timeline-track-label';
-  aRollLabel.textContent = 'A-ROLL';
-  aRollTrack.appendChild(aRollLabel);
-  const aRollBody = document.createElement('div');
-  aRollBody.className = 'premiere-timeline-track-body';
-  aRollTrack.appendChild(aRollBody);
-  timelineEl.appendChild(aRollTrack);
-
-  const bRollTrack = document.createElement('div');
-  bRollTrack.className = 'premiere-timeline-track';
-  const bRollLabel = document.createElement('div');
-  bRollLabel.className = 'premiere-timeline-track-label';
-  bRollLabel.textContent = 'B-ROLL';
-  bRollTrack.appendChild(bRollLabel);
-  const bRollBody = document.createElement('div');
-  bRollBody.className = 'premiere-timeline-track-body';
-  bRollTrack.appendChild(bRollBody);
-  timelineEl.appendChild(bRollTrack);
+  // Narration first, then A-roll/B-roll (the two visual tracks - A-roll is
+  // the shot's own primary visual - a generated sketch/animated sketch, or
+  // real uploaded footage; B-roll is externally-sourced supplementary
+  // footage - a Find Footage/stock pick, see runFindFootage/stock_media.py),
+  // then Sound effects last.
+  const TRACK_DEFS = [
+    {
+      label: 'NARRATION',
+      isFilled: section => !!section.narrationAudioPreviewUrl,
+      isDrafted: section => !!(section.narration && section.narration.trim()),
+    },
+    {
+      label: 'A-ROLL',
+      isFilled: section => ['sketch', 'animatedSketch', 'video'].includes(section.visualSource),
+      isDrafted: section => section.visualSource !== 'stockVideo' && !!(section.visual && section.visual.trim()),
+    },
+    {
+      label: 'B-ROLL',
+      isFilled: section => section.visualSource === 'stockVideo',
+      isDrafted: section => section.visualSource !== 'stockVideo' && !!section.videoQuery,
+    },
+    {
+      label: 'SOUND EFFECTS',
+      isFilled: section => !!section.selectedAudio,
+      isDrafted: section => !section.selectedAudio && !!section.audioQuery,
+    },
+  ];
+  const trackBodies = TRACK_DEFS.map(def => buildTimelineTrack(timelineEl, def.label));
 
   const clipsBySectionIndex = new Map();
 
@@ -2187,8 +2214,8 @@ function buildNarrativeTimeline(timelineEl, sections, assignmentsByIndex) {
     // flex-basis pinned to 0 (not the "grow"-only shorthand's implied
     // auto) on all three - otherwise the ruler label's own text width
     // would compete with its flex-grow share, throwing off its width
-    // relative to the plain, content-less clips in the two tracks below
-    // and misaligning the ruler against them.
+    // relative to the plain, content-less clips in the tracks below and
+    // misaligning the ruler against them.
     const actFlex = `${rowSections.length} 1 0`;
 
     const rulerGroup = document.createElement('div');
@@ -2197,36 +2224,15 @@ function buildNarrativeTimeline(timelineEl, sections, assignmentsByIndex) {
     rulerGroup.textContent = act.label;
     ruler.appendChild(rulerGroup);
 
-    const aRollGroup = document.createElement('div');
-    aRollGroup.className = 'premiere-timeline-act-group';
-    aRollGroup.style.flex = actFlex;
-    aRollBody.appendChild(aRollGroup);
-
-    const bRollGroup = document.createElement('div');
-    bRollGroup.className = 'premiere-timeline-act-group';
-    bRollGroup.style.flex = actFlex;
-    bRollBody.appendChild(bRollGroup);
+    const trackGroups = trackBodies.map(body => {
+      const group = document.createElement('div');
+      group.className = 'premiere-timeline-act-group';
+      group.style.flex = actFlex;
+      body.appendChild(group);
+      return group;
+    });
 
     rowSections.forEach(section => {
-      const hasNarrationAudio = !!section.narrationAudioPreviewUrl;
-      const hasNarrationText = !!(section.narration && section.narration.trim());
-      const hasRealVisual = !!section.visualSource;
-      const hasVisualText = !!(section.visual && section.visual.trim());
-
-      const aRollClip = document.createElement('div');
-      aRollClip.className = 'premiere-timeline-clip';
-      aRollClip.classList.toggle('filled', hasNarrationAudio);
-      aRollClip.classList.toggle('drafted', !hasNarrationAudio && hasNarrationText);
-      aRollClip.title = section.title;
-      aRollGroup.appendChild(aRollClip);
-
-      const bRollClip = document.createElement('div');
-      bRollClip.className = 'premiere-timeline-clip';
-      bRollClip.classList.toggle('filled', hasRealVisual);
-      bRollClip.classList.toggle('drafted', !hasRealVisual && hasVisualText);
-      bRollClip.title = section.title;
-      bRollGroup.appendChild(bRollClip);
-
       // Double-click (not single) so a click doesn't fight with the
       // hover/scale affordance above, and matches the explicit ask this
       // was built for - scroll to the real section card, not just select it.
@@ -2234,10 +2240,19 @@ function buildNarrativeTimeline(timelineEl, sections, assignmentsByIndex) {
         const target = document.querySelector(`.paper-section-block[data-section-index="${section.index}"]`);
         if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
       };
-      aRollClip.addEventListener('dblclick', scrollToSection);
-      bRollClip.addEventListener('dblclick', scrollToSection);
 
-      clipsBySectionIndex.set(section.index, [aRollClip, bRollClip]);
+      const clips = TRACK_DEFS.map((def, i) => {
+        const clip = document.createElement('div');
+        clip.className = 'premiere-timeline-clip';
+        clip.classList.toggle('filled', def.isFilled(section));
+        clip.classList.toggle('drafted', !def.isFilled(section) && def.isDrafted(section));
+        clip.title = section.title;
+        clip.addEventListener('dblclick', scrollToSection);
+        trackGroups[i].appendChild(clip);
+        return clip;
+      });
+
+      clipsBySectionIndex.set(section.index, clips);
     });
   });
 
@@ -2414,6 +2429,52 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
   sidePanel.className = 'narrative-side-panel';
   innerLayout.appendChild(sidePanel);
 
+  // Documentary modes - above Documentary techniques below (presenter picks
+  // a mode first, techniques second). Same card styling as techniques, but
+  // each mode is a single click-through prompt rather than a toggle: since
+  // there's no LLM suggesting one anymore, picking a mode here is purely
+  // the presenter's own call, and clicking it nudges them toward a
+  // concrete next action for that mode (DOCUMENTARY_MODE_PROMPTS above)
+  // rather than just recording an abstract stylistic preference.
+  const modesBlock = document.createElement('div');
+  modesBlock.className = 'narrative-arc-techniques';
+
+  const modesTitle = document.createElement('h3');
+  modesTitle.textContent = 'Documentary modes';
+  modesBlock.appendChild(modesTitle);
+
+  const modesRow = document.createElement('div');
+  modesRow.className = 'chip-row';
+  modesBlock.appendChild(modesRow);
+
+  // Below the chips (not above) - the tip reads as a caption for whichever
+  // mode was just clicked, not a header for the row.
+  const modesStatus = document.createElement('div');
+  modesStatus.className = 'status-line';
+  modesBlock.appendChild(modesStatus);
+
+  DOCUMENTARY_MODES.forEach(mode => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'chip suggested';
+    chip.classList.toggle('selected', selectedDocumentaryMode === mode.key);
+    chip.textContent = mode.label;
+    chip.title = mode.description;
+    chip.addEventListener('click', () => {
+      // Toggle, same as the technique chips below - clicking the
+      // already-active mode clears back to "no mode chosen."
+      selectedDocumentaryMode = selectedDocumentaryMode === mode.key ? null : mode.key;
+      modesRow.querySelectorAll('.chip').forEach(c => c.classList.remove('selected'));
+      chip.classList.toggle('selected', selectedDocumentaryMode === mode.key);
+      modesStatus.textContent = selectedDocumentaryMode ? DOCUMENTARY_MODE_PROMPTS[selectedDocumentaryMode] : '';
+      // selectedDocumentaryMode is deliberately not persisted (see its own
+      // comment) - no saveDebugSession call here, same as the arc-template/
+      // arc-suggestion picks it's grouped with.
+    });
+    modesRow.appendChild(chip);
+  });
+  sidePanel.appendChild(modesBlock);
+
   // Toggleable technique chips - see DOCUMENTARY_TECHNIQUES above for what
   // these are/aren't. Back in its own sidebar (see innerLayout above),
   // same .narrative-arc-techniques styling as when it lived in the old
@@ -2451,48 +2512,6 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
   });
   techniquesBlock.appendChild(techniquesRow);
   sidePanel.appendChild(techniquesBlock);
-
-  // Documentary modes - same styling as Documentary techniques above, but
-  // each mode is a single click-through prompt rather than a toggle: since
-  // there's no LLM suggesting one anymore, picking a mode here is purely
-  // the presenter's own call, and clicking it nudges them toward a
-  // concrete next action for that mode (DOCUMENTARY_MODE_PROMPTS above)
-  // rather than just recording an abstract stylistic preference.
-  const modesBlock = document.createElement('div');
-  modesBlock.className = 'narrative-arc-techniques';
-
-  const modesTitle = document.createElement('h3');
-  modesTitle.textContent = 'Documentary modes';
-  modesBlock.appendChild(modesTitle);
-
-  const modesStatus = document.createElement('div');
-  modesStatus.className = 'status-line';
-
-  const modesRow = document.createElement('div');
-  modesRow.className = 'chip-row';
-  DOCUMENTARY_MODES.forEach(mode => {
-    const chip = document.createElement('button');
-    chip.type = 'button';
-    chip.className = 'chip suggested';
-    chip.classList.toggle('selected', selectedDocumentaryMode === mode.key);
-    chip.textContent = mode.label;
-    chip.title = mode.description;
-    chip.addEventListener('click', () => {
-      // Toggle, same as the technique chips above - clicking the
-      // already-active mode clears back to "no mode chosen."
-      selectedDocumentaryMode = selectedDocumentaryMode === mode.key ? null : mode.key;
-      modesRow.querySelectorAll('.chip').forEach(c => c.classList.remove('selected'));
-      chip.classList.toggle('selected', selectedDocumentaryMode === mode.key);
-      modesStatus.textContent = selectedDocumentaryMode ? DOCUMENTARY_MODE_PROMPTS[selectedDocumentaryMode] : '';
-      // selectedDocumentaryMode is deliberately not persisted (see its own
-      // comment) - no saveDebugSession call here, same as the arc-template/
-      // arc-suggestion picks it's grouped with.
-    });
-    modesRow.appendChild(chip);
-  });
-  modesBlock.appendChild(modesStatus);
-  modesBlock.appendChild(modesRow);
-  sidePanel.appendChild(modesBlock);
 
   const arcRows = document.createElement('div');
   arcRows.className = 'narrative-arc-rows';

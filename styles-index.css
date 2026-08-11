@@ -578,7 +578,7 @@ body.pub-to-doc-page .action-bar {
   flex: 0 0 220px;
   min-width: 0;
   position: sticky;
-  top: 110px; /* below the sticky .premiere-timeline (top: 0) above it */
+  top: 170px; /* below the sticky .premiere-timeline (top: 0) above it - an estimate (ruler + 4 tracks now, up from 2), not visually confirmed */
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -752,20 +752,28 @@ body.pub-to-doc-page .action-bar {
 }
 
 /* --- Arranged-view "shot" card layout (buildSectionBlock, selectable=true) -
-   a visual box + footage controls + narration/audio on the left, the
-   original paper excerpt on the right. The pre-arrangement flat feed
-   (selectable=false) keeps the older single-column layout, so this only
-   applies to .paper-section-block-shot, not .paper-section-block generally. */
+   a single column, in reading order: title, narration, the paper's own
+   text ("Scene Notes"), then the visual box/footage actions. The
+   pre-arrangement flat feed (selectable=false) keeps its own older
+   single-column layout too, so this only applies to
+   .paper-section-block-shot, not .paper-section-block generally. */
 .paper-section-block-shot {
   display: flex;
-  gap: 20px;
-  align-items: flex-start;
-  padding: 16px 20px;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 44px 16px 20px; /* right: room for .paper-section-remove-btn's top-right corner */
 }
 
-.paper-section-media-col {
-  flex: 0 0 50%;
-  min-width: 0;
+/* A small caption identifying the paper's own text below it as reference
+   material the shot is grounded in, not shot direction (that's
+   .paper-section-narration above it) - same idea as .chip-row-caption
+   elsewhere, just scoped to this one field. */
+.paper-section-text-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.6;
 }
 
 .paper-section-visual-box {
@@ -845,12 +853,6 @@ body.pub-to-doc-page .action-bar {
 .paper-section-narration-audio audio {
   width: 100%;
   height: 28px;
-}
-
-.paper-section-source-col {
-  flex: 1 1 auto;
-  min-width: 0;
-  padding-right: 24px; /* room for .paper-section-remove-btn's top-right corner */
 }
 
 .media-video-options {
