@@ -1102,7 +1102,12 @@ function buildSectionBlock(section, selectable) {
     footageActions.className = 'paper-section-footage-actions';
 
     const footageStatus = document.createElement('div');
-    footageStatus.className = 'status-line';
+    // find-footage-status (in addition to the shared status-line styling) -
+    // triggerFindFootageSweep needs to locate this specific status line
+    // (and the find-footage-btn/paper-section-media siblings below) inside
+    // a re-rendered block by selector, since it isn't the only .status-line
+    // in this block.
+    footageStatus.className = 'status-line find-footage-status';
 
     // One click both drafts this section's visual/narration/entities/
     // video_query/audio_query (the same LLM call the sticky action bar's
@@ -2495,6 +2500,10 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
       modesRow.querySelectorAll('.chip').forEach(c => c.classList.remove('selected'));
       chip.classList.toggle('selected', selectedDocumentaryMode === mode.key);
       modesStatus.textContent = selectedDocumentaryMode ? DOCUMENTARY_MODE_PROMPTS[selectedDocumentaryMode] : '';
+      // Picking a mode is the other half of triggerFindFootageSweep's
+      // precondition (alongside a drafted storyboard) - a no-op here if
+      // there's no storyboard yet.
+      triggerFindFootageSweep();
       // selectedDocumentaryMode is deliberately not persisted (see its own
       // comment) - no saveDebugSession call here, same as the arc-template/
       // arc-suggestion picks it's grouped with.
@@ -2714,7 +2723,9 @@ function runFindFootage(section, resultsEl, statusEl, btn) {
   statusEl.textContent = 'Searching for video and audio options...';
   statusEl.classList.remove('error');
 
-  Promise.allSettled([
+  // Returned (not fire-and-forget) so triggerFindFootageSweep can throttle
+  // how many of these run at once across a whole sweep.
+  return Promise.allSettled([
     fetchVideoOptions(section.videoQuery),
     fetchAudioOptions(section.audioQuery),
   ]).then(([videoResult, audioResult]) => {
@@ -2746,6 +2757,51 @@ function runFindFootage(section, resultsEl, statusEl, btn) {
 
     btn.disabled = false;
   });
+}
+
+// A picked documentary mode plus a drafted storyboard is enough context to
+// go looking for B-roll/SFX automatically, rather than making the
+// presenter click "Find footage" on every section by hand - fires from
+// both the mode-chip handler and runGenerateStoryboardForSections' success
+// callback (see their own call sites), since either one might complete
+// second; a no-op here if the other precondition isn't met yet.
+//
+// Locates each qualifying section's already-rendered Find Footage button/
+// status/results elements by selector rather than duplicating
+// buildSectionBlock's closures - runFindFootage already needs exactly
+// those three DOM nodes, this just finds the ones "Find footage" itself
+// would have used.
+const FIND_FOOTAGE_SWEEP_CONCURRENCY = 3;
+
+function triggerFindFootageSweep() {
+  if (!selectedDocumentaryMode) return;
+
+  const queue = currentSections.filter(section =>
+    !section.removed &&
+    currentAssignments[section.index] &&
+    section.videoQuery &&
+    !section.selectedVideo &&
+    !section.selectedAudio
+  );
+  if (queue.length === 0) return;
+
+  const runNext = () => {
+    const section = queue.shift();
+    if (!section) return Promise.resolve();
+
+    const block = resultsEl.querySelector(`.paper-section-block[data-section-index="${section.index}"]`);
+    const btn = block && block.querySelector('.find-footage-btn');
+    const mediaResults = block && block.querySelector('.paper-section-media');
+    const statusEl = block && block.querySelector('.find-footage-status');
+    // Already mid-search (a manual click raced this sweep) or the block
+    // isn't on screen (e.g. scrolled out and not yet built) - either way,
+    // nothing to do for this section; move on rather than stall the queue.
+    if (!btn || btn.disabled || !mediaResults || !statusEl) return runNext();
+
+    return runFindFootage(section, mediaResults, statusEl, btn).then(runNext);
+  };
+
+  for (let i = 0; i < FIND_FOOTAGE_SWEEP_CONCURRENCY; i++) runNext();
 }
 
 // --- Premiere Pro (UXP) file-based bridge: uploading a researcher's own
@@ -3123,6 +3179,11 @@ function runGenerateStoryboardForSections(sectionsToUse, triggerBtn) {
       setStoryboardStatus(`Done. Generated a storyboard for ${sectionsToUse.length} section${sectionsToUse.length === 1 ? '' : 's'}.`);
       const remaining = currentSections.filter(section => !section.removed && currentAssignments[section.index]);
       renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+      // The other half of triggerFindFootageSweep's precondition (alongside
+      // a picked mode) - a no-op if no mode is selected yet. Needs to run
+      // after the render above, since it locates each section's Find
+      // Footage button/status/results by selector in the freshly-built DOM.
+      triggerFindFootageSweep();
       if (triggerBtn) triggerBtn.disabled = false;
       editPlanActionEl.style.display = '';
       premiereExportActionEl.style.display = '';
