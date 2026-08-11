@@ -1,3 +1,4 @@
+//#region --- DOCUMENTARY SPECIFICATIONS
 const ARC_TEMPLATES = [
   {
     name: 'Solving a problem or puzzle',
@@ -94,10 +95,124 @@ const ANIMATE_TECHNIQUES = [
   { key: 'out', label: 'Pull out' },
 ];
 
+// Pre-populated reference footage (see assets/ at the repo root, served
+// statically the same way premiere_exports/ is) - Record Audio/Record
+// Video are hidden for now (see styles-index.css), so this is the
+// standing way to have something to work with in "Your Media" without
+// depending on the recording pipeline. Kept in sync by convention with
+// assets/'s actual contents - no build step scans the directory, so a
+// file added/removed there needs a matching edit here.
+// Kept in sync by hand with what's actually in assets/ - listing a
+// filename here that isn't actually there gives a list entry whose player
+// can never load anything (verified live: assets/ only ever had 5 of an
+// originally-intended 13 clips).
+const MEDIA_BANK_ASSET_DEFAULTS = [
+  'IMG_2387.mp4', 'IMG_2388.mp4', 'IMG_2389.mp4', 'IMG_2390.mp4',
+  'IMG_2391.mp4',
+].map(filename => ({ kind: 'video', label: filename, previewUrl: `/assets/${filename}` }));
+
 let selectedTechniques = new Set();
 
 const documentaryIntentInput = document.getElementById('documentary-intent-input');
 const intentSuggestedChipsEl = document.getElementById('intent-suggested-chips');
+//#endregion
+
+//#region --- KEEP TRACK OF STATE
+// --- State: populated once per successful extraction, then mutated in
+// place as sections are excluded/restored or arranged into a narrative arc.
+// `index` is assigned once here and never reused, even once a section is
+// filtered out of a request - it's the stable id both the removal toggle
+// and the narrative-arc response key off of.
+
+let currentLabel = '';
+let currentSections = [];
+
+// index -> arc-part name string (one of currentArcSections' keys below) -
+// starts empty on every accepted arc (see runAcceptArc); populated
+// manually from there, one section at a time (handleChipDrop's drag, or
+// the per-row "+ Add Section" button in renderMovieEditor).
+let currentAssignments = {};
+
+// Indices of sections currently highlighted (via a card or its compact chip
+// - see handleSectionClick) - a plain click replaces this with just that one
+// index, a shift-click toggles it into/out of the set. Drives the .selected
+// highlight and, in the sticky action bar (see renderMovieEditor), which
+// section(s) "Generate Storyboard"/"Generate Edit Plan" target - the
+// selection if non-empty, otherwise the whole arc.
+let selectedSectionIndices = new Set();
+
+// Status text for the sticky action bar's own buttons (see
+// setStoryboardStatus/setEditPlanStatus) - kept as state, not just a live
+// DOM write, because a successful generation re-renders the whole bar (fresh
+// status-line elements) before the "Done" message is set; renderMovieEditor
+// reads this state to populate those fresh elements.
+let storyboardBarStatus = { message: '', isError: false };
+let editPlanBarStatus = { message: '', isError: false };
+
+// The accepted narrative arc's named parts, in order - [{key, label,
+// description}, ...] with key === label === the part-name string. Populated
+// straight from whichever arc was accepted (see runAcceptArc) - no LLM
+// section-assignment step, so this is set client-side, not from a server
+// response. Drives
+// how many columns/timeline segments renderMovieEditor draws.
+let currentArcSections = [];
+
+// Set on an arc-template chip click, cleared the moment the presenter types
+// in the textarea afterward (see the ARC_TEMPLATES wiring below) - tracks
+// whether the textarea's current content is still exactly a known template
+// (so its exact section names can be sent deterministically) or has become
+// custom free text (so the backend must invent-or-match instead).
+let selectedArcTemplate = null;
+
+// Set/cleared by a documentary-mode chip click (see DOCUMENTARY_MODES
+// wiring below) - one of DOCUMENTARY_MODE keys or null. A stylistic axis
+// independent of the arc/goal, sent only with fetchStoryboard/fetchEditPlan.
+// Not persisted via saveDebugSession, same as selectedArcTemplate - an
+// ephemeral "current pick," not saved session data.
+let selectedDocumentaryMode = null;
+
+// Set once the presenter accepts a recommended/alternative/custom arc from
+// suggest_arcs_from_intent (see runAcceptArc) - { sections: [{name, description}] },
+// same shape a chip-picked template's sections would have. Cleared the
+// moment the presenter types in the textarea afterward or picks a chip,
+// same as selectedArcTemplate (they're mutually exclusive - only one of
+// the two is ever non-null), and the moment a fresh recording starts.
+let selectedNarrationArc = null;
+
+// The most recently recorded intent narration's playable object URL (used
+// for in-session playback - see playIntentBtn/playNarrationRange - and as
+// a download fallback if in-browser playback fails) and tracked duration
+// (a wall-clock fallback for recordedAudioBuffer.duration, see below - the
+// backend's own transcription never returns a real duration, see
+// backend/ingest/transcription.py).
+let recordedNarrationUrl = null;
+let recordedNarrationDurationSeconds = null;
+let recordedNarrationExtension = 'webm'; // real container (see runTranscribeIntent) - blob: URLs carry no filename/extension to read back later
+
+// A disk-served copy of the same recording (see fetchUploadNarration in
+// runTranscribeIntent) - unlike recordedNarrationUrl's blob: URL, this
+// survives navigating to storyboard.html, where it's re-fetched and
+// decoded fresh to restore in-browser playback there (see
+// restoreDebugSession's page-2 branch).
+let persistedNarrationPreviewUrl = null;
+
+// Fallback source of the documentary_goal text when #documentary-intent-input
+// isn't in the page (currently commented out in html/index.html, recording-
+// only for now) - set alongside/instead of that textarea in
+// runTranscribeIntent. Every documentaryGoal read below prefers the
+// textarea's value when it exists, so this is a no-op once it's back.
+let recordedTranscript = '';
+
+// Whole-piece pacing/music guidance from the most recent "Generate Edit
+// Plan" run (backend/edit_plan_llm.py) - per-shot detail lives on each
+// section's own .editPlan instead.
+let overallEditNotes = '';
+
+// Set once the first /premiere/upload_footage or /premiere/export call
+// returns one, so every subsequent call in this session lands in the same
+// premiere_exports/<project_id>/ folder instead of minting a new one each time.
+let premiereProjectId = null;
+//#endregion
 
 //#region --- RECORD YOUR INTENT
 // --- SUGGESTED FOCUS CHIPS
@@ -1766,6 +1881,37 @@ function runAcceptArc(arc) {
 //#endregion
 
 //#region --- NARRATIVE ARC
+// --- COMPOSE STORYBOARD - navigates from index.html (record/upload) to
+// storyboard.html (arc suggestion + movie editor) as a real page load, not
+// a same-page view swap - all state either page needs
+// (recordedTranscript, selectedFocusStatements, currentSections, ...) is
+// persisted to localStorage first (see saveDebugSession) and restored on
+// the next page's load (see restoreDebugSession, further below).
+// #compose-storyboard-row/#compose-storyboard-btn only exist on
+// index.html, so both are guarded here - a no-op on storyboard.html.
+const composeStoryboardRowEl = document.getElementById('compose-storyboard-row');
+const composeStoryboardBtn = document.getElementById('compose-storyboard-btn');
+
+// Shown once both halves of the setup step are satisfied - recorded intent
+// (or at least one focus chip) and at least one non-excluded extracted
+// section. Called after transcription succeeds, a focus chip toggles, an
+// extraction succeeds, and a section gets excluded/restored (see those
+// call sites).
+function updateComposeStoryboardVisibility() {
+  if (!composeStoryboardRowEl) return;
+  const hasIntent = !!recordedTranscript || selectedFocusStatements.size > 0;
+  const hasSections = currentSections.some(section => !section.removed);
+  composeStoryboardRowEl.style.display = (hasIntent && hasSections) ? '' : 'none';
+}
+
+if (composeStoryboardBtn) {
+  composeStoryboardBtn.addEventListener('click', () => {
+    saveDebugSession();
+    window.location.href = 'storyboard.html';
+  });
+}
+// --- END COMPOSE STORYBOARD
+
 function buildMediaVideoOption(section, video) {
   const option = document.createElement('div');
   option.className = 'media-video-option';
@@ -2414,150 +2560,11 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
   // calls renderMovieEditor in the first place.
   renderSourceMaterialList();
 }
-//#endregion
-
-
-
-
-
-
-
-
-
-
-
-// --- COMPOSE STORYBOARD - navigates from index.html (record/upload) to
-// storyboard.html (arc suggestion + movie editor) as a real page load, not
-// a same-page view swap - all state either page needs
-// (recordedTranscript, selectedFocusStatements, currentSections, ...) is
-// persisted to localStorage first (see saveDebugSession) and restored on
-// the next page's load (see restoreDebugSession, further below).
-// #compose-storyboard-row/#compose-storyboard-btn only exist on
-// index.html, so both are guarded here - a no-op on storyboard.html.
-
-const composeStoryboardRowEl = document.getElementById('compose-storyboard-row');
-const composeStoryboardBtn = document.getElementById('compose-storyboard-btn');
-
-// Shown once both halves of the setup step are satisfied - recorded intent
-// (or at least one focus chip) and at least one non-excluded extracted
-// section. Called after transcription succeeds, a focus chip toggles, an
-// extraction succeeds, and a section gets excluded/restored (see those
-// call sites).
-function updateComposeStoryboardVisibility() {
-  if (!composeStoryboardRowEl) return;
-  const hasIntent = !!recordedTranscript || selectedFocusStatements.size > 0;
-  const hasSections = currentSections.some(section => !section.removed);
-  composeStoryboardRowEl.style.display = (hasIntent && hasSections) ? '' : 'none';
-}
-
-if (composeStoryboardBtn) {
-  composeStoryboardBtn.addEventListener('click', () => {
-    saveDebugSession();
-    window.location.href = 'storyboard.html';
-  });
-}
-// --- END COMPOSE STORYBOARD
-
-// --- State: populated once per successful extraction, then mutated in
-// place as sections are excluded/restored or arranged into a narrative arc.
-// `index` is assigned once here and never reused, even once a section is
-// filtered out of a request - it's the stable id both the removal toggle
-// and the narrative-arc response key off of.
-
-let currentLabel = '';
-let currentSections = [];
-
-// index -> arc-part name string (one of currentArcSections' keys below) -
-// starts empty on every accepted arc (see runAcceptArc); populated
-// manually from there, one section at a time (handleChipDrop's drag, or
-// the per-row "+ Add Section" button in renderMovieEditor).
-let currentAssignments = {};
-
-// Indices of sections currently highlighted (via a card or its compact chip
-// - see handleSectionClick) - a plain click replaces this with just that one
-// index, a shift-click toggles it into/out of the set. Drives the .selected
-// highlight and, in the sticky action bar (see renderMovieEditor), which
-// section(s) "Generate Storyboard"/"Generate Edit Plan" target - the
-// selection if non-empty, otherwise the whole arc.
-let selectedSectionIndices = new Set();
-
-// Status text for the sticky action bar's own buttons (see
-// setStoryboardStatus/setEditPlanStatus) - kept as state, not just a live
-// DOM write, because a successful generation re-renders the whole bar (fresh
-// status-line elements) before the "Done" message is set; renderMovieEditor
-// reads this state to populate those fresh elements.
-let storyboardBarStatus = { message: '', isError: false };
-let editPlanBarStatus = { message: '', isError: false };
-
-// The accepted narrative arc's named parts, in order - [{key, label,
-// description}, ...] with key === label === the part-name string. Populated
-// straight from whichever arc was accepted (see runAcceptArc) - no LLM
-// section-assignment step, so this is set client-side, not from a server
-// response. Drives
-// how many columns/timeline segments renderMovieEditor draws.
-let currentArcSections = [];
-
-// Set on an arc-template chip click, cleared the moment the presenter types
-// in the textarea afterward (see the ARC_TEMPLATES wiring below) - tracks
-// whether the textarea's current content is still exactly a known template
-// (so its exact section names can be sent deterministically) or has become
-// custom free text (so the backend must invent-or-match instead).
-let selectedArcTemplate = null;
-
-// Set/cleared by a documentary-mode chip click (see DOCUMENTARY_MODES
-// wiring below) - one of DOCUMENTARY_MODE keys or null. A stylistic axis
-// independent of the arc/goal, sent only with fetchStoryboard/fetchEditPlan.
-// Not persisted via saveDebugSession, same as selectedArcTemplate - an
-// ephemeral "current pick," not saved session data.
-let selectedDocumentaryMode = null;
-
-// Set once the presenter accepts a recommended/alternative/custom arc from
-// suggest_arcs_from_intent (see runAcceptArc) - { sections: [{name, description}] },
-// same shape a chip-picked template's sections would have. Cleared the
-// moment the presenter types in the textarea afterward or picks a chip,
-// same as selectedArcTemplate (they're mutually exclusive - only one of
-// the two is ever non-null), and the moment a fresh recording starts.
-let selectedNarrationArc = null;
-
-// The most recently recorded intent narration's playable object URL (used
-// for in-session playback - see playIntentBtn/playNarrationRange - and as
-// a download fallback if in-browser playback fails) and tracked duration
-// (a wall-clock fallback for recordedAudioBuffer.duration, see below - the
-// backend's own transcription never returns a real duration, see
-// backend/ingest/transcription.py).
-let recordedNarrationUrl = null;
-let recordedNarrationDurationSeconds = null;
-let recordedNarrationExtension = 'webm'; // real container (see runTranscribeIntent) - blob: URLs carry no filename/extension to read back later
-
-// A disk-served copy of the same recording (see fetchUploadNarration in
-// runTranscribeIntent) - unlike recordedNarrationUrl's blob: URL, this
-// survives navigating to storyboard.html, where it's re-fetched and
-// decoded fresh to restore in-browser playback there (see
-// restoreDebugSession's page-2 branch).
-let persistedNarrationPreviewUrl = null;
-
-// Fallback source of the documentary_goal text when #documentary-intent-input
-// isn't in the page (currently commented out in html/index.html, recording-
-// only for now) - set alongside/instead of that textarea in
-// runTranscribeIntent. Every documentaryGoal read below prefers the
-// textarea's value when it exists, so this is a no-op once it's back.
-let recordedTranscript = '';
-
-// Whole-piece pacing/music guidance from the most recent "Generate Edit
-// Plan" run (backend/edit_plan_llm.py) - per-shot detail lives on each
-// section's own .editPlan instead.
-let overallEditNotes = '';
-
-// Set once the first /premiere/upload_footage or /premiere/export call
-// returns one, so every subsequent call in this session lands in the same
-// premiere_exports/<project_id>/ folder instead of minting a new one each time.
-let premiereProjectId = null;
 
 // --- Rendering: a section block is the same clickable unit whether it's
 // sitting in the flat feed or inside one of the narrative-arc columns -
 // its removability doesn't depend on which container it's in. Once a
 // storyboard has been generated, it also grows a Visual/Narration sub-block.
-
 function appendStoryboardLine(container, label, text) {
   const line = document.createElement('div');
   line.className = 'paper-section-storyboard-line';
@@ -2618,7 +2625,6 @@ function runFindFootage(section, resultsEl, statusEl, btn) {
 // backend/premiere_bridge.py for why this is file-based rather than a
 // network call in both directions (macOS restricts plain http:// for a UXP
 // plugin's own outbound requests; local file access has no such restriction).
-
 function runUploadFootage(section, file, labelEl, inputEl) {
   inputEl.disabled = true;
   labelEl.textContent = `Uploading "${file.name}"...`;
@@ -2653,7 +2659,86 @@ function runUploadFootage(section, file, labelEl, inputEl) {
       inputEl.disabled = false;
     });
 }
+//#endregion
 
+//#region --- YOUR MEDIA (storyboard.html only)
+// a running collection of
+// supplementary reference audio/video the presenter records or uploads in
+// #media-bank-module, separate from (in addition to) the one documentary-
+// intent narration recorded on index.html. Each item just holds enough to
+// play it back (a disk-served preview_url, same convention as footage/
+// narration elsewhere in this file) - never re-fetched/decoded through the
+// Web Audio API the way the intent narration is, since a plain <audio>/
+// <video src> already handles arbitrary-length playback natively and none
+// of this needs a waveform or proportional timing. Starts pre-populated
+// with MEDIA_BANK_ASSET_DEFAULTS above rather than restored from a saved
+// session (see restoreDebugSession, which doesn't touch this) - a
+// deliberate reset ("for now"), not persisted per-session state.
+let mediaBankItems = MEDIA_BANK_ASSET_DEFAULTS.slice();
+
+function renderMediaBankItems() {
+  if (!mediaBankListEl) return;
+  mediaBankListEl.innerHTML = '';
+  mediaBankItems.forEach((item, index) => {
+    const row = document.createElement('div');
+    row.className = 'media-bank-item';
+
+    const label = document.createElement('div');
+    label.className = 'media-bank-item-label';
+    label.textContent = item.label;
+
+    // Audio items only - dragged onto a section's narration area (see
+    // buildSectionBlock's drop handler) to use as that shot's narration.
+    // The index (not the item itself) is what's carried across the drag,
+    // since dataTransfer can only hold strings. draggable lives on the
+    // label specifically, not the whole row (which also contains the
+    // player below) - a draggable ancestor is a known way to break normal
+    // clicks on native <audio>/<video> controls in some browsers (the
+    // browser's drag-detection on mousedown can swallow the click meant
+    // for the player instead), so this keeps the two areas separate.
+    if (item.kind === 'audio') {
+      row.classList.add('draggable');
+      label.draggable = true;
+      label.addEventListener('dragstart', event => {
+        event.dataTransfer.setData('application/x-media-bank-index', String(index));
+        event.dataTransfer.effectAllowed = 'copy';
+      });
+    }
+    row.appendChild(label);
+
+    const player = document.createElement(item.kind === 'video' ? 'video' : 'audio');
+    player.controls = true;
+    player.src = item.previewUrl;
+    row.appendChild(player);
+
+    mediaBankListEl.appendChild(row);
+  });
+}
+
+// Uploads a freshly recorded/picked audio or video file, then adds it to
+// the list once saved - project_id is shared with footage/narration
+// uploads (see fetchUploadFootage/fetchUploadNarration), so everything for
+// one documentary lands under the same premiere_exports/<project_id>/.
+function addMediaBankItem(kind, label, file) {
+  mediaBankStatusEl.textContent = `Uploading "${label}" ...`;
+  mediaBankStatusEl.classList.remove('error');
+  fetchUploadMediaBankItem(file, premiereProjectId)
+    .then(({ project_id, preview_url }) => {
+      premiereProjectId = project_id;
+      mediaBankItems.push({ kind, label, previewUrl: preview_url });
+      mediaBankStatusEl.textContent = '';
+      renderMediaBankItems();
+      saveDebugSession();
+    })
+    .catch(err => {
+      mediaBankStatusEl.textContent = err.message;
+      mediaBankStatusEl.classList.add('error');
+    });
+}
+
+//#endregion
+
+//#region --- AI-GENERATED MATERIAL FOR STORYBOARD
 // Drafts (redrafts, every time) this section's visual/narration/entities/
 // video_query/audio_query - the same LLM call the sticky action bar's
 // "Generate Storyboard for All/Selected" makes in bulk (see
@@ -2863,6 +2948,114 @@ function runGenerateAnimatedSketch(section, technique, btn, statusEl) {
     });
 }
 
+// sectionsToUse is whatever the sticky action bar decided to target - the
+// current selection if non-empty, otherwise the whole arc (see
+// renderMovieEditor) - the movie editor always re-renders the full
+// remaining set regardless, so a subset regeneration doesn't hide every
+// other already-arranged card.
+function runGenerateStoryboardForSections(sectionsToUse, triggerBtn) {
+  if (sectionsToUse.length === 0) {
+    setStoryboardStatus('No arranged sections to build a storyboard from - arrange into a narrative arc first.', true);
+    return;
+  }
+
+  if (triggerBtn) triggerBtn.disabled = true;
+  setStoryboardStatus(sectionsToUse.length === 1
+    ? `Generating a storyboard for "${sectionsToUse[0].title}" ...`
+    : 'Generating a loose storyboard ...');
+
+  const documentaryGoal = (documentaryIntentInput ? documentaryIntentInput.value : recordedTranscript).trim();
+
+  // Combines text and narration rather than favoring one - see
+  // buildSectionBlock's Generate Sketch button/runGenerateSketch, which
+  // does the same for a single section; text may now hold anything from
+  // dragged-in technique reminders to source-material excerpts (see
+  // buildSectionBlock's drop handler), and narration is the actual spoken
+  // script, so both are meaningful context for what the shot should show.
+  // The backend only ever sees one "content" field per section either way.
+  fetchStoryboard(sectionsToUse.map(({ index, title, text, narration }) => ({
+    index, title, text: [text, narration].filter(part => part && part.trim()).join('\n\n'), act: currentAssignments[index],
+  })), documentaryGoal, currentArcSections.map(s => s.label), selectedDocumentaryMode)
+    .then(({ storyboard }) => {
+      storyboard.forEach(({ index, visual, narration, entities, video_query, audio_query }) => {
+        const section = currentSections.find(s => s.index === index);
+        if (section) {
+          section.visual = visual;
+          // Don't overwrite a real recorded/dragged narration (see
+          // finishAssigningNarrationAudio) with an LLM-invented line that
+          // no longer matches the actual audio - only fill narration in
+          // when there's no voice recording backing it yet.
+          if (!section.narrationAudioPreviewUrl) section.narration = narration;
+          section.entities = entities || [];
+          section.videoQuery = video_query;
+          section.audioQuery = audio_query;
+        }
+      });
+
+      setStoryboardStatus(`Done. Generated a storyboard for ${sectionsToUse.length} section${sectionsToUse.length === 1 ? '' : 's'}.`);
+      const remaining = currentSections.filter(section => !section.removed && currentAssignments[section.index]);
+      renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+      if (triggerBtn) triggerBtn.disabled = false;
+      editPlanActionEl.style.display = '';
+      premiereExportActionEl.style.display = '';
+      saveDebugSession();
+    })
+    .catch(err => {
+      setStoryboardStatus(err.message, true);
+      if (triggerBtn) triggerBtn.disabled = false;
+    });
+}
+
+// --- Edit plan: transitions/pacing/Ken-Burns/text-overlay suggestions over
+// an already-storyboarded (sub)set of the arc (backend/edit_plan_llm.py).
+// Only sections with a storyboard shot (visual+narration) are worth sending
+// - one the model never touches would have nothing to base editing choices
+// on. sectionsToUse follows the same convention as
+// runGenerateStoryboardForSections above. ---
+function runGenerateEditPlanForSections(sectionsToUse, triggerBtn) {
+  const storyboarded = sectionsToUse.filter(section => section.visual);
+  if (storyboarded.length === 0) {
+    setEditPlanStatus('No storyboarded sections yet - generate a storyboard first.', true);
+    return;
+  }
+
+  if (triggerBtn) triggerBtn.disabled = true;
+  setEditPlanStatus(storyboarded.length === 1
+    ? `Generating an edit plan for "${storyboarded[0].title}" ...`
+    : 'Generating an edit plan ...');
+  editPlanOverallNotesEl.textContent = '';
+
+  const documentaryGoal = (documentaryIntentInput ? documentaryIntentInput.value : recordedTranscript).trim();
+
+  fetchEditPlan(storyboarded.map(({ index, title, text, visual, narration, image }) => ({
+    index, title, text, visual, narration,
+    act: currentAssignments[index],
+    has_figure_image: !!image,
+  })), documentaryGoal, currentArcSections.map(s => s.label), selectedDocumentaryMode)
+    .then(({ shots, overall_notes }) => {
+      shots.forEach(({ index, transition_in, duration_seconds, ken_burns, text_overlay }) => {
+        const section = currentSections.find(s => s.index === index);
+        if (section) {
+          section.editPlan = { transitionIn: transition_in, durationSeconds: duration_seconds, kenBurns: ken_burns, textOverlay: text_overlay };
+        }
+      });
+      overallEditNotes = overall_notes || '';
+
+      setEditPlanStatus(`Done. Generated an edit plan for ${shots.length} shot${shots.length === 1 ? '' : 's'}.`);
+      if (overallEditNotes) editPlanOverallNotesEl.textContent = `Overall notes: ${overallEditNotes}`;
+      const remaining = currentSections.filter(section => !section.removed && currentAssignments[section.index]);
+      renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+      if (triggerBtn) triggerBtn.disabled = false;
+      saveDebugSession();
+    })
+    .catch(err => {
+      setEditPlanStatus(err.message, true);
+      if (triggerBtn) triggerBtn.disabled = false;
+    });
+}
+//#endregion
+
+//#region --- EXPORT TO VIDEO
 function runExportForPremiere() {
   const storyboarded = currentSections.filter(section => !section.removed && currentAssignments[section.index] && section.visual);
   if (storyboarded.length === 0) {
@@ -2935,8 +3128,9 @@ function runCheckForPreview() {
       checkPreviewBtn.disabled = false;
     });
 }
+//#endregion
 
-// --- Wiring ---
+//#region --- WIRING / LAYOUT REARRANGEMENT
 const fileInput = document.getElementById('paper-file-input');
 const extractBtn = document.getElementById('extract-paper-btn');
 const statusEl = document.getElementById('paper-status');
@@ -2963,6 +3157,113 @@ const premiereExportFolderEl = document.getElementById('premiere-export-folder')
 const checkPreviewBtn = document.getElementById('check-preview-btn');
 const previewStatusEl = document.getElementById('preview-status');
 const previewVideoEl = document.getElementById('preview-video');
+
+// Record Audio - same getUserMedia/MediaRecorder toggle pattern as
+// index.html's Record Your Intent button (see recordIntentBtn above), but
+// uploads into the open-ended media-bank list instead of the one fixed
+// intent-narration slot.
+let mediaAudioStream = null;
+let mediaAudioRecorder = null;
+if (recordMediaAudioBtn) {
+  recordMediaAudioBtn.addEventListener('click', async () => {
+    if (mediaAudioRecorder && mediaAudioRecorder.state === 'recording') {
+      mediaAudioRecorder.stop();
+      return;
+    }
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      mediaBankStatusEl.textContent = `Could not access microphone: ${err.message}`;
+      mediaBankStatusEl.classList.add('error');
+      return;
+    }
+    mediaAudioStream = stream;
+    const chunks = [];
+    mediaAudioRecorder = new MediaRecorder(stream);
+    const mimeType = mediaAudioRecorder.mimeType || 'audio/webm';
+    mediaAudioRecorder.addEventListener('dataavailable', event => {
+      if (event.data.size > 0) chunks.push(event.data);
+    });
+    mediaAudioRecorder.addEventListener('stop', () => {
+      mediaAudioStream.getTracks().forEach(track => track.stop());
+      recordMediaAudioBtn.textContent = 'Record audio';
+      const extensionMatch = /audio\/([a-z0-9]+)/i.exec(mimeType);
+      const extension = extensionMatch ? extensionMatch[1] : 'webm';
+      const blob = new Blob(chunks, { type: mimeType });
+      const file = new File([blob], `media-audio-${Date.now()}.${extension}`, { type: mimeType });
+      addMediaBankItem('audio', `Audio recording - ${new Date().toLocaleTimeString()}`, file);
+    });
+    mediaAudioRecorder.start();
+    recordMediaAudioBtn.textContent = 'Stop Recording';
+    mediaBankStatusEl.textContent = 'Recording audio - click again to stop.';
+    mediaBankStatusEl.classList.remove('error');
+  });
+}
+
+// Record Video - same webcam-recording pattern as buildSectionBlock's own
+// "Record Webcam" button (see recordBtn there), but with a standalone live
+// preview element (#media-bank-video-preview) instead of taking over a
+// shot card's visual box, since this isn't tied to any one shot.
+let mediaVideoStream = null;
+let mediaVideoRecorder = null;
+if (recordMediaVideoBtn) {
+  recordMediaVideoBtn.addEventListener('click', async () => {
+    if (mediaVideoRecorder && mediaVideoRecorder.state === 'recording') {
+      mediaVideoRecorder.stop();
+      return;
+    }
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    } catch (err) {
+      mediaBankStatusEl.textContent = `Could not access camera: ${err.message}`;
+      mediaBankStatusEl.classList.add('error');
+      return;
+    }
+    mediaVideoStream = stream;
+    mediaBankVideoPreviewEl.srcObject = stream;
+    mediaBankVideoPreviewEl.style.display = '';
+
+    const chunks = [];
+    mediaVideoRecorder = new MediaRecorder(stream);
+    // See buildSectionBlock's own webcamMimeType comment - not necessarily
+    // webm (e.g. Safari produces video/mp4), so this has to be read back
+    // rather than assumed, or the saved file gets labeled with the wrong
+    // extension and silently fails to play back later.
+    const mediaVideoMimeType = mediaVideoRecorder.mimeType || 'video/webm';
+    mediaVideoRecorder.addEventListener('dataavailable', event => {
+      if (event.data.size > 0) chunks.push(event.data);
+    });
+    mediaVideoRecorder.addEventListener('stop', () => {
+      mediaVideoStream.getTracks().forEach(track => track.stop());
+      mediaBankVideoPreviewEl.style.display = 'none';
+      mediaBankVideoPreviewEl.srcObject = null;
+      recordMediaVideoBtn.textContent = 'Record Video';
+      const extensionMatch = /video\/([a-z0-9]+)/i.exec(mediaVideoMimeType);
+      const extension = extensionMatch ? extensionMatch[1] : 'webm';
+      const blob = new Blob(chunks, { type: mediaVideoMimeType });
+      const file = new File([blob], `media-video-${Date.now()}.${extension}`, { type: mediaVideoMimeType });
+      addMediaBankItem('video', `Video recording - ${new Date().toLocaleTimeString()}`, file);
+    });
+    mediaVideoRecorder.start();
+    recordMediaVideoBtn.textContent = 'Stop Recording';
+    mediaBankStatusEl.textContent = 'Recording video - click again to stop.';
+    mediaBankStatusEl.classList.remove('error');
+  });
+}
+
+// Upload File - either an audio or video file from disk, kind inferred
+// from its own MIME type rather than a separate audio/video picker.
+if (uploadMediaInput) {
+  uploadMediaInput.addEventListener('change', () => {
+    const file = uploadMediaInput.files[0];
+    if (!file) return;
+    const kind = file.type.startsWith('video/') ? 'video' : 'audio';
+    addMediaBankItem(kind, file.name, file);
+    uploadMediaInput.value = '';
+  });
+}
 
 // --- Floating "Split into new section" button: appears near the cursor
 // when the presenter highlights text inside a section's body (works whether
@@ -3082,310 +3383,6 @@ function setPreviewStatus(message, isError) {
   previewStatusEl.classList.toggle('error', !!isError);
 }
 
-// sectionsToUse is whatever the sticky action bar decided to target - the
-// current selection if non-empty, otherwise the whole arc (see
-// renderMovieEditor) - the movie editor always re-renders the full
-// remaining set regardless, so a subset regeneration doesn't hide every
-// other already-arranged card.
-function runGenerateStoryboardForSections(sectionsToUse, triggerBtn) {
-  if (sectionsToUse.length === 0) {
-    setStoryboardStatus('No arranged sections to build a storyboard from - arrange into a narrative arc first.', true);
-    return;
-  }
-
-  if (triggerBtn) triggerBtn.disabled = true;
-  setStoryboardStatus(sectionsToUse.length === 1
-    ? `Generating a storyboard for "${sectionsToUse[0].title}" ...`
-    : 'Generating a loose storyboard ...');
-
-  const documentaryGoal = (documentaryIntentInput ? documentaryIntentInput.value : recordedTranscript).trim();
-
-  // Combines text and narration rather than favoring one - see
-  // buildSectionBlock's Generate Sketch button/runGenerateSketch, which
-  // does the same for a single section; text may now hold anything from
-  // dragged-in technique reminders to source-material excerpts (see
-  // buildSectionBlock's drop handler), and narration is the actual spoken
-  // script, so both are meaningful context for what the shot should show.
-  // The backend only ever sees one "content" field per section either way.
-  fetchStoryboard(sectionsToUse.map(({ index, title, text, narration }) => ({
-    index, title, text: [text, narration].filter(part => part && part.trim()).join('\n\n'), act: currentAssignments[index],
-  })), documentaryGoal, currentArcSections.map(s => s.label), selectedDocumentaryMode)
-    .then(({ storyboard }) => {
-      storyboard.forEach(({ index, visual, narration, entities, video_query, audio_query }) => {
-        const section = currentSections.find(s => s.index === index);
-        if (section) {
-          section.visual = visual;
-          // Don't overwrite a real recorded/dragged narration (see
-          // finishAssigningNarrationAudio) with an LLM-invented line that
-          // no longer matches the actual audio - only fill narration in
-          // when there's no voice recording backing it yet.
-          if (!section.narrationAudioPreviewUrl) section.narration = narration;
-          section.entities = entities || [];
-          section.videoQuery = video_query;
-          section.audioQuery = audio_query;
-        }
-      });
-
-      setStoryboardStatus(`Done. Generated a storyboard for ${sectionsToUse.length} section${sectionsToUse.length === 1 ? '' : 's'}.`);
-      const remaining = currentSections.filter(section => !section.removed && currentAssignments[section.index]);
-      renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
-      if (triggerBtn) triggerBtn.disabled = false;
-      editPlanActionEl.style.display = '';
-      premiereExportActionEl.style.display = '';
-      saveDebugSession();
-    })
-    .catch(err => {
-      setStoryboardStatus(err.message, true);
-      if (triggerBtn) triggerBtn.disabled = false;
-    });
-}
-
-// --- Edit plan: transitions/pacing/Ken-Burns/text-overlay suggestions over
-// an already-storyboarded (sub)set of the arc (backend/edit_plan_llm.py).
-// Only sections with a storyboard shot (visual+narration) are worth sending
-// - one the model never touches would have nothing to base editing choices
-// on. sectionsToUse follows the same convention as
-// runGenerateStoryboardForSections above. ---
-function runGenerateEditPlanForSections(sectionsToUse, triggerBtn) {
-  const storyboarded = sectionsToUse.filter(section => section.visual);
-  if (storyboarded.length === 0) {
-    setEditPlanStatus('No storyboarded sections yet - generate a storyboard first.', true);
-    return;
-  }
-
-  if (triggerBtn) triggerBtn.disabled = true;
-  setEditPlanStatus(storyboarded.length === 1
-    ? `Generating an edit plan for "${storyboarded[0].title}" ...`
-    : 'Generating an edit plan ...');
-  editPlanOverallNotesEl.textContent = '';
-
-  const documentaryGoal = (documentaryIntentInput ? documentaryIntentInput.value : recordedTranscript).trim();
-
-  fetchEditPlan(storyboarded.map(({ index, title, text, visual, narration, image }) => ({
-    index, title, text, visual, narration,
-    act: currentAssignments[index],
-    has_figure_image: !!image,
-  })), documentaryGoal, currentArcSections.map(s => s.label), selectedDocumentaryMode)
-    .then(({ shots, overall_notes }) => {
-      shots.forEach(({ index, transition_in, duration_seconds, ken_burns, text_overlay }) => {
-        const section = currentSections.find(s => s.index === index);
-        if (section) {
-          section.editPlan = { transitionIn: transition_in, durationSeconds: duration_seconds, kenBurns: ken_burns, textOverlay: text_overlay };
-        }
-      });
-      overallEditNotes = overall_notes || '';
-
-      setEditPlanStatus(`Done. Generated an edit plan for ${shots.length} shot${shots.length === 1 ? '' : 's'}.`);
-      if (overallEditNotes) editPlanOverallNotesEl.textContent = `Overall notes: ${overallEditNotes}`;
-      const remaining = currentSections.filter(section => !section.removed && currentAssignments[section.index]);
-      renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
-      if (triggerBtn) triggerBtn.disabled = false;
-      saveDebugSession();
-    })
-    .catch(err => {
-      setEditPlanStatus(err.message, true);
-      if (triggerBtn) triggerBtn.disabled = false;
-    });
-}
-
-// Pre-populated reference footage (see assets/ at the repo root, served
-// statically the same way premiere_exports/ is) - Record Audio/Record
-// Video are hidden for now (see styles-index.css), so this is the
-// standing way to have something to work with in "Your Media" without
-// depending on the recording pipeline. Kept in sync by convention with
-// assets/'s actual contents - no build step scans the directory, so a
-// file added/removed there needs a matching edit here.
-// Kept in sync by hand with what's actually in assets/ - listing a
-// filename here that isn't actually there gives a list entry whose player
-// can never load anything (verified live: assets/ only ever had 5 of an
-// originally-intended 13 clips).
-const MEDIA_BANK_ASSET_DEFAULTS = [
-  'IMG_2387.mp4', 'IMG_2388.mp4', 'IMG_2389.mp4', 'IMG_2390.mp4',
-  'IMG_2391.mp4',
-].map(filename => ({ kind: 'video', label: filename, previewUrl: `/assets/${filename}` }));
-
-//#region --- YOUR MEDIA (storyboard.html only) - a running collection of
-// supplementary reference audio/video the presenter records or uploads in
-// #media-bank-module, separate from (in addition to) the one documentary-
-// intent narration recorded on index.html. Each item just holds enough to
-// play it back (a disk-served preview_url, same convention as footage/
-// narration elsewhere in this file) - never re-fetched/decoded through the
-// Web Audio API the way the intent narration is, since a plain <audio>/
-// <video src> already handles arbitrary-length playback natively and none
-// of this needs a waveform or proportional timing. Starts pre-populated
-// with MEDIA_BANK_ASSET_DEFAULTS above rather than restored from a saved
-// session (see restoreDebugSession, which doesn't touch this) - a
-// deliberate reset ("for now"), not persisted per-session state.
-let mediaBankItems = MEDIA_BANK_ASSET_DEFAULTS.slice();
-
-function renderMediaBankItems() {
-  if (!mediaBankListEl) return;
-  mediaBankListEl.innerHTML = '';
-  mediaBankItems.forEach((item, index) => {
-    const row = document.createElement('div');
-    row.className = 'media-bank-item';
-
-    const label = document.createElement('div');
-    label.className = 'media-bank-item-label';
-    label.textContent = item.label;
-
-    // Audio items only - dragged onto a section's narration area (see
-    // buildSectionBlock's drop handler) to use as that shot's narration.
-    // The index (not the item itself) is what's carried across the drag,
-    // since dataTransfer can only hold strings. draggable lives on the
-    // label specifically, not the whole row (which also contains the
-    // player below) - a draggable ancestor is a known way to break normal
-    // clicks on native <audio>/<video> controls in some browsers (the
-    // browser's drag-detection on mousedown can swallow the click meant
-    // for the player instead), so this keeps the two areas separate.
-    if (item.kind === 'audio') {
-      row.classList.add('draggable');
-      label.draggable = true;
-      label.addEventListener('dragstart', event => {
-        event.dataTransfer.setData('application/x-media-bank-index', String(index));
-        event.dataTransfer.effectAllowed = 'copy';
-      });
-    }
-    row.appendChild(label);
-
-    const player = document.createElement(item.kind === 'video' ? 'video' : 'audio');
-    player.controls = true;
-    player.src = item.previewUrl;
-    row.appendChild(player);
-
-    mediaBankListEl.appendChild(row);
-  });
-}
-
-// Uploads a freshly recorded/picked audio or video file, then adds it to
-// the list once saved - project_id is shared with footage/narration
-// uploads (see fetchUploadFootage/fetchUploadNarration), so everything for
-// one documentary lands under the same premiere_exports/<project_id>/.
-function addMediaBankItem(kind, label, file) {
-  mediaBankStatusEl.textContent = `Uploading "${label}" ...`;
-  mediaBankStatusEl.classList.remove('error');
-  fetchUploadMediaBankItem(file, premiereProjectId)
-    .then(({ project_id, preview_url }) => {
-      premiereProjectId = project_id;
-      mediaBankItems.push({ kind, label, previewUrl: preview_url });
-      mediaBankStatusEl.textContent = '';
-      renderMediaBankItems();
-      saveDebugSession();
-    })
-    .catch(err => {
-      mediaBankStatusEl.textContent = err.message;
-      mediaBankStatusEl.classList.add('error');
-    });
-}
-
-// Record Audio - same getUserMedia/MediaRecorder toggle pattern as
-// index.html's Record Your Intent button (see recordIntentBtn above), but
-// uploads into the open-ended media-bank list instead of the one fixed
-// intent-narration slot.
-let mediaAudioStream = null;
-let mediaAudioRecorder = null;
-if (recordMediaAudioBtn) {
-  recordMediaAudioBtn.addEventListener('click', async () => {
-    if (mediaAudioRecorder && mediaAudioRecorder.state === 'recording') {
-      mediaAudioRecorder.stop();
-      return;
-    }
-    let stream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch (err) {
-      mediaBankStatusEl.textContent = `Could not access microphone: ${err.message}`;
-      mediaBankStatusEl.classList.add('error');
-      return;
-    }
-    mediaAudioStream = stream;
-    const chunks = [];
-    mediaAudioRecorder = new MediaRecorder(stream);
-    const mimeType = mediaAudioRecorder.mimeType || 'audio/webm';
-    mediaAudioRecorder.addEventListener('dataavailable', event => {
-      if (event.data.size > 0) chunks.push(event.data);
-    });
-    mediaAudioRecorder.addEventListener('stop', () => {
-      mediaAudioStream.getTracks().forEach(track => track.stop());
-      recordMediaAudioBtn.textContent = 'Record audio';
-      const extensionMatch = /audio\/([a-z0-9]+)/i.exec(mimeType);
-      const extension = extensionMatch ? extensionMatch[1] : 'webm';
-      const blob = new Blob(chunks, { type: mimeType });
-      const file = new File([blob], `media-audio-${Date.now()}.${extension}`, { type: mimeType });
-      addMediaBankItem('audio', `Audio recording - ${new Date().toLocaleTimeString()}`, file);
-    });
-    mediaAudioRecorder.start();
-    recordMediaAudioBtn.textContent = 'Stop Recording';
-    mediaBankStatusEl.textContent = 'Recording audio - click again to stop.';
-    mediaBankStatusEl.classList.remove('error');
-  });
-}
-
-// Record Video - same webcam-recording pattern as buildSectionBlock's own
-// "Record Webcam" button (see recordBtn there), but with a standalone live
-// preview element (#media-bank-video-preview) instead of taking over a
-// shot card's visual box, since this isn't tied to any one shot.
-let mediaVideoStream = null;
-let mediaVideoRecorder = null;
-if (recordMediaVideoBtn) {
-  recordMediaVideoBtn.addEventListener('click', async () => {
-    if (mediaVideoRecorder && mediaVideoRecorder.state === 'recording') {
-      mediaVideoRecorder.stop();
-      return;
-    }
-    let stream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    } catch (err) {
-      mediaBankStatusEl.textContent = `Could not access camera: ${err.message}`;
-      mediaBankStatusEl.classList.add('error');
-      return;
-    }
-    mediaVideoStream = stream;
-    mediaBankVideoPreviewEl.srcObject = stream;
-    mediaBankVideoPreviewEl.style.display = '';
-
-    const chunks = [];
-    mediaVideoRecorder = new MediaRecorder(stream);
-    // See buildSectionBlock's own webcamMimeType comment - not necessarily
-    // webm (e.g. Safari produces video/mp4), so this has to be read back
-    // rather than assumed, or the saved file gets labeled with the wrong
-    // extension and silently fails to play back later.
-    const mediaVideoMimeType = mediaVideoRecorder.mimeType || 'video/webm';
-    mediaVideoRecorder.addEventListener('dataavailable', event => {
-      if (event.data.size > 0) chunks.push(event.data);
-    });
-    mediaVideoRecorder.addEventListener('stop', () => {
-      mediaVideoStream.getTracks().forEach(track => track.stop());
-      mediaBankVideoPreviewEl.style.display = 'none';
-      mediaBankVideoPreviewEl.srcObject = null;
-      recordMediaVideoBtn.textContent = 'Record Video';
-      const extensionMatch = /video\/([a-z0-9]+)/i.exec(mediaVideoMimeType);
-      const extension = extensionMatch ? extensionMatch[1] : 'webm';
-      const blob = new Blob(chunks, { type: mediaVideoMimeType });
-      const file = new File([blob], `media-video-${Date.now()}.${extension}`, { type: mediaVideoMimeType });
-      addMediaBankItem('video', `Video recording - ${new Date().toLocaleTimeString()}`, file);
-    });
-    mediaVideoRecorder.start();
-    recordMediaVideoBtn.textContent = 'Stop Recording';
-    mediaBankStatusEl.textContent = 'Recording video - click again to stop.';
-    mediaBankStatusEl.classList.remove('error');
-  });
-}
-
-// Upload File - either an audio or video file from disk, kind inferred
-// from its own MIME type rather than a separate audio/video picker.
-if (uploadMediaInput) {
-  uploadMediaInput.addEventListener('change', () => {
-    const file = uploadMediaInput.files[0];
-    if (!file) return;
-    const kind = file.type.startsWith('video/') ? 'video' : 'audio';
-    addMediaBankItem(kind, file.name, file);
-    uploadMediaInput.value = '';
-  });
-}
-//#endregion
-
 // extractBtn only exists on index.html; exportPremiereBtn/checkPreviewBtn
 // only exist on storyboard.html - both index.html and storyboard.html load
 // this same shared script, so each wiring is guarded to be a no-op on the
@@ -3471,7 +3468,9 @@ if (uploadSidebarToggle) {
     uploadSidebarToggle.title = collapsed ? 'Expand' : 'Collapse';
   });
 }
+//#endregion
 
+//#region SESSION CACHE
 // --- Cross-page session persistence ---
 // index.html and storyboard.html are two separate pages (see html/
 // storyboard.html), so a real navigation between them clears all in-memory
@@ -3643,3 +3642,4 @@ if (restoredSession) {
     }
   }
 }
+//#endregion
