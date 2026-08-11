@@ -23,6 +23,8 @@ import os
 
 import httpx
 
+from documentary_modes import DOCUMENTARY_MODES, DOCUMENTARY_MODE_KEYS
+
 try:
     from openai import OpenAI
 except ImportError:  # openai isn't installed - client stays unconfigured
@@ -92,20 +94,36 @@ def _format_template(template):
 
 _TEMPLATE_LINES = '\n'.join(_format_template(t) for t in ARC_TEMPLATES)
 
+def _format_mode(mode):
+    return f'- "{mode["key"]}" ({mode["label"]}): {mode["description"]}'
+
+_MODE_LINES = '\n'.join(_format_mode(m) for m in DOCUMENTARY_MODES)
+
 # Used by suggest_arcs_from_intent below - reuses the ARC_TEMPLATES catalog
 # and its invent-if-none-fit instruction, but returns several ranked
 # candidates instead of committing to one, and asks for reasoning tied to
 # what the filmmaker actually said - the frontend shows that reasoning next
 # to the top pick, and the rest as alternative chips the presenter can pick
-# instead (see js/paper-extract.js's Record Your Intent flow).
-_SYSTEM_PROMPT_SUGGEST_ARCS = f"""You are helping a filmmaker plan a video essay based on an academic paper. The filmmaker has described what they want the documentary to convey - usually a spoken narration transcript, but they may instead (or also) have picked one or more short statements describing the kind of documentary they want to make. You'll be given whichever of those two they provided (always at least one). Your job is to recommend which narrative arc(s) best fit what they've described.
+# instead (see js/paper-extract.js's Record Your Intent flow). Also asks
+# for a suggested documentary mode (documentary_modes.py) from the same
+# source material - a separate, independent axis from arc structure (style
+# vs. shape), but grounding both in the same signal at the same step means
+# the presenter gets a starting point for the mode picker (see
+# js/paper-extract.js's DOCUMENTARY_MODES chip row) right when they'd
+# otherwise have to pick one blind.
+_SYSTEM_PROMPT_SUGGEST_ARCS = f"""You are helping a filmmaker plan a video essay based on an academic paper. The filmmaker has described what they want the documentary to convey - usually a spoken narration transcript, but they may instead (or also) have picked one or more short statements describing the kind of documentary they want to make. You'll be given whichever of those two they provided (always at least one), and the paper's own abstract if it's available. Your job is to recommend which narrative arc(s) best fit what they've described, and which documentary mode (a separate, independent stylistic choice - not part of the arc itself) best fits the same material.
 
 Five common templates (name: parts (with descriptions)):
 {_TEMPLATE_LINES}
 
-Recommend the single best-fitting arc first, followed by 2-4 other reasonable alternative arcs, ranked roughly by fit. For each one, prefer reusing one of the five templates above verbatim (matching its exact name, part names, descriptions, spelling, and order) if it's a reasonable fit for what the filmmaker described; invent a new one (a short 3-8 word name of your own, plus 3-7 short named parts, in the order a viewer would encounter them, each with a one-sentence description) only if none of the five fit well - don't invent a near-duplicate of one that already fits. Only the top recommendation needs a written reason: write 1-3 sentences that concretely reference specific things the filmmaker actually said (in their narration and/or their chosen focus statement(s), whichever they gave you), explaining why this arc fits - don't invent details not present in what they gave you.
+Recommend the single best-fitting arc first, followed by 2-4 other reasonable alternative arcs, ranked roughly by fit. For each one, prefer reusing one of the five templates above verbatim (matching its exact name, part names, descriptions, spelling, and order) if it's a reasonable fit for what the filmmaker described; invent a new one (a short 3-8 word name of your own, plus 3-7 short named parts, in the order a viewer would encounter them, each with a one-sentence description) only if none of the five fit well - don't invent a near-duplicate of one that already fits. Only the top recommendation needs a written reason: write 1-3 sentences that concretely reference specific things the filmmaker actually said (in their narration and/or their chosen focus statement(s), whichever they gave you) or that the paper's abstract establishes, explaining why this arc fits - don't invent details not present in what they gave you.
 
-Respond with a single JSON object of the exact shape {{"recommended": {{"arc_name": "<short name for this whole arc>", "sections": [{{"name": "<part name>", "description": "<one sentence on what this part should illustrate>"}}, ...], "reasoning": "<1-3 sentences>"}}, "alternatives": [{{"arc_name": "...", "sections": [{{"name": "...", "description": "..."}}, ...]}}, ...]}}, each sections list in narrative order, with 2-4 entries in alternatives. Respond with only the JSON object, no other text."""
+Four documentary modes (key (label): description):
+{_MODE_LINES}
+
+Also recommend the single best-fitting documentary mode from that list, with its own one-sentence reason (same grounding rule - reference something actually said or established, don't invent).
+
+Respond with a single JSON object of the exact shape {{"recommended": {{"arc_name": "<short name for this whole arc>", "sections": [{{"name": "<part name>", "description": "<one sentence on what this part should illustrate>"}}, ...], "reasoning": "<1-3 sentences>"}}, "alternatives": [{{"arc_name": "...", "sections": [{{"name": "...", "description": "..."}}, ...]}}, ...], "documentary_mode": {{"key": "<one of the 4 mode keys above>", "reasoning": "<one sentence>"}}}}, each sections list in narrative order, with 2-4 entries in alternatives. Respond with only the JSON object, no other text."""
 
 class NarrativeArcLLMCallError(Exception):
     pass
@@ -143,7 +161,7 @@ class NarrativeArcLLMClient:
             self._client = OpenAI(**kwargs)
         return self._client
 
-    def suggest_arcs_from_intent(self, transcript, focus_statements=None):
+    def suggest_arcs_from_intent(self, transcript, focus_statements=None, abstract=None):
         """transcript: the full text of a filmmaker's spoken narration -
         optional (pass '' or None) if the presenter never recorded and only
         picked focus_statements instead (see js/paper-extract.js's
@@ -156,17 +174,29 @@ class NarrativeArcLLMClient:
         transcript isn't. At least one of transcript/focus_statements must
         be given - the caller (server.py's /paper/suggest_arcs route)
         enforces this before calling.
+        abstract: optional text of the extracted paper's own abstract
+        section, if the paper had one and it was found (see server.py's
+        route, which does that lookup) - additional grounding alongside
+        whatever the filmmaker said, not a substitute for it.
         Ranks the single best-fitting arc (with reasoning tied to what the
         filmmaker actually said) plus a few alternatives, letting the
         presenter accept the top pick or choose a different one - once
         accepted, its named parts become the narrative-act groups the
         frontend shows right away (js/paper-extract.js's runAcceptArc), with
-        no further LLM call to place paper sections into them.
+        no further LLM call to place paper sections into them. Also
+        suggests a documentary mode (documentary_modes.py) from the same
+        material - independent of the arc itself (style, not structure), a
+        starting point for js/paper-extract.js's mode-picker chip row
+        rather than something the presenter has to commit to.
         Returns (recommended: {'arc_name': str, 'sections': [{'name': str, 'description': str}, ...], 'reasoning': str},
-        alternatives: [{'arc_name': str, 'sections': [...]}, ...]) - arc_name
+        alternatives: [{'arc_name': str, 'sections': [...]}, ...],
+        documentary_mode: {'key': str, 'reasoning': str} or None) - arc_name
         is a short label for the whole arc (distinct from each part's own
         name), so the frontend can show/label alternatives without having
-        to summarize a whole sections list itself."""
+        to summarize a whole sections list itself. documentary_mode is an
+        enrichment, not a requirement (same posture as /paper/storyboard's
+        entity extraction) - a malformed/missing mode in an otherwise-good
+        response just means None, not a wasted retry over the whole call."""
         if not self.is_configured():
             raise NarrativeArcLLMCallError('LLM client is not configured (missing API key or openai package)')
 
@@ -176,6 +206,8 @@ class NarrativeArcLLMClient:
         if focus_statements:
             bulleted = '\n'.join(f'- {s}' for s in focus_statements)
             parts.append(f'Chosen focus statement(s):\n{bulleted}')
+        if abstract:
+            parts.append(f"The paper's own abstract:\n\n{abstract}")
         user_content = '\n\n'.join(parts)
 
         def parse_arc(raw):
@@ -230,7 +262,17 @@ class NarrativeArcLLMClient:
                 if not alternatives:
                     raise ValueError(f'no valid alternatives in response: {alternatives_raw!r}')
 
-                return recommended, alternatives
+                # Tolerant, not required - see this method's own docstring
+                # on why a bad mode suggestion doesn't retry the whole call.
+                documentary_mode = None
+                mode_raw = parsed.get('documentary_mode')
+                if isinstance(mode_raw, dict):
+                    mode_key = (mode_raw.get('key') or '').strip()
+                    mode_reasoning = (mode_raw.get('reasoning') or '').strip()
+                    if mode_key in DOCUMENTARY_MODE_KEYS and mode_reasoning:
+                        documentary_mode = {'key': mode_key, 'reasoning': mode_reasoning}
+
+                return recommended, alternatives, documentary_mode
             except Exception as exc:  # network errors, malformed JSON, API errors
                 last_error = exc
         raise NarrativeArcLLMCallError(f'Arc suggestion failed after retry: {last_error}')

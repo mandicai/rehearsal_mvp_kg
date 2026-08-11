@@ -48,13 +48,14 @@ const API_BASE_URL = window.API_BASE_URL || _detectApiBaseUrl();
 
 const SUGGEST_ARCS_API_URL = `${API_BASE_URL}/paper/suggest_arcs`;
 
-function fetchSuggestArcs(transcript, focusStatements) {
+function fetchSuggestArcs(transcript, focusStatements, abstract) {
   return fetch(SUGGEST_ARCS_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       transcript,
       ...(focusStatements && focusStatements.length ? { focus_statements: focusStatements } : {}),
+      ...(abstract ? { abstract } : {}),
     })
   })
     .then(handleJsonResponse)

@@ -1307,6 +1307,16 @@ body.pub-to-doc-page .graph-panel ul li::before {
   border: 1px solid #FFFFFF;
 }
 
+/* Marks which documentary-mode chip the LLM suggested (see
+   js/paper-extract.js's renderArcSuggestion) - a ring rather than a
+   background/border change, since it needs to stay visible whether or not
+   .selected is also applied (the suggestion starts pre-selected, but the
+   presenter can pick a different mode afterward without losing track of
+   which one was originally suggested). */
+.chip.suggested.llm-suggested {
+  box-shadow: 0 0 0 2px #f18700;
+}
+
 /* Not used by feedback.html's own UI right now (it's built around the
    progressive timeline instead - see #feedback-timeline below), but kept
    alongside js/helpers.js's fetchFeedback()/renderFeedbackResult() (the

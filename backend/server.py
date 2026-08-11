@@ -22,9 +22,12 @@ the first request downloads Docling's layout/OCR model weights (needs
 internet access once).
 
 Also exposes narrative_arc_llm.py's ranked narrative-arc recommendations
-from a recorded intent narration and/or a few chosen focus statements, at
-/paper/suggest_arcs - unlike /paper/extract, this does need an LLM key and
-returns 503 without one.
+from a recorded intent narration and/or a few chosen focus statements (plus
+the paper's own abstract, if the frontend found one) at /paper/suggest_arcs
+- unlike /paper/extract, this does need an LLM key and returns 503 without
+one. Also returns a suggested documentary_mode from that same material
+(enrichment, not required - see narrative_arc_llm.py's own docstring),
+letting the frontend's mode-picker start pre-suggested instead of blank.
 
 Also exposes storyboard_llm.py's LLM-generated loose storyboard (a visual
 direction + narration line per already-arranged section) at
@@ -170,6 +173,14 @@ MAX_DOCUMENTARY_GOAL_CHARS = 500
 # MAX_DOCUMENTARY_GOAL_CHARS, but still bounded to keep prompt size/latency
 # reasonable for a single request.
 MAX_NARRATION_TRANSCRIPT_CHARS = 20_000
+
+# Bound on the optional "abstract" text /paper/suggest_arcs' request can
+# carry (see that route below) - the extracted paper's own abstract
+# section, if the frontend found one (see js/paper-extract.js's
+# findAbstractText). Real abstracts run a few hundred words; this is
+# generous headroom, not an expected length, same posture as
+# MAX_DOCUMENTARY_GOAL_CHARS above.
+MAX_ABSTRACT_CHARS = 3_000
 
 # Bound on the optional "arc_sections" list /paper/storyboard and
 # /paper/edit_plan can accept - the accepted arc's part names, in order,
@@ -438,6 +449,7 @@ def paper_suggest_arcs():
     # sections into them; the presenter does that manually from there.
     data = request.get_json(silent=True) or {}
     transcript = (data.get('transcript') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS]
+    abstract = (data.get('abstract') or '').strip()[:MAX_ABSTRACT_CHARS]
 
     focus_statements_raw = data.get('focus_statements')
     focus_statements = None
@@ -450,6 +462,8 @@ def paper_suggest_arcs():
     # A recording is the usual case, but the presenter can reach this step
     # via a chosen focus chip alone (see js/paper-extract.js's
     # updateComposeStoryboardVisibility) - only reject if neither exists.
+    # abstract is pure enrichment on top of either, never required on its
+    # own (see narrative_arc_llm.py's own docstring).
     if not transcript and not focus_statements:
         return jsonify({'error': 'transcript or focus_statements is required'}), 400
 
@@ -457,11 +471,11 @@ def paper_suggest_arcs():
         return jsonify({'error': _NARRATIVE_ARC_NOT_CONFIGURED_ERROR}), 503
 
     try:
-        recommended, alternatives = narrative_arc_client.suggest_arcs_from_intent(transcript, focus_statements)
+        recommended, alternatives, documentary_mode = narrative_arc_client.suggest_arcs_from_intent(transcript, focus_statements, abstract)
     except NarrativeArcLLMCallError as exc:
         return jsonify({'error': str(exc)}), 500
 
-    return jsonify({'recommended': recommended, 'alternatives': alternatives})
+    return jsonify({'recommended': recommended, 'alternatives': alternatives, 'documentary_mode': documentary_mode})
 
 
 _STORYBOARD_NOT_CONFIGURED_ERROR = (
