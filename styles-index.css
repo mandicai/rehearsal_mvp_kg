@@ -20,12 +20,12 @@
 
 /* Temporarily hidden on each shot card (see js/paper-extract.js's
    buildSectionBlock) - Record Webcam records fresh footage per section,
-   and Find Footage searches stock video by query, both for now set aside
-   in favor of the pre-populated "Your Media" assets (see
+   set aside in favor of the pre-populated "Your Media" assets (see
    MEDIA_BANK_ASSET_DEFAULTS) - a one-line revert (delete this rule) once
-   either's ready to show again. */
-.record-webcam-btn,
-.find-footage-btn {
+   it's ready to show again. Find Footage un-hidden again now that
+   /media/search_video has real archival sources (Internet Archive/
+   Library of Congress) worth actually using, not just Pexels. */
+.record-webcam-btn {
   display: none !important;
 }
 
