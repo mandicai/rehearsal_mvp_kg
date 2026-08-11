@@ -25,9 +25,7 @@ Also exposes narrative_arc_llm.py's ranked narrative-arc recommendations
 from a recorded intent narration and/or a few chosen focus statements (plus
 the paper's own abstract, if the frontend found one) at /paper/suggest_arcs
 - unlike /paper/extract, this does need an LLM key and returns 503 without
-one. Also returns a suggested documentary_mode from that same material
-(enrichment, not required - see narrative_arc_llm.py's own docstring),
-letting the frontend's mode-picker start pre-suggested instead of blank.
+one.
 
 Also exposes storyboard_llm.py's LLM-generated loose storyboard (a visual
 direction + narration line per already-arranged section) at
@@ -471,11 +469,11 @@ def paper_suggest_arcs():
         return jsonify({'error': _NARRATIVE_ARC_NOT_CONFIGURED_ERROR}), 503
 
     try:
-        recommended, alternatives, documentary_mode = narrative_arc_client.suggest_arcs_from_intent(transcript, focus_statements, abstract)
+        recommended, alternatives = narrative_arc_client.suggest_arcs_from_intent(transcript, focus_statements, abstract)
     except NarrativeArcLLMCallError as exc:
         return jsonify({'error': str(exc)}), 500
 
-    return jsonify({'recommended': recommended, 'alternatives': alternatives, 'documentary_mode': documentary_mode})
+    return jsonify({'recommended': recommended, 'alternatives': alternatives})
 
 
 _STORYBOARD_NOT_CONFIGURED_ERROR = (

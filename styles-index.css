@@ -223,9 +223,10 @@ body {
 .source-material-item {
   padding: 8px 10px;
   border-radius: 6px;
-  background: rgba(0, 0, 0, 0.15);
+  /* background: rgba(0, 0, 0, 0.15); */
   cursor: grab;
-  border: 1px dashed rgba(255, 255, 255, 0.4);
+  border: 1px solid var(--cd-border);
+  /* border: 1px dashed rgba(255, 255, 255, 0.4); */
 }
 
 .source-material-item-title {
@@ -311,7 +312,7 @@ input[type="file"]::file-selector-button:hover {
 
 /* #region EXTRACTED SOURCE MATERIAL */
 #paper-sections {
-  background: var(--cd-panel-bg);
+  /* background: var(--cd-panel-bg); */
   padding: 24px 24px 24px 24px;
   border-radius: 8px;
   /* Overrides .upload-sidebar's text-align: center while this sits nested
@@ -562,6 +563,27 @@ body.pub-to-doc-page .action-bar {
   gap: 20px;
 }
 
+/* Below the timeline: a sidebar (Documentary techniques + Documentary
+   modes) beside the rows - the same 2-column arrangement the old
+   .narrative-arc-outline sidebar used (see js/paper-extract.js's
+   renderMovieEditor), just holding these two instead of that sidebar's own
+   jump-list, which the timeline above now handles instead. */
+.narrative-arc-inner-layout {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.narrative-side-panel {
+  flex: 0 0 220px;
+  min-width: 0;
+  position: sticky;
+  top: 110px; /* below the sticky .premiere-timeline (top: 0) above it */
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 /* Premiere-style A-roll/B-roll timeline (see js/paper-extract.js's
    buildNarrativeTimeline) - replaces the old vertical .narrative-arc-outline
    sidebar (a jump-list of acts) with a horizontal one grouped by act,
@@ -570,7 +592,7 @@ body.pub-to-doc-page .action-bar {
    reachable while scrolling a long list of rows, same utility as before. */
 .premiere-timeline {
   position: sticky;
-  top: 70px;
+  top: 0;
   z-index: 15;
   display: flex;
   flex-direction: column;
@@ -627,14 +649,18 @@ body.pub-to-doc-page .action-bar {
   display: flex;
   gap: 2px;
   min-width: 0;
+  overflow: hidden; /* safety net - clips can't spill into a neighboring act's space even if their own min-width floor (removed below) ever comes back */
 }
 
 /* Unfilled by default (nothing recorded/assigned for this shot yet on
    this track) - .drafted/.filled below layer on top as that shot gets a
-   text-only draft, then a real recorded/generated asset. */
+   text-only draft, then a real recorded/generated asset. No min-width
+   floor (verified live: a 4px one let clips hang past their act's own
+   width once an act had enough sections that 4px-per-clip summed past
+   its actual flex-basis:0 share) - flex-shrink:1 with no floor lets every
+   clip shrink to whatever width its act's section count actually leaves it. */
 .premiere-timeline-clip {
   flex: 1 1 0;
-  min-width: 4px;
   height: 22px;
   border-radius: 3px;
   background: rgba(255, 255, 255, 0.06);
@@ -668,9 +694,11 @@ body.pub-to-doc-page .action-bar {
   outline-offset: 1px;
 }
 
-/* Relocated out of the old .narrative-arc-outline sidebar (removed above) -
-   now its own plain block between the timeline and the rows, rather than
-   nested in a sticky sidebar. */
+/* Documentary techniques AND Documentary modes (see js/paper-extract.js's
+   renderMovieEditor) both use this same card styling, sitting side by side
+   in .narrative-side-panel now - this class name predates the modes
+   section, kept as-is rather than renamed since both blocks are
+   functionally and visually the same kind of thing. */
 .narrative-arc-techniques {
   padding: 12px 14px;
   border-radius: 8px;
@@ -1307,15 +1335,6 @@ body.pub-to-doc-page .graph-panel ul li::before {
   border: 1px solid #FFFFFF;
 }
 
-/* Marks which documentary-mode chip the LLM suggested (see
-   js/paper-extract.js's renderArcSuggestion) - a ring rather than a
-   background/border change, since it needs to stay visible whether or not
-   .selected is also applied (the suggestion starts pre-selected, but the
-   presenter can pick a different mode afterward without losing track of
-   which one was originally suggested). */
-.chip.suggested.llm-suggested {
-  box-shadow: 0 0 0 2px #f18700;
-}
 
 /* Not used by feedback.html's own UI right now (it's built around the
    progressive timeline instead - see #feedback-timeline below), but kept

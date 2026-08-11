@@ -65,6 +65,19 @@ const DOCUMENTARY_MODES = [
   { key: 'poetic', label: 'Poetic', description: 'Mood and imagery over exposition - evocative, associative, unhurried.' },
 ];
 
+// A concrete next action to nudge the presenter toward once they pick a
+// mode (see the "Documentary modes" sidebar section built in
+// renderMovieEditor) - each derived from that same mode's own description
+// above, pointed at whichever existing feature actually produces that
+// kind of material (Your Media's recording, Find Footage, sketch
+// sequences, ...), rather than just restating the description back at them.
+const DOCUMENTARY_MODE_PROMPTS = {
+  expository: 'Expository works best with a confident narrator explaining things directly to the audience - try recording a long voice-of-god narration in Your Media.',
+  observational: "Observational works best fly-on-the-wall, with minimal narration - try Find Footage instead, and let the research speak for itself.",
+  participatory: "Participatory works best with you visibly part of the story - try recording an interview-style clip of yourself talking through the work.",
+  poetic: 'Poetic works best led by mood and imagery over exposition - try a sketch sequence to set an evocative tone.',
+};
+
 // Specific filming/editing tactics, shown as toggleable chips under the
 // arc outline (see renderMovieEditor) - a lighter-weight, multi-select
 // complement to DOCUMENTARY_MODES above: a mode is a single stance for the
@@ -171,14 +184,6 @@ let selectedArcTemplate = null;
 // as selectedArcTemplate - an ephemeral "current pick," not saved session
 // data.
 let selectedDocumentaryMode = null;
-
-// The LLM's own suggested mode from /paper/suggest_arcs (see runSuggestArcs)
-// - {key, reasoning} or null. Separate from selectedDocumentaryMode (the
-// presenter's actual active choice, which this only pre-fills, not forces)
-// so re-rendering the arc-suggestion panel (e.g. swapping to an alternative
-// arc) doesn't lose track of which chip to badge as "suggested" even after
-// the presenter has clicked a different one.
-let suggestedDocumentaryMode = null;
 
 // Set once the presenter accepts a recommended/alternative/custom arc from
 // suggest_arcs_from_intent (see runAcceptArc) - { sections: [{name, description}] },
@@ -1723,18 +1728,9 @@ function runSuggestArcs() {
   arcSuggestionPanelEl.style.display = 'none';
 
   fetchSuggestArcs(recordedTranscript, Array.from(selectedFocusStatements), findAbstractText())
-    .then(({ recommended, alternatives, documentary_mode }) => {
+    .then(({ recommended, alternatives }) => {
       suggestArcsStatusEl.textContent = '';
       suggestArcsBtn.disabled = false;
-      suggestedDocumentaryMode = documentary_mode || null;
-      // Pre-fills the picker with the suggestion the first time it comes
-      // back, rather than leaving it blank - but only ever here (once per
-      // actual LLM response), not inside renderArcSuggestion itself, which
-      // also re-renders on every mode-chip click/arc swap and would
-      // otherwise silently re-apply this over an explicit deselection.
-      if (suggestedDocumentaryMode && !selectedDocumentaryMode) {
-        selectedDocumentaryMode = suggestedDocumentaryMode.key;
-      }
       renderArcSuggestion(recommended, alternatives);
     })
     .catch(err => {
@@ -1825,55 +1821,6 @@ function renderArcSuggestion(current, others) {
     arcSuggestionPanelEl.appendChild(otherChips);
   }
 
-  // Documentary mode picker - a stylistic axis independent of the arc
-  // itself (see selectedDocumentaryMode's own comment), shown here because
-  // /paper/suggest_arcs suggests one from the same source material (see
-  // runSuggestArcs) - a starting point the presenter can immediately act
-  // on or override, not a commitment. Every mode stays clickable regardless
-  // of which one (if any) was suggested; re-renders this whole panel on
-  // click (same pattern as the arc-swap chips above) so the suggested/
-  // selected badges both stay in sync.
-  const modeBlock = document.createElement('div');
-  modeBlock.className = 'documentary-mode-picker';
-
-  const modeTitle = document.createElement('p');
-  modeTitle.className = 'chip-row-caption';
-  modeTitle.style.marginTop = '14px';
-  modeTitle.textContent = 'Documentary mode:';
-  modeBlock.appendChild(modeTitle);
-
-  if (suggestedDocumentaryMode) {
-    const modeInfo = DOCUMENTARY_MODES.find(m => m.key === suggestedDocumentaryMode.key);
-    if (modeInfo) {
-      const modeReasoning = document.createElement('div');
-      modeReasoning.className = 'arc-suggestion-reasoning';
-      modeReasoning.textContent = `Suggested: ${modeInfo.label} - ${suggestedDocumentaryMode.reasoning}`;
-      modeBlock.appendChild(modeReasoning);
-    }
-  }
-
-  const modeChips = document.createElement('div');
-  modeChips.className = 'chip-row';
-  DOCUMENTARY_MODES.forEach(mode => {
-    const chip = document.createElement('button');
-    chip.type = 'button';
-    chip.className = 'chip suggested';
-    chip.classList.toggle('selected', selectedDocumentaryMode === mode.key);
-    chip.classList.toggle('llm-suggested', !!suggestedDocumentaryMode && suggestedDocumentaryMode.key === mode.key);
-    chip.textContent = mode.label;
-    chip.title = mode.description;
-    chip.addEventListener('click', () => {
-      // Toggle, same as the technique chips elsewhere - clicking the
-      // already-active mode clears back to "no mode chosen" rather than
-      // being stuck once picked.
-      selectedDocumentaryMode = selectedDocumentaryMode === mode.key ? null : mode.key;
-      renderArcSuggestion(current, others);
-    });
-    modeChips.appendChild(chip);
-  });
-  modeBlock.appendChild(modeChips);
-  arcSuggestionPanelEl.appendChild(modeBlock);
-
   // "Suggest your own" - a free-text focus/arc description, re-running the
   // suggestion with it added as an extra focus statement (on top of
   // whichever chips are already selected) rather than replacing anything.
@@ -1898,13 +1845,8 @@ function renderArcSuggestion(current, others) {
     suggestArcsStatusEl.textContent = 'Resolving your own focus into a narrative arc ...';
     suggestArcsStatusEl.classList.remove('error');
     fetchSuggestArcs(recordedTranscript, Array.from(selectedFocusStatements).concat([customText]), findAbstractText())
-      .then(({ recommended, alternatives, documentary_mode }) => {
+      .then(({ recommended, alternatives }) => {
         suggestArcsStatusEl.textContent = '';
-        suggestedDocumentaryMode = documentary_mode || null;
-        // See runSuggestArcs' own comment - same one-time pre-fill rule.
-        if (suggestedDocumentaryMode && !selectedDocumentaryMode) {
-          selectedDocumentaryMode = suggestedDocumentaryMode.key;
-        }
         renderArcSuggestion(recommended, alternatives);
       })
       .catch(err => {
@@ -2460,9 +2402,22 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
   timelineEl.className = 'premiere-timeline';
   arcLayout.appendChild(timelineEl);
 
+  // Below the timeline: a sidebar (Documentary techniques + Documentary
+  // modes) beside the rows - same 2-column arrangement the old
+  // .narrative-arc-outline sidebar used, just holding these two instead of
+  // that sidebar's own jump-list (now the timeline's job).
+  const innerLayout = document.createElement('div');
+  innerLayout.className = 'narrative-arc-inner-layout';
+  arcLayout.appendChild(innerLayout);
+
+  const sidePanel = document.createElement('div');
+  sidePanel.className = 'narrative-side-panel';
+  innerLayout.appendChild(sidePanel);
+
   // Toggleable technique chips - see DOCUMENTARY_TECHNIQUES above for what
-  // these are/aren't. Its own plain block now, not nested inside the
-  // removed .narrative-arc-outline sidebar.
+  // these are/aren't. Back in its own sidebar (see innerLayout above),
+  // same .narrative-arc-techniques styling as when it lived in the old
+  // .narrative-arc-outline sidebar.
   const techniquesBlock = document.createElement('div');
   techniquesBlock.className = 'narrative-arc-techniques';
 
@@ -2495,11 +2450,53 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
     techniquesRow.appendChild(chip);
   });
   techniquesBlock.appendChild(techniquesRow);
-  arcLayout.appendChild(techniquesBlock);
+  sidePanel.appendChild(techniquesBlock);
+
+  // Documentary modes - same styling as Documentary techniques above, but
+  // each mode is a single click-through prompt rather than a toggle: since
+  // there's no LLM suggesting one anymore, picking a mode here is purely
+  // the presenter's own call, and clicking it nudges them toward a
+  // concrete next action for that mode (DOCUMENTARY_MODE_PROMPTS above)
+  // rather than just recording an abstract stylistic preference.
+  const modesBlock = document.createElement('div');
+  modesBlock.className = 'narrative-arc-techniques';
+
+  const modesTitle = document.createElement('h3');
+  modesTitle.textContent = 'Documentary modes';
+  modesBlock.appendChild(modesTitle);
+
+  const modesStatus = document.createElement('div');
+  modesStatus.className = 'status-line';
+
+  const modesRow = document.createElement('div');
+  modesRow.className = 'chip-row';
+  DOCUMENTARY_MODES.forEach(mode => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'chip suggested';
+    chip.classList.toggle('selected', selectedDocumentaryMode === mode.key);
+    chip.textContent = mode.label;
+    chip.title = mode.description;
+    chip.addEventListener('click', () => {
+      // Toggle, same as the technique chips above - clicking the
+      // already-active mode clears back to "no mode chosen."
+      selectedDocumentaryMode = selectedDocumentaryMode === mode.key ? null : mode.key;
+      modesRow.querySelectorAll('.chip').forEach(c => c.classList.remove('selected'));
+      chip.classList.toggle('selected', selectedDocumentaryMode === mode.key);
+      modesStatus.textContent = selectedDocumentaryMode ? DOCUMENTARY_MODE_PROMPTS[selectedDocumentaryMode] : '';
+      // selectedDocumentaryMode is deliberately not persisted (see its own
+      // comment) - no saveDebugSession call here, same as the arc-template/
+      // arc-suggestion picks it's grouped with.
+    });
+    modesRow.appendChild(chip);
+  });
+  modesBlock.appendChild(modesStatus);
+  modesBlock.appendChild(modesRow);
+  sidePanel.appendChild(modesBlock);
 
   const arcRows = document.createElement('div');
   arcRows.className = 'narrative-arc-rows';
-  arcLayout.appendChild(arcRows);
+  innerLayout.appendChild(arcRows);
 
   currentArcSections.forEach(act => {
     let rowSections = sections.filter(s => assignmentsByIndex[s.index] === act.key);
