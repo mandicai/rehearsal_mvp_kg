@@ -82,6 +82,7 @@ the repo root, which the same static file server serving html/js/css
 already serves at /premiere_exports/... (no separate route needed for that
 direction - see premiere-plugin/README.md for the full round trip).
 """
+import base64
 import json
 import os
 import re
@@ -120,6 +121,7 @@ from animate_llm import (
     build_sequence_prompts, compose_gif,
 )
 from documentary_modes import DOCUMENTARY_MODE_KEYS
+import movie_render
 from stock_media import PexelsClient, InternetArchiveClient, LibraryOfCongressClient, FreesoundClient, StockMediaCallError
 from premiere_bridge import (
     next_premiere_project_id, premiere_project_dir, premiere_footage_dir, premiere_sketch_dir,
@@ -1104,6 +1106,139 @@ def premiere_export():
         'folder_path': str(project_dir_path),
         'edit_plan_path': str(edit_plan_path),
     })
+
+
+# A section's figure image (see paper_extraction.py's _picture_data_url)
+# arrives as a data: URL rather than a preview_url like every other visual,
+# since it was embedded at extraction time, never written under
+# premiere_exports/. The render pipeline needs a real file, so /render/start
+# decodes it to one - matches these two shapes and caps the decoded size
+# the same spirit as MAX_FOOTAGE_SIZE_MB, since it round-trips through
+# client JSON.
+_DATA_URL_RE = re.compile(r'^data:image/(png|jpe?g|webp);base64,(.+)$', re.IGNORECASE | re.DOTALL)
+_MAX_FIGURE_IMAGE_BYTES = 20 * 1024 * 1024
+
+
+def _decode_figure_data_url(data_url, dest_dir, index):
+    """Decodes a section's figure-image data: URL to a real PNG/JPEG/WebP
+    file under dest_dir, returning its Path, or None if it isn't a
+    well-formed, reasonably-sized image data URL."""
+    if not data_url or not isinstance(data_url, str):
+        return None
+    match = _DATA_URL_RE.match(data_url.strip())
+    if not match:
+        return None
+    ext = 'jpg' if match.group(1).lower() in ('jpg', 'jpeg') else match.group(1).lower()
+    try:
+        # binascii.Error (bad base64) is itself a ValueError subclass.
+        raw = base64.b64decode(match.group(2), validate=True)
+    except ValueError:
+        return None
+    if not raw or len(raw) > _MAX_FIGURE_IMAGE_BYTES:
+        return None
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest_path = dest_dir / f'{index}.{ext}'
+    dest_path.write_bytes(raw)
+    return dest_path
+
+
+@app.route('/render/start', methods=['POST'])
+def render_start():
+    # Kicks off a server-side ffmpeg assembly of a real documentary.mp4 (see
+    # backend/movie_render.py) - the automated counterpart to /premiere/export
+    # above, which only writes a plan for a human to finish in Premiere. Same
+    # per-section payload shape /premiere/export accepts, plus the resolved
+    # local preview_urls for the chosen visual/narration/sound-effect (all
+    # already downloaded to disk by the time a render is possible - see
+    # /premiere/download_stock_media and the upload routes). Resolves + fully
+    # validates every path synchronously (so a bad shot fails the request,
+    # not the background render), then runs the render on a daemon thread and
+    # returns immediately; the frontend polls /render/status.
+    data = request.get_json(silent=True) or {}
+    sections = data.get('sections')
+    if not isinstance(sections, list) or not sections:
+        return jsonify({'error': 'sections is required and must be a non-empty list'}), 400
+
+    project_id = (data.get('project_id') or '').strip() or next_premiere_project_id()
+    project_dir_path = premiere_project_dir(project_id)
+    project_dir_path.mkdir(parents=True, exist_ok=True)
+    figures_dir = project_dir_path / 'render_figures'
+
+    shots = []
+    for i, section in enumerate(sections):
+        if not isinstance(section, dict):
+            return jsonify({'error': f'section {i} must be an object'}), 400
+        title = (section.get('title') or '').strip() or f'section {i}'
+
+        # Visual: a resolved local file wins (stock video, uploaded footage,
+        # sketch, animated sketch - all under premiere_exports/), else the
+        # paper figure decoded from its data URL. A shot with neither can't
+        # be rendered, so reject the whole request rather than silently drop
+        # a shot and produce a shorter video than the presenter arranged.
+        visual_path = None
+        resolved_visual = resolve_static_preview_path(section.get('visual_preview_url'))
+        if resolved_visual is not None:
+            visual_path = str(resolved_visual)
+        elif section.get('figure_image_data_url'):
+            decoded = _decode_figure_data_url(section.get('figure_image_data_url'), figures_dir, i)
+            if decoded is not None:
+                visual_path = str(decoded)
+        if visual_path is None:
+            return jsonify({'error': f'section "{title}" has no usable visual - generate or pick one, then try again'}), 400
+
+        narration_resolved = resolve_static_preview_path(section.get('narration_audio_path'))
+        sfx_resolved = resolve_static_preview_path(section.get('stock_audio_preview_url'))
+
+        edit_plan = section.get('edit_plan') or {}
+        ken_burns = edit_plan.get('ken_burns') or {}
+        shots.append({
+            'visual_path': visual_path,
+            'narration_audio_path': str(narration_resolved) if narration_resolved else None,
+            'sfx_audio_path': str(sfx_resolved) if sfx_resolved else None,
+            'duration_seconds': edit_plan.get('duration_seconds'),
+            'ken_burns': {'enabled': bool(ken_burns.get('enabled')), 'pan': ken_burns.get('pan')},
+            'text_overlay': edit_plan.get('text_overlay') or None,
+            'transition_in': edit_plan.get('transition_in') or 'hard_cut',
+        })
+
+    output_path = project_dir_path / 'documentary.mp4'
+    status_path = project_dir_path / 'render_status.json'
+    # Seed the status before the thread starts, so an immediate poll from the
+    # frontend sees 'rendering' rather than racing the thread's first write.
+    status_path.write_text(json.dumps({'state': 'rendering', 'step': 'starting', 'message': 'Starting render ...'}))
+
+    thread = threading.Thread(
+        target=movie_render.render_documentary,
+        args=(project_id, shots, output_path, status_path),
+        daemon=True,
+    )
+    thread.start()
+
+    return jsonify({
+        'project_id': project_id,
+        # Where the finished file will be, servable by serve.py's static
+        # tree the moment it exists (same as rough_cut.mp4) - the frontend
+        # cache-busts this once /render/status reports done.
+        'preview_url': '/' + output_path.relative_to(PREMIERE_EXPORTS_DIR.parent).as_posix(),
+    })
+
+
+@app.route('/render/status', methods=['GET'])
+def render_status():
+    # Polled by the frontend after /render/start (see js/paper-extract.js's
+    # runRenderMovie) - just reads back the render_status.json the render
+    # thread keeps updating (see movie_render.render_documentary). A missing
+    # file means no render was ever started for this project.
+    project_id = (request.args.get('project_id') or '').strip()
+    if not project_id:
+        return jsonify({'error': 'project_id is required'}), 400
+    status_path = premiere_project_dir(project_id) / 'render_status.json'
+    if not status_path.is_file():
+        return jsonify({'state': 'unknown', 'step': '', 'message': 'No render found for this project.'})
+    try:
+        return jsonify(json.loads(status_path.read_text()))
+    except (OSError, ValueError):
+        return jsonify({'state': 'unknown', 'step': '', 'message': 'Could not read render status.'})
 
 
 @app.route('/ingest/pptx', methods=['POST'])
