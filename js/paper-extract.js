@@ -2782,7 +2782,7 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
   DOCUMENTARY_MODES.forEach(mode => {
     const chip = document.createElement('button');
     chip.type = 'button';
-    chip.className = 'chip suggested';
+    chip.className = 'chip suggested chip-draggable';
     chip.classList.toggle('selected', selectedDocumentaryMode === mode.key);
     chip.textContent = mode.label;
     chip.title = `${mode.description} — drag onto a timeline act to scaffold its scenes`;
@@ -2839,7 +2839,7 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
   DOCUMENTARY_TECHNIQUES.forEach(technique => {
     const chip = document.createElement('button');
     chip.type = 'button';
-    chip.className = 'chip suggested';
+    chip.className = 'chip suggested chip-draggable';
     chip.classList.toggle('selected', selectedTechniques.has(technique));
     chip.textContent = technique;
     chip.addEventListener('click', () => {

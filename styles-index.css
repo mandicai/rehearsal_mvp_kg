@@ -811,8 +811,10 @@ body.pub-to-doc-page .action-bar {
 
 .narrative-arc-techniques h3 {
   margin: 0 0 8px;
+  font-size: 11px;
   font-weight: 700;
-  font-size: 13px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 /* Documentary modes: a full-width horizontal bar above the timeline (see
@@ -1673,6 +1675,42 @@ body.pub-to-doc-page .graph-panel ul li::before {
   background: #FFFFFF;
   color: #EB1000;
   border: 1px solid #FFFFFF;
+}
+
+/* Draggable chips (documentary modes + techniques) look distinct from the
+   non-draggable suggested chips: rectangular (not pill), a SOLID border, and
+   a 6-dot grip on the left (two columns of three) that signals drag-to-place.
+   The dot color follows the chip's own text color (currentColor), so it reads
+   on both the light sidebar and the dark timeline strip. */
+.chip.chip-draggable {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 4px; /* rectangular, overrides the 999px pill */
+  cursor: grab;
+}
+
+.chip.chip-draggable::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 6px;
+  height: 9px;
+  /* one ~2px dot centered in each 3x3 cell -> a 2-col x 3-row grid = 6 dots */
+  background-image: radial-gradient(circle at center, currentColor 0 1px, transparent 1.5px);
+  background-size: 3px 3px;
+  background-repeat: repeat;
+  opacity: 0.55;
+}
+
+.chip.chip-draggable:active {
+  cursor: grabbing;
+}
+
+/* Solid (not dashed) borders for the draggable chips in both places - scoped
+   high enough to beat the dashed .chip.suggested rules above/for the modes bar. */
+body.pub-to-doc-page .chip.suggested.chip-draggable,
+body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
+  border-style: solid;
 }
 
 
