@@ -88,13 +88,10 @@ const DOCUMENTARY_MODE_PROMPTS = {
 // call - storyboard/edit-plan generation only take selectedDocumentaryMode
 // today (see fetchStoryboard/fetchEditPlan).
 const DOCUMENTARY_TECHNIQUES = [
-  'Interview',
+  'Interview/direct address',
   'Montage',
   'Split-screen juxtaposition',
-  'Archival footage',
-  'Voice-over narration',
   'Time-lapse',
-  'Direct address',
 ];
 
 // Kept in sync by convention with backend/animate_llm.py's TECHNIQUES (same
@@ -481,7 +478,7 @@ function restorePersistedNarrationPlayback() {
       recordedAudioBuffer = audioBuffer;
       playIntentBtn.style.display = '';
     })
-    .catch(() => {}); // no in-browser playback for this recording - not fatal
+    .catch(() => { }); // no in-browser playback for this recording - not fatal
 }
 
 function drawStaticWaveform(peaks, playheadFraction) {
@@ -621,7 +618,7 @@ function runTranscribeIntent(blob, durationSeconds, mimeType) {
       drawStaticWaveform(peaks);
       playIntentBtn.style.display = ''; // only shown once there's a decoded buffer to actually play
     })
-    .catch(() => {}); // no waveform/in-browser playback for this recording - it's still downloadable via recordedNarrationUrl
+    .catch(() => { }); // no waveform/in-browser playback for this recording - it's still downloadable via recordedNarrationUrl
 
   fetchUploadNarration(blob, filename, premiereProjectId)
     .then(({ project_id, preview_url }) => {
@@ -633,7 +630,7 @@ function runTranscribeIntent(blob, durationSeconds, mimeType) {
       persistedNarrationPreviewUrl = preview_url || null;
       saveDebugSession();
     })
-    .catch(() => {});
+    .catch(() => { });
 
   fetchTranscription(blob, filename)
     .then(({ text }) => {
@@ -943,7 +940,7 @@ function finishAssigningNarrationAudio(section, previewUrl, blob, filename, stat
   blob.arrayBuffer()
     .then(arrayBuffer => ensurePlaybackAudioCtx().decodeAudioData(arrayBuffer))
     .then(audioBuffer => { section.narrationAudioBuffer = audioBuffer; })
-    .catch(() => {}); // no in-browser playback for this clip - not fatal, still saved to disk
+    .catch(() => { }); // no in-browser playback for this clip - not fatal, still saved to disk
 
   statusEl.textContent = 'Transcribing narration ...';
   fetchTranscription(blob, filename)
@@ -1319,7 +1316,7 @@ function buildSectionBlock(section, selectable) {
     // arrives before this prefetch finishes (or one that arrives after it
     // failed, e.g. a transient network error) still works/retries rather
     // than silently doing nothing.
-    ensureSectionNarrationAudioDecoded(section).catch(() => {});
+    ensureSectionNarrationAudioDecoded(section).catch(() => { });
 
     const narrationAudioControls = document.createElement('div');
     narrationAudioControls.className = 'paper-section-narration-audio-controls';
@@ -1903,6 +1900,7 @@ function runAcceptArc(arc) {
   setEditPlanStatus('');
   editPlanOverallNotesEl.textContent = '';
   premiereExportActionEl.style.display = 'none';
+  if (renderMovieActionEl) renderMovieActionEl.style.display = 'none';
   setPremiereExportStatus('');
   premiereExportFolderEl.textContent = '';
   setPreviewStatus('');
@@ -3005,6 +3003,7 @@ function runDraftVisualThenGenerate(section, btn, statusEl, draftedMessage, gene
       renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
       editPlanActionEl.style.display = '';
       premiereExportActionEl.style.display = '';
+      if (renderMovieActionEl) renderMovieActionEl.style.display = '';
     })
     .catch(err => {
       statusEl.textContent = err.message;
@@ -3187,6 +3186,7 @@ function runGenerateStoryboardForSections(sectionsToUse, triggerBtn) {
       if (triggerBtn) triggerBtn.disabled = false;
       editPlanActionEl.style.display = '';
       premiereExportActionEl.style.display = '';
+      if (renderMovieActionEl) renderMovieActionEl.style.display = '';
       saveDebugSession();
     })
     .catch(err => {
@@ -3271,11 +3271,11 @@ function runExportForPremiere() {
     // of this file's JS state.
     edit_plan: section.editPlan
       ? {
-          transition_in: section.editPlan.transitionIn,
-          duration_seconds: section.editPlan.durationSeconds,
-          ken_burns: section.editPlan.kenBurns,
-          text_overlay: section.editPlan.textOverlay,
-        }
+        transition_in: section.editPlan.transitionIn,
+        duration_seconds: section.editPlan.durationSeconds,
+        ken_burns: section.editPlan.kenBurns,
+        text_overlay: section.editPlan.textOverlay,
+      }
       : null,
   }));
 
@@ -3318,6 +3318,144 @@ function runCheckForPreview() {
       checkPreviewBtn.disabled = false;
     });
 }
+
+// --- Automated MP4 render (backend/movie_render.py via /render/start): the
+// counterpart to runExportForPremiere above, producing a real documentary.mp4
+// server-side with no Premiere or manual steps. ---
+
+// Which single visual to render for a section, following buildVisualBox's
+// exact priority (the most-recently-chosen source first, then the shared
+// fallback order) - returns a resolvable local preview URL for any
+// file-backed visual, or the paper figure as a data URL if that's all
+// there is, or neither.
+function resolveSectionVisualForRender(section) {
+  const previewBySource = {
+    stockVideo: section.selectedVideo && section.selectedVideo.localPreviewUrl,
+    video: section.uploadedFootagePreviewUrl,
+    animatedSketch: section.animatedSketchPreviewUrl,
+    sketch: section.sketchPreviewUrl,
+  };
+  for (const key of [section.visualSource, 'stockVideo', 'video', 'animatedSketch', 'sketch']) {
+    if (key && previewBySource[key]) return { previewUrl: previewBySource[key], figureDataUrl: null };
+  }
+  if (section.image) return { previewUrl: null, figureDataUrl: section.image };
+  return { previewUrl: null, figureDataUrl: null };
+}
+
+let renderPollTimer = null;
+
+function runRenderMovie() {
+  const storyboarded = currentSections.filter(section => !section.removed && currentAssignments[section.index] && section.visual);
+  if (storyboarded.length === 0) {
+    setRenderMovieStatus('No storyboarded sections yet - generate a storyboard first.', true);
+    return;
+  }
+
+  // Build the payload up front, bailing (before touching the server) if any
+  // shot has no resolvable visual - the render route rejects that anyway,
+  // but naming the offending section here is friendlier than a generic
+  // server error mid-render.
+  const payload = [];
+  for (const section of storyboarded) {
+    const { previewUrl, figureDataUrl } = resolveSectionVisualForRender(section);
+    if (!previewUrl && !figureDataUrl) {
+      setRenderMovieStatus(`"${section.title}" has no usable visual yet - pick footage, generate a sketch, or use its figure image, then try again.`, true);
+      return;
+    }
+    payload.push({
+      title: section.title,
+      visual_preview_url: previewUrl,
+      figure_image_data_url: previewUrl ? null : figureDataUrl,
+      narration_audio_path: section.narrationAudioPreviewUrl || null,
+      stock_audio_preview_url: (section.selectedAudio && section.selectedAudio.localPreviewUrl) || null,
+      edit_plan: section.editPlan
+        ? {
+          transition_in: section.editPlan.transitionIn,
+          duration_seconds: section.editPlan.durationSeconds,
+          ken_burns: section.editPlan.kenBurns,
+          text_overlay: section.editPlan.textOverlay,
+        }
+        : null,
+    });
+  }
+
+  renderMovieBtn.disabled = true;
+  documentaryPreviewVideoEl.style.display = 'none';
+  setRenderMovieStatus('Starting render ...');
+  if (renderPollTimer) { clearInterval(renderPollTimer); renderPollTimer = null; }
+
+  fetchRenderStart(payload, premiereProjectId)
+    .then(({ project_id }) => {
+      premiereProjectId = project_id;
+      saveDebugSession();
+      setRenderMovieStatus('Rendering ...');
+      pollRenderStatus();
+    })
+    .catch(err => {
+      setRenderMovieStatus(err.message, true);
+      renderMovieBtn.disabled = false;
+    });
+}
+
+// Self-clearing poll of /render/status to completion - justified here (over
+// the manual-click runCheckForPreview pattern) because, unlike the Premiere
+// round-trip, the backend itself performs and knows the render's state, so
+// an owned poll is strictly better. runCheckForRenderedMovie below covers
+// the page-reload case, where this in-memory interval is lost.
+function pollRenderStatus() {
+  renderPollTimer = setInterval(() => {
+    fetchRenderStatus(premiereProjectId)
+      .then(({ state, message }) => {
+        if (state === 'rendering') {
+          setRenderMovieStatus(message || 'Rendering ...');
+          return;
+        }
+        clearInterval(renderPollTimer);
+        renderPollTimer = null;
+        renderMovieBtn.disabled = false;
+        if (state === 'done') {
+          showRenderedMovie();
+          setRenderMovieStatus(message || 'Done.');
+        } else {
+          setRenderMovieStatus(message || 'Render failed.', true);
+        }
+      })
+      .catch(err => {
+        clearInterval(renderPollTimer);
+        renderPollTimer = null;
+        renderMovieBtn.disabled = false;
+        setRenderMovieStatus(err.message, true);
+      });
+  }, 2000);
+}
+
+function showRenderedMovie() {
+  // Cache-bust so a re-render of the same project actually reloads (the
+  // file keeps the same name) - same convention as runCheckForPreview.
+  const url = `/premiere_exports/${premiereProjectId}/documentary.mp4?t=${Date.now()}`;
+  documentaryPreviewVideoEl.src = url;
+  documentaryPreviewVideoEl.style.display = '';
+}
+
+function runCheckForRenderedMovie() {
+  if (!premiereProjectId) {
+    setRenderMovieStatus('Render MP4 first.', true);
+    return;
+  }
+  checkRenderedBtn.disabled = true;
+  setRenderMovieStatus('Checking ...');
+  documentaryPreviewVideoEl.style.display = 'none';
+  const url = `/premiere_exports/${premiereProjectId}/documentary.mp4?t=${Date.now()}`;
+  fetch(url, { method: 'HEAD' })
+    .then(response => {
+      if (!response.ok) throw new Error('not found');
+      documentaryPreviewVideoEl.src = url;
+      documentaryPreviewVideoEl.style.display = '';
+      setRenderMovieStatus('Loaded documentary.mp4.');
+    })
+    .catch(() => setRenderMovieStatus('No documentary.mp4 yet - click Render MP4 first.', true))
+    .finally(() => { checkRenderedBtn.disabled = false; });
+}
 //#endregion
 
 //#region --- WIRING / LAYOUT REARRANGEMENT
@@ -3347,6 +3485,11 @@ const premiereExportFolderEl = document.getElementById('premiere-export-folder')
 const checkPreviewBtn = document.getElementById('check-preview-btn');
 const previewStatusEl = document.getElementById('preview-status');
 const previewVideoEl = document.getElementById('preview-video');
+const renderMovieActionEl = document.getElementById('render-movie-action');
+const renderMovieBtn = document.getElementById('render-movie-btn');
+const renderMovieStatusEl = document.getElementById('render-movie-status');
+const checkRenderedBtn = document.getElementById('check-rendered-btn');
+const documentaryPreviewVideoEl = document.getElementById('documentary-preview-video');
 
 // Record Audio - same getUserMedia/MediaRecorder toggle pattern as
 // index.html's Record Your Intent button (see recordIntentBtn above), but
@@ -3573,6 +3716,11 @@ function setPreviewStatus(message, isError) {
   previewStatusEl.classList.toggle('error', !!isError);
 }
 
+function setRenderMovieStatus(message, isError) {
+  renderMovieStatusEl.textContent = message || '';
+  renderMovieStatusEl.classList.toggle('error', !!isError);
+}
+
 // extractBtn only exists on index.html; exportPremiereBtn/checkPreviewBtn
 // only exist on storyboard.html - both index.html and storyboard.html load
 // this same shared script, so each wiring is guarded to be a no-op on the
@@ -3580,6 +3728,8 @@ function setPreviewStatus(message, isError) {
 if (extractBtn) extractBtn.addEventListener('click', runExtraction);
 if (exportPremiereBtn) exportPremiereBtn.addEventListener('click', runExportForPremiere);
 if (checkPreviewBtn) checkPreviewBtn.addEventListener('click', runCheckForPreview);
+if (renderMovieBtn) renderMovieBtn.addEventListener('click', runRenderMovie);
+if (checkRenderedBtn) checkRenderedBtn.addEventListener('click', runCheckForRenderedMovie);
 
 // Moves the "Suggested narrative arc" module (#storyboard-arc-module) into
 // the dedicated left sidebar once an arc's been accepted (see

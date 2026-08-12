@@ -1572,6 +1572,8 @@ const UPLOAD_FOOTAGE_API_URL = `${API_BASE_URL}/premiere/upload_footage`;
 const UPLOAD_NARRATION_API_URL = `${API_BASE_URL}/premiere/upload_narration`;
 const PREMIERE_EXPORT_API_URL = `${API_BASE_URL}/premiere/export`;
 const DOWNLOAD_STOCK_MEDIA_API_URL = `${API_BASE_URL}/premiere/download_stock_media`;
+const RENDER_START_API_URL = `${API_BASE_URL}/render/start`;
+const RENDER_STATUS_API_URL = `${API_BASE_URL}/render/status`;
 
 function fetchUploadFootage(file, sectionIndex, projectId) {
   const form = new FormData();
@@ -1749,6 +1751,36 @@ function fetchPremiereExport(sections, projectId) {
       if (err.isServerError) throw err;
       throw new Error(
         `Could not reach the Premiere-export server at ${PREMIERE_EXPORT_API_URL} (${err.message}). Check that the backend is running and reachable.`
+      );
+    });
+}
+
+// The automated MP4-assembly counterpart to fetchPremiereExport (see
+// backend/movie_render.py and js/paper-extract.js's runRenderMovie). Kicks
+// off a background render; the caller then polls fetchRenderStatus. Same
+// projectId in/out convention as the other premiere_exports/ routes.
+function fetchRenderStart(sections, projectId) {
+  return fetch(RENDER_START_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sections, project_id: projectId || '' })
+  })
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(
+        `Could not reach the render server at ${RENDER_START_API_URL} (${err.message}). Check that the backend is running and reachable.`
+      );
+    });
+}
+
+function fetchRenderStatus(projectId) {
+  return fetch(`${RENDER_STATUS_API_URL}?project_id=${encodeURIComponent(projectId)}`)
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(
+        `Could not reach the render server at ${RENDER_STATUS_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }

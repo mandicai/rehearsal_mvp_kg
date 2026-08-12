@@ -68,7 +68,11 @@ _DIP_TO_BLACK_SECONDS = 0.5
 
 # Image extensions that mean "still" (rendered via zoompan/hold) vs.
 # anything else, treated as a real clip (trimmed/looped). Kept lowercase.
-_STILL_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'}
+# .gif is deliberately NOT here - the only GIFs this pipeline sees are the
+# animated storyboard-sketch sequences (see animate_llm.py's GIF method), so
+# routing them through the clip path (which loops/animates) rather than the
+# still path (which would freeze on frame one) is what preserves them.
+_STILL_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.bmp'}
 
 _MIN_SHOT_SECONDS = 1.0
 
