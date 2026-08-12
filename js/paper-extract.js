@@ -1542,8 +1542,16 @@ function buildSectionBlock(section, selectable) {
     // about and what they're saying over it.
     block.classList.add(`role-${getSceneRole(section)}`);
     block.appendChild(removeBtn);
-    block.appendChild(title);
-    block.appendChild(roleRow);
+
+    // Title on the left, the Track (role) picker pinned to the far right -
+    // just left of the absolutely-positioned delete button in the corner
+    // (the card's 44px right padding keeps this row clear of it). See
+    // .paper-section-title-row.
+    const titleRow = document.createElement('div');
+    titleRow.className = 'paper-section-title-row';
+    titleRow.appendChild(title);
+    titleRow.appendChild(roleRow);
+    block.appendChild(titleRow);
 
     // Same small caption style as "Scene Notes" below, labeling the
     // narration block that follows it.
@@ -2602,14 +2610,6 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
   container.innerHTML = '';
   hideSplitFloatingBtn(); // avoid a stale reference to a card this re-render just replaced
 
-  // Reuses #paper-sections h2's existing styling (see styles-index.css -
-  // originally written for renderSectionFeed's own "Source material"
-  // heading on index.html's flat feed). Sits above the sticky action bar
-  // below, so it scrolls away normally rather than staying pinned with it.
-  const heading = document.createElement('h2');
-  heading.textContent = 'Your documentary storyboard';
-  container.appendChild(heading);
-
   // Prune any selected index no longer present (excluded/removed) - no more
   // default "select the first section" fallback, since there's no preview
   // left to seed; an empty selection is a perfectly normal starting state.
@@ -2617,14 +2617,41 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
     if (!sections.some(s => s.index === index)) selectedSectionIndices.delete(index);
   });
 
-  // Always shown once arranged (renderMovieEditor only ever runs after
-  // that) and sticky (see styles.css) so it stays reachable while scrolling
-  // a long list of rows. Targets the current selection when one exists,
-  // otherwise the whole arc - see runGenerateStoryboardForSections/
-  // runGenerateEditPlanForSections below.
   const selectionCount = selectedSectionIndices.size;
   const arranged = sections.filter(s => assignmentsByIndex[s.index]);
   const target = selectionCount > 0 ? arranged.filter(s => selectedSectionIndices.has(s.index)) : arranged;
+
+  // Heading row: the title on the left, "Clear all scenes" pinned to the far
+  // right (see .storyboard-heading-row). The h2 reuses #paper-sections h2's
+  // existing styling. Clear all empties the whole timeline in one go - every
+  // arranged scene moves to the "Deleted scenes" sidebar module (restorable
+  // there, same as deleting one by hand) rather than being destroyed, so it's
+  // reversible; confirmed first since it clears everything at once, and shown
+  // only when there's actually something arranged to clear.
+  const headingRow = document.createElement('div');
+  headingRow.className = 'storyboard-heading-row';
+  const heading = document.createElement('h2');
+  heading.textContent = 'Your documentary storyboard';
+  headingRow.appendChild(heading);
+  if (arranged.length > 0) {
+    const clearAllBtn = document.createElement('button');
+    clearAllBtn.type = 'button';
+    clearAllBtn.className = 'btn-secondary clear-all-scenes-btn';
+    clearAllBtn.textContent = 'Clear all scenes';
+    clearAllBtn.title = 'Move every scene to Deleted scenes (restorable there)';
+    clearAllBtn.addEventListener('click', () => {
+      if (!window.confirm("Clear all scenes from the timeline? They'll move to Deleted scenes, where you can restore them.")) return;
+      currentSections.forEach(s => {
+        if (currentAssignments[s.index] && !s.removed) s.removed = true;
+      });
+      selectedSectionIndices.clear();
+      saveDebugSession();
+      const remaining = currentSections.filter(s => !s.removed);
+      renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+    });
+    headingRow.appendChild(clearAllBtn);
+  }
+  container.appendChild(headingRow);
 
   const actionBar = document.createElement('div');
   actionBar.className = 'action-bar';
@@ -2717,39 +2744,9 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
   const modesBlock = document.createElement('div');
   modesBlock.className = 'documentary-modes-bar';
 
-  // Title on the left, "Clear all scenes" on the right - this bar sits right
-  // above the timeline and is always visible (unlike the action bar, which is
-  // hidden), so it's where the timeline-level controls belong.
-  const modesHeader = document.createElement('div');
-  modesHeader.className = 'documentary-modes-bar-header';
   const modesTitle = document.createElement('h3');
   modesTitle.textContent = 'Documentary modes';
-  modesHeader.appendChild(modesTitle);
-
-  // Empties the whole timeline in one go - every arranged scene moves to the
-  // "Deleted scenes" sidebar module (restorable there, same as deleting one
-  // by hand), rather than being destroyed, so it's reversible. Confirmed
-  // first since it clears everything at once. Shown only when there's
-  // actually something arranged to clear.
-  if (arranged.length > 0) {
-    const clearAllBtn = document.createElement('button');
-    clearAllBtn.type = 'button';
-    clearAllBtn.className = 'btn-secondary clear-all-scenes-btn';
-    clearAllBtn.textContent = 'Clear all scenes';
-    clearAllBtn.title = 'Move every scene to Deleted scenes (restorable there)';
-    clearAllBtn.addEventListener('click', () => {
-      if (!window.confirm("Clear all scenes from the timeline? They'll move to Deleted scenes, where you can restore them.")) return;
-      currentSections.forEach(s => {
-        if (currentAssignments[s.index] && !s.removed) s.removed = true;
-      });
-      selectedSectionIndices.clear();
-      saveDebugSession();
-      const remaining = currentSections.filter(s => !s.removed);
-      renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
-    });
-    modesHeader.appendChild(clearAllBtn);
-  }
-  modesBlock.appendChild(modesHeader);
+  modesBlock.appendChild(modesTitle);
 
   const modesRow = document.createElement('div');
   modesRow.className = 'chip-row documentary-modes-bar-row';

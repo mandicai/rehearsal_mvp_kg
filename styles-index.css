@@ -465,6 +465,40 @@ input[type="file"]::file-selector-button:hover {
   border-bottom: 1px dashed var(--cd-border-strong);
 }
 
+/* Shot-card header: title on the left, the Track (role) picker pinned right
+   (just left of the corner delete button). The dashed divider moves up to
+   this row so it spans title + picker, so the title's own divider is
+   neutralized only here (kept as-is on the flat feed, where the title isn't
+   wrapped in a title-row). */
+.paper-section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed var(--cd-border-strong);
+}
+
+.paper-section-title-row .paper-section-title {
+  padding-bottom: 0;
+  border-bottom: none;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.paper-section-title-row .paper-section-role {
+  flex: 0 0 auto;
+}
+
+/* Storyboard heading row: "Your documentary storyboard" on the left,
+   "Clear all scenes" pinned to the far right. */
+.storyboard-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .paper-section-image {
   display: block;
   max-width: 100%;
@@ -673,7 +707,7 @@ body.pub-to-doc-page .action-bar {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  padding: 2px 6px;
+  /* padding: 2px 6px; */
   border-left: 2px solid rgba(255, 255, 255, 0.3);
 }
 
@@ -782,6 +816,12 @@ body.pub-to-doc-page .action-bar {
   margin: 0 0 8px;
   font-weight: 700;
   font-size: 13px;
+}
+
+.clear-all-scenes-btn {
+  flex: 0 0 auto;
+  font-size: 12px;
+  padding: 4px 10px;
 }
 
 .documentary-modes-bar-row {
