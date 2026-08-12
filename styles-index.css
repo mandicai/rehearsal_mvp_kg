@@ -646,6 +646,10 @@ body.pub-to-doc-page .action-bar {
   display: flex;
   gap: 2px;
   margin-bottom: 4px;
+  /* Start the act labels where the track BODIES begin, not at the track
+     LABEL column - i.e. offset by the label's width (52px) plus the track's
+     own label/body gap (8px), so each act lines up over its clips below. */
+  padding-left: 60px;
 }
 
 .premiere-timeline-act {
