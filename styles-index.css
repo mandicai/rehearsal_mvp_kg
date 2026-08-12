@@ -1123,6 +1123,34 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.selected {
 
 /* Also the drop target for dragging an audio clip in from "Your Media" -
    see js/paper-extract.js's buildSectionBlock. */
+/* The "Narration" label + narration/audio as one unit (see buildSectionBlock).
+   While no narration is recorded (.needs-narration), it gently wiggles every
+   few seconds and gets a subtle accent outline to prompt the presenter to
+   record the scene's voiceover. */
+.paper-section-narration-block {
+  border-radius: 6px;
+}
+
+.paper-section-narration-block.needs-narration {
+  padding: 8px;
+  background: rgba(241, 135, 0, 0.06);
+  box-shadow: 0 0 0 1px rgba(241, 135, 0, 0.35);
+  transform-origin: center;
+  animation: narration-wiggle 3s ease-in-out infinite;
+}
+
+@keyframes narration-wiggle {
+  0%, 90%, 100% { transform: rotate(0); }
+  92% { transform: rotate(-1.1deg); }
+  94% { transform: rotate(1.1deg); }
+  96% { transform: rotate(-0.7deg); }
+  98% { transform: rotate(0.5deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .paper-section-narration-block.needs-narration { animation: none; }
+}
+
 .paper-section-narration-audio {
   /* margin-top: 14px; */
   /* padding-top: 12px;

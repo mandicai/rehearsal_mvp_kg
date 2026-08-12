@@ -1361,12 +1361,16 @@ function buildSectionBlock(section, selectable) {
 
     const narrationLine = document.createElement('div');
     narrationLine.className = 'paper-section-narration';
-    // Just live-narrate the voiceover for this scene - what you'd actually
-    // say over it. "Generate shot" infers the shot from whatever's available
-    // (this narration, the scene notes/title, the arc part, the abstract),
-    // so the presenter doesn't have to spell out framing themselves.
-    narrationLine.textContent = section.narration
-      || '(no narration yet - record what you\'d want to say in this section; then Generate shot)';
+    // With no recorded narration yet, this reads as instructions for what to
+    // say - the arc part's own description (moved here from the act heading),
+    // which is the guidance for what this scene's voiceover should cover.
+    // Falls back to a generic prompt if the arc part has no description. Once
+    // narration is recorded, it shows that transcript instead.
+    const narrationAct = currentArcSections.find(a => a.key === currentAssignments[section.index]);
+    const narrationPrompt = (narrationAct && narrationAct.description && narrationAct.description.trim())
+      ? narrationAct.description.trim()
+      : "Record what you'd want to say over this scene.";
+    narrationLine.textContent = section.narration || narrationPrompt;
     narrationAudio.appendChild(narrationLine);
 
     // --- The section's actual spoken narration audio - required to come
@@ -1539,13 +1543,18 @@ function buildSectionBlock(section, selectable) {
     titleRow.appendChild(roleRow);
     block.appendChild(titleRow);
 
-    // Same small caption style as "Scene Notes" below, labeling the
-    // narration block that follows it.
+    // The "Narration" label + the narration/audio, wrapped as one unit that
+    // gently wiggles (.needs-narration) until a narration is recorded - a
+    // nudge to record the documentary's voiceover for this scene.
+    const narrationBlock = document.createElement('div');
+    narrationBlock.className = 'paper-section-narration-block';
+    if (!section.narrationAudioPreviewUrl) narrationBlock.classList.add('needs-narration');
     const narrationLabel = document.createElement('div');
     narrationLabel.className = 'paper-section-text-label';
     narrationLabel.textContent = 'Narration';
-    block.appendChild(narrationLabel);
-    block.appendChild(narrationAudio);
+    narrationBlock.appendChild(narrationLabel);
+    narrationBlock.appendChild(narrationAudio);
+    block.appendChild(narrationBlock);
 
     const sceneNotesLabel = document.createElement('div');
     sceneNotesLabel.className = 'paper-section-text-label';
@@ -2886,12 +2895,9 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
     actTitle.className = 'narrative-act-title';
     actTitle.textContent = act.label;
     heading.appendChild(actTitle);
-    if (act.description) {
-      const actDescription = document.createElement('div');
-      actDescription.className = 'narrative-act-description';
-      actDescription.textContent = act.description;
-      heading.appendChild(actDescription);
-    }
+    // The arc part's description moved into each scene's narration line (the
+    // narration instructions - see buildSectionBlock), so it's no longer
+    // shown here in the act heading.
     rowGroup.appendChild(heading);
 
     const row = document.createElement('div');
