@@ -77,7 +77,6 @@
         <div id="suggest-arcs-row" style="display: none;">
           <button type="button" id="suggest-arcs-btn" class="btn-primary" style="display: none;">Suggest Narrative
             Arcs</button>
-          <div id="suggest-arcs-status" class="status-line"></div>
         </div>
 
         <div id="arc-suggestion-panel" style="display: none;"></div>
@@ -131,6 +130,12 @@
             </div>
           </div>
         </div>
+
+        <!-- Moved to the very bottom of the module, after all other content
+         (see js/paper-extract.js's suggestArcsStatusEl - referenced by id, so
+         it works wherever it sits). Shows suggestion progress/errors below the
+         arc panel + actions rather than up under the heading. -->
+        <div id="suggest-arcs-status" class="status-line"></div>
       </div><!-- /#storyboard-arc-module -->
 
       <!-- Hidden until an arc's accepted (see relocateMediaBankToSidebar) -

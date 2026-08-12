@@ -69,7 +69,7 @@ body {
 .module-card {
   max-width: 700px;
   margin: 10px auto 30px;
-  padding: 24px 28px;
+  padding: 20px;
   border-radius: 8px;
   background: var(--cd-card-bg);
   border: 1px solid var(--cd-border);
@@ -500,7 +500,7 @@ input[type="file"]::file-selector-button:hover {
    reasoning (top pick only), an accept button, alternative chips, and a
    "suggest your own" row. */
 .arc-suggestion-card {
-  padding: 16px 18px;
+  padding: 14px 16px;
   border-radius: 8px;
   background: var(--cd-panel-bg);
   border: 1px solid var(--cd-border);
@@ -642,14 +642,27 @@ body.pub-to-doc-page .action-bar {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
+/* Mirrors a track's own structure exactly (a fixed label-width spacer + the
+   same 8px gap + a body) rather than faking the offset with padding - so the
+   acts inside .premiere-timeline-ruler-body distribute over identically the
+   same width, with the same nesting and gaps, as the clip groups in each
+   track body below, and line up pixel-for-pixel (a flat ruler + padding drifts
+   by sub-pixel flex rounding once the acts carry their own border/padding). */
 .premiere-timeline-ruler {
   display: flex;
-  gap: 2px;
+  gap: 8px;
   margin-bottom: 4px;
-  /* Start the act labels where the track BODIES begin, not at the track
-     LABEL column - i.e. offset by the label's width (52px) plus the track's
-     own label/body gap (8px), so each act lines up over its clips below. */
-  padding-left: 60px;
+}
+
+.premiere-timeline-ruler-spacer {
+  flex: 0 0 52px; /* == .premiere-timeline-track-label width */
+}
+
+.premiere-timeline-ruler-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  gap: 2px; /* == .premiere-timeline-track-body gap */
 }
 
 .premiere-timeline-act {
@@ -742,7 +755,7 @@ body.pub-to-doc-page .action-bar {
    section, kept as-is rather than renamed since both blocks are
    functionally and visually the same kind of thing. */
 .narrative-arc-techniques {
-  padding: 12px 14px;
+  padding: 10px 12px;
   border-radius: 8px;
   background: var(--cd-card-bg);
   border: 1px solid var(--cd-border);
@@ -758,7 +771,7 @@ body.pub-to-doc-page .action-bar {
    js/paper-extract.js's renderMovieEditor), not a sidebar card. Chips lay
    out in a row (wrapping if needed) and are draggable onto a timeline act. */
 .documentary-modes-bar {
-  padding: 12px 14px;
+  padding: 10px 12px;
   border-radius: 8px;
   background: var(--cd-card-bg);
   border: 1px solid var(--cd-border);

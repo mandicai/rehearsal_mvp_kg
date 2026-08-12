@@ -1571,8 +1571,11 @@ function buildSectionBlock(section, selectable) {
 
     block.appendChild(visualBox);
     block.appendChild(footageActions);
-    block.appendChild(footageStatus);
     block.appendChild(mediaResults);
+    // The status line sits at the very bottom of the block, under all the
+    // rest of the content (visual box, footage actions, media results),
+    // rather than wedged between the actions and their results.
+    block.appendChild(footageStatus);
   } else {
     // Pre-arrangement flat feed - just the source material, no shot
     // production details yet (there's no act/shot concept before an
@@ -2380,8 +2383,18 @@ function scaffoldModeOntoAct(actKey, modeKey) {
 function buildNarrativeTimeline(timelineEl, sections, assignmentsByIndex) {
   timelineEl.innerHTML = '';
 
+  // The ruler mirrors a track's structure (a label-width spacer + a body)
+  // so its act labels line up exactly with the clip groups in the track
+  // bodies below - see the .premiere-timeline-ruler* CSS. Acts go into
+  // rulerBody, not the ruler directly.
   const ruler = document.createElement('div');
   ruler.className = 'premiere-timeline-ruler';
+  const rulerSpacer = document.createElement('div');
+  rulerSpacer.className = 'premiere-timeline-ruler-spacer';
+  ruler.appendChild(rulerSpacer);
+  const rulerBody = document.createElement('div');
+  rulerBody.className = 'premiere-timeline-ruler-body';
+  ruler.appendChild(rulerBody);
   timelineEl.appendChild(ruler);
 
   // A-roll (the shot's own primary visual - a generated sketch/animated
@@ -2444,7 +2457,7 @@ function buildNarrativeTimeline(timelineEl, sections, assignmentsByIndex) {
     rulerGroup.textContent = act.label;
     rulerGroup.title = 'Drag a documentary mode here to scaffold scenes for this act';
     makeActModeDropTarget(rulerGroup, act.key);
-    ruler.appendChild(rulerGroup);
+    rulerBody.appendChild(rulerGroup);
 
     const trackGroups = trackBodies.map(body => {
       const group = document.createElement('div');
