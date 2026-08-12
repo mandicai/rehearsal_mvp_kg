@@ -110,16 +110,15 @@ const MODE_SCENE_TEMPLATES = {
     { role: 'bRoll', title: 'Cutaway', durationSeconds: 6 },
     { role: 'bRoll', title: 'Cutaway', durationSeconds: 6 },
   ],
+  // Observational & participatory are A-roll only - no B-roll cutaways (fly-
+  // on-the-wall takes / interview segments carry the whole act themselves).
   observational: [
     { role: 'aRoll', title: 'Continuous take', durationSeconds: 12 },
     { role: 'aRoll', title: 'Continuous take', durationSeconds: 12 },
-    { role: 'bRoll', title: 'Brief cutaway', durationSeconds: 6 },
   ],
   participatory: [
     { role: 'aRoll', title: 'Interview', durationSeconds: 12 },
-    { role: 'bRoll', title: 'Referenced footage', durationSeconds: 12 },
     { role: 'aRoll', title: 'Interview', durationSeconds: 12 },
-    { role: 'bRoll', title: 'Referenced footage', durationSeconds: 12 },
   ],
   poetic: [
     { role: 'aRoll', title: 'Narration fragment', durationSeconds: 24 },
@@ -2403,18 +2402,26 @@ function buildNarrativeTimeline(timelineEl, sections, assignmentsByIndex) {
   const trackBodies = TRACK_DEFS.map(def => buildTimelineTrack(timelineEl, def.label));
 
   // Dropping a mode onto an act scaffolds scenes there (see
-  // scaffoldModeOntoAct) - the whole act column (ruler label + every track
-  // group) is a drop target, so it can be dropped anywhere over the act.
-  const makeActModeDropTarget = (el, actKey) => {
+  // scaffoldModeOntoAct). The whole act column - the ruler label plus every
+  // track group - is ONE drop unit (actEls): hovering any of them highlights
+  // them all together, so it reads as dropping onto the act, not a single
+  // track. The highlight persists while the pointer moves between the act's
+  // own rows and only clears when it leaves the act entirely.
+  const makeActModeDropTarget = (el, actKey, actEls) => {
+    const setHighlight = on => actEls.forEach(e => e.classList.toggle('mode-drop-over', on));
     el.addEventListener('dragover', event => {
       if (!event.dataTransfer.types.includes('application/x-documentary-mode')) return;
       event.preventDefault();
       event.dataTransfer.dropEffect = 'copy';
-      el.classList.add('mode-drop-over');
+      setHighlight(true);
     });
-    el.addEventListener('dragleave', () => el.classList.remove('mode-drop-over'));
+    el.addEventListener('dragleave', event => {
+      const to = event.relatedTarget;
+      if (to && actEls.some(e => e === to || e.contains(to))) return; // still within this act
+      setHighlight(false);
+    });
     el.addEventListener('drop', event => {
-      el.classList.remove('mode-drop-over');
+      setHighlight(false);
       const modeKey = event.dataTransfer.getData('application/x-documentary-mode');
       if (!modeKey || !MODE_SCENE_TEMPLATES[modeKey]) return;
       event.preventDefault();
@@ -2447,17 +2454,19 @@ function buildNarrativeTimeline(timelineEl, sections, assignmentsByIndex) {
     rulerGroup.style.flex = actFlex;
     rulerGroup.textContent = act.label;
     rulerGroup.title = 'Drag a documentary mode here to scaffold scenes for this act';
-    makeActModeDropTarget(rulerGroup, act.key);
     rulerBody.appendChild(rulerGroup);
 
     const trackGroups = trackBodies.map(body => {
       const group = document.createElement('div');
       group.className = 'premiere-timeline-act-group';
       group.style.flex = actFlex;
-      makeActModeDropTarget(group, act.key);
       body.appendChild(group);
       return group;
     });
+
+    // Ruler label + all track groups are one drop unit (highlight together).
+    const actDropEls = [rulerGroup, ...trackGroups];
+    actDropEls.forEach(el => makeActModeDropTarget(el, act.key, actDropEls));
 
     TRACK_DEFS.forEach((def, ti) => {
       scenesByTrack[def.key].forEach(section => {
@@ -4187,7 +4196,9 @@ function relocateDeletedScenesToSidebar() {
 // collapsing before the sidebar actually has content.
 function relocateAllSidebarModules() {
   relocateArcSuggestionToSidebar();
-  relocateMediaBankToSidebar();
+  // "Your media" (#media-bank-module) is hidden for now - not relocated/
+  // revealed (see storyboard.html). The one recorded-intent clip it held
+  // moved into #storyboard-arc-module.
   relocateSourceMaterialToSidebar();
   relocateDeletedScenesToSidebar();
   if (togglePanelsBtn) togglePanelsBtn.style.display = '';

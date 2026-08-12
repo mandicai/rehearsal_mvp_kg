@@ -79,6 +79,15 @@
             Arcs</button>
         </div>
 
+        <!-- The recorded documentary-intent narration (+ play button) that
+         guides the arc - lives here now (moved out of the hidden "Your media"
+         module). Populated on page load by restoreDebugSession; same ids, so
+         the JS refs (intentTranscriptDisplayEl/playIntentBtn) are unchanged. -->
+        <div id="intent-transcript-display" style="display: none; margin-bottom: 12px;">
+          <div id="intent-transcript-text" class="intent-transcript-text"></div>
+          <button type="button" id="play-intent-btn" class="btn-primary" style="display: none;">▶</button>
+        </div>
+
         <div id="arc-suggestion-panel" style="display: none;"></div>
 
         <!-- Hidden until an arc is accepted (see runAcceptArc) - just a
@@ -127,21 +136,13 @@
         <div id="suggest-arcs-status" class="status-line"></div>
       </div><!-- /#storyboard-arc-module -->
 
-      <!-- Hidden until an arc's accepted (see relocateMediaBankToSidebar) -
-       once shown, relocates into the sidebar rather than staying here. A
-       standing place to record or upload reference audio/video and play
-       any of it back, not just the one documentary-intent recording. -->
+      <!-- Hidden for now (per request) - the one documentary-intent recording
+       it used to hold moved up into #storyboard-arc-module above. Kept in the
+       DOM (display:none, and no longer relocated to the sidebar - see
+       relocateAllSidebarModules) so its child elements still exist for the JS
+       refs that touch them. -->
       <div class="module-card" id="media-bank-module" style="display: none;">
         <h2>Your media</h2>
-
-        <!-- Same id/click handler as index.html's own button (see
-         js/paper-extract.js) - recording happens there, playback works on
-         either page. Icon-only, beside the transcript it plays back - see
-         html/index.html's own copy of this comment. -->
-        <div id="intent-transcript-display" style="display: none; margin-top: 12px;">
-          <div id="intent-transcript-text" class="intent-transcript-text"></div>
-          <button type="button" id="play-intent-btn" class="btn-primary" style="display: none;">▶</button>
-        </div>
 
         <div id="media-bank-list"></div>
 
