@@ -2002,7 +2002,6 @@ function runAcceptArc(arc) {
   setEditPlanStatus('');
   editPlanOverallNotesEl.textContent = '';
   premiereExportActionEl.style.display = 'none';
-  if (renderMovieActionEl) renderMovieActionEl.style.display = 'none';
   setPremiereExportStatus('');
   premiereExportFolderEl.textContent = '';
   setPreviewStatus('');
@@ -2612,19 +2611,26 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
   const arranged = sections.filter(s => assignmentsByIndex[s.index]);
   const target = selectionCount > 0 ? arranged.filter(s => selectedSectionIndices.has(s.index)) : arranged;
 
-  // Heading row: the title on the left, "Clear all scenes" pinned to the far
-  // right (see .storyboard-heading-row). The h2 reuses #paper-sections h2's
-  // existing styling. Clear all empties the whole timeline in one go - every
-  // arranged scene moves to the "Deleted scenes" sidebar module (restorable
-  // there, same as deleting one by hand) rather than being destroyed, so it's
-  // reversible; confirmed first since it clears everything at once, and shown
-  // only when there's actually something arranged to clear.
+  // Heading row: the title on the left, action buttons pinned to the far
+  // right (see .storyboard-heading-row / .storyboard-heading-actions) - "Clear
+  // all scenes" then "Render MP4", shown only when something's arranged. The
+  // h2 reuses #paper-sections h2's existing styling. Clear all empties the
+  // whole timeline in one go (every arranged scene moves to the "Deleted
+  // scenes" sidebar module, restorable there, so it's reversible - confirmed
+  // first). Render MP4 (built here now, not a fixed panel) kicks off the
+  // ffmpeg render; its status shows inline and the result is opened directly
+  // from premiere_exports/<id>/documentary.mp4 (no in-app preview).
+  renderMovieBtn = null;
+  renderMovieStatusEl = null;
   const headingRow = document.createElement('div');
   headingRow.className = 'storyboard-heading-row';
   const heading = document.createElement('h2');
   heading.textContent = 'Your documentary storyboard';
   headingRow.appendChild(heading);
   if (arranged.length > 0) {
+    const actions = document.createElement('div');
+    actions.className = 'storyboard-heading-actions';
+
     const clearAllBtn = document.createElement('button');
     clearAllBtn.type = 'button';
     clearAllBtn.className = 'btn-secondary clear-all-scenes-btn';
@@ -2640,7 +2646,21 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
       const remaining = currentSections.filter(s => !s.removed);
       renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
     });
-    headingRow.appendChild(clearAllBtn);
+    actions.appendChild(clearAllBtn);
+
+    renderMovieBtn = document.createElement('button');
+    renderMovieBtn.type = 'button';
+    renderMovieBtn.className = 'btn-primary render-movie-btn';
+    renderMovieBtn.textContent = 'Render MP4';
+    renderMovieBtn.title = 'Assemble the scenes into an MP4 with narration and sound effects';
+    renderMovieBtn.addEventListener('click', runRenderMovie);
+    actions.appendChild(renderMovieBtn);
+
+    renderMovieStatusEl = document.createElement('span');
+    renderMovieStatusEl.className = 'status-line render-movie-status';
+    actions.appendChild(renderMovieStatusEl);
+
+    headingRow.appendChild(actions);
   }
   container.appendChild(headingRow);
 
@@ -3288,7 +3308,6 @@ function runDraftVisualThenGenerate(section, btn, statusEl, draftedMessage, gene
       renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
       editPlanActionEl.style.display = '';
       premiereExportActionEl.style.display = '';
-      if (renderMovieActionEl) renderMovieActionEl.style.display = '';
     })
     .catch(err => {
       statusEl.textContent = err.message;
@@ -3347,7 +3366,6 @@ function runGenerateShot(section, btn, statusEl) {
       renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
       editPlanActionEl.style.display = '';
       premiereExportActionEl.style.display = '';
-      if (renderMovieActionEl) renderMovieActionEl.style.display = '';
       saveDebugSession();
     })
     .catch(err => {
@@ -3533,7 +3551,6 @@ function runGenerateStoryboardForSections(sectionsToUse, triggerBtn) {
       if (triggerBtn) triggerBtn.disabled = false;
       editPlanActionEl.style.display = '';
       premiereExportActionEl.style.display = '';
-      if (renderMovieActionEl) renderMovieActionEl.style.display = '';
       saveDebugSession();
     })
     .catch(err => {
@@ -3744,8 +3761,7 @@ function runRenderMovie() {
     });
   }
 
-  renderMovieBtn.disabled = true;
-  documentaryPreviewVideoEl.style.display = 'none';
+  if (renderMovieBtn) renderMovieBtn.disabled = true;
   setRenderMovieStatus('Starting render ...');
   if (renderPollTimer) { clearInterval(renderPollTimer); renderPollTimer = null; }
 
@@ -3764,9 +3780,9 @@ function runRenderMovie() {
 
 // Self-clearing poll of /render/status to completion - justified here (over
 // the manual-click runCheckForPreview pattern) because, unlike the Premiere
-// round-trip, the backend itself performs and knows the render's state, so
-// an owned poll is strictly better. runCheckForRenderedMovie below covers
-// the page-reload case, where this in-memory interval is lost.
+// round-trip, the backend itself performs and knows the render's state, so an
+// owned poll is strictly better. On done, the status just names the output
+// file; there's no in-app preview - the presenter opens the MP4 directly.
 function pollRenderStatus() {
   renderPollTimer = setInterval(() => {
     fetchRenderStatus(premiereProjectId)
@@ -3777,10 +3793,9 @@ function pollRenderStatus() {
         }
         clearInterval(renderPollTimer);
         renderPollTimer = null;
-        renderMovieBtn.disabled = false;
+        if (renderMovieBtn) renderMovieBtn.disabled = false;
         if (state === 'done') {
-          showRenderedMovie();
-          setRenderMovieStatus(message || 'Done.');
+          setRenderMovieStatus(`Done - premiere_exports/${premiereProjectId}/documentary.mp4`);
         } else {
           setRenderMovieStatus(message || 'Render failed.', true);
         }
@@ -3788,38 +3803,10 @@ function pollRenderStatus() {
       .catch(err => {
         clearInterval(renderPollTimer);
         renderPollTimer = null;
-        renderMovieBtn.disabled = false;
+        if (renderMovieBtn) renderMovieBtn.disabled = false;
         setRenderMovieStatus(err.message, true);
       });
   }, 2000);
-}
-
-function showRenderedMovie() {
-  // Cache-bust so a re-render of the same project actually reloads (the
-  // file keeps the same name) - same convention as runCheckForPreview.
-  const url = `/premiere_exports/${premiereProjectId}/documentary.mp4?t=${Date.now()}`;
-  documentaryPreviewVideoEl.src = url;
-  documentaryPreviewVideoEl.style.display = '';
-}
-
-function runCheckForRenderedMovie() {
-  if (!premiereProjectId) {
-    setRenderMovieStatus('Render MP4 first.', true);
-    return;
-  }
-  checkRenderedBtn.disabled = true;
-  setRenderMovieStatus('Checking ...');
-  documentaryPreviewVideoEl.style.display = 'none';
-  const url = `/premiere_exports/${premiereProjectId}/documentary.mp4?t=${Date.now()}`;
-  fetch(url, { method: 'HEAD' })
-    .then(response => {
-      if (!response.ok) throw new Error('not found');
-      documentaryPreviewVideoEl.src = url;
-      documentaryPreviewVideoEl.style.display = '';
-      setRenderMovieStatus('Loaded documentary.mp4.');
-    })
-    .catch(() => setRenderMovieStatus('No documentary.mp4 yet - click Render MP4 first.', true))
-    .finally(() => { checkRenderedBtn.disabled = false; });
 }
 //#endregion
 
@@ -3852,11 +3839,13 @@ const premiereExportFolderEl = document.getElementById('premiere-export-folder')
 const checkPreviewBtn = document.getElementById('check-preview-btn');
 const previewStatusEl = document.getElementById('preview-status');
 const previewVideoEl = document.getElementById('preview-video');
-const renderMovieActionEl = document.getElementById('render-movie-action');
-const renderMovieBtn = document.getElementById('render-movie-btn');
-const renderMovieStatusEl = document.getElementById('render-movie-status');
-const checkRenderedBtn = document.getElementById('check-rendered-btn');
-const documentaryPreviewVideoEl = document.getElementById('documentary-preview-video');
+// The "Render MP4" button + its status live in the storyboard heading row now
+// (built per-render in renderMovieEditor, next to "Clear all scenes"), not in
+// a fixed panel - so these are reassigned each render rather than queried once.
+// There's no in-app preview; the result is opened directly from
+// premiere_exports/<id>/documentary.mp4.
+let renderMovieBtn = null;
+let renderMovieStatusEl = null;
 
 // Record Audio - same getUserMedia/MediaRecorder toggle pattern as
 // index.html's Record Your Intent button (see recordIntentBtn above), but
@@ -4084,6 +4073,7 @@ function setPreviewStatus(message, isError) {
 }
 
 function setRenderMovieStatus(message, isError) {
+  if (!renderMovieStatusEl) return; // heading row not built (e.g. index.html)
   renderMovieStatusEl.textContent = message || '';
   renderMovieStatusEl.classList.toggle('error', !!isError);
 }
@@ -4095,8 +4085,8 @@ function setRenderMovieStatus(message, isError) {
 if (extractBtn) extractBtn.addEventListener('click', runExtraction);
 if (exportPremiereBtn) exportPremiereBtn.addEventListener('click', runExportForPremiere);
 if (checkPreviewBtn) checkPreviewBtn.addEventListener('click', runCheckForPreview);
-if (renderMovieBtn) renderMovieBtn.addEventListener('click', runRenderMovie);
-if (checkRenderedBtn) checkRenderedBtn.addEventListener('click', runCheckForRenderedMovie);
+// The "Render MP4" button is built + wired per-render in the storyboard
+// heading row (see renderMovieEditor), so there's no fixed element to wire here.
 
 // Moves the "Suggested narrative arc" module (#storyboard-arc-module) into
 // the dedicated left sidebar once an arc's been accepted (see

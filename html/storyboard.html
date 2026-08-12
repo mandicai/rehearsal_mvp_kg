@@ -111,23 +111,12 @@
               <div id="preview-status" class="status-line"></div>
               <video id="preview-video" controls style="display: none; margin-top: 8px; max-width: 100%;"></video>
             </div>
-
-            <!-- The automated alternative to Export for Premiere above: a
-             real MP4 assembled server-side by ffmpeg (see backend/
-             movie_render.py and /render/start), no Premiere or manual steps.
-             Shown alongside it, at the same level, so the two read as
-             parallel choices rather than one replacing the other. Unlike the
-             Premiere round-trip, the backend performs the render itself, so
-             this polls /render/status to completion automatically; the
-             manual "Check" button is only a fallback for a page reload
-             (which loses the in-memory polling interval). -->
-            <div id="render-movie-action" style="display: none; margin-top: 12px;">
-              <button id="render-movie-btn" class="btn-primary">Render MP4</button>
-              <div id="render-movie-status" class="status-line"></div>
-              <button id="check-rendered-btn" class="btn-primary" style="margin-top: 8px;">Check for rendered
-                MP4</button>
-              <video id="documentary-preview-video" controls style="display: none; margin-top: 8px; max-width: 100%;"></video>
-            </div>
+            <!-- The automated ffmpeg render (backend/movie_render.py +
+             /render/start) is triggered by the "Render MP4" button in the
+             storyboard heading row (see js/paper-extract.js's renderMovieEditor),
+             not from a panel here. The result is written to
+             premiere_exports/<id>/documentary.mp4, which the presenter opens
+             directly - there's no in-app preview. -->
           </div>
         </div>
 
