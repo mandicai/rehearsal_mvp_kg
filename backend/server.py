@@ -702,11 +702,14 @@ def paper_generate_shot():
     except (TypeError, ValueError):
         return jsonify({'error': 'section_index is required and must be an integer'}), 400
 
+    # Whatever's available drives the shot; none are required (with nothing at
+    # all, generate_shot_plan invents a plausible generic shot). abstract is
+    # the whole paper's abstract, so it gets the larger transcript-style cap.
     title = (data.get('title') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
     scene_notes = (data.get('scene_notes') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
     narration = (data.get('narration') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS]
-    if not title and not scene_notes and not narration:
-        return jsonify({'error': 'at least one of title, scene_notes, or narration is required'}), 400
+    act_title = (data.get('act_title') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
+    abstract = (data.get('abstract') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS]
 
     documentary_mode, err = _parse_documentary_mode(data)
     if err:
@@ -718,7 +721,8 @@ def paper_generate_shot():
         return jsonify({'error': _SKETCH_NOT_CONFIGURED_ERROR}), 503
 
     try:
-        shot_plan = shot_plan_client.generate_shot_plan(title, scene_notes, narration, documentary_mode)
+        shot_plan = shot_plan_client.generate_shot_plan(
+            title, scene_notes, narration, act_title, abstract, documentary_mode)
     except ShotPlanLLMCallError as exc:
         return jsonify({'error': str(exc)}), 500
 

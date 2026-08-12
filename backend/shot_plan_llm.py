@@ -81,7 +81,7 @@ Reason in this order:
 
 Narrative-operation -> visual-operation guidance: orient -> ELS/LS static; contextualize -> LS/MS (deep composition); introduce -> MS/MCU; observe -> MLS/MS; accompany -> tracking; connect -> pan; reveal -> pan/tilt/pull_out; direct_attention -> CU push_in; inspect -> CU/ECU; humanize -> MCU/CU; react -> CU/MCU; expand -> pull_out (CU->LS); narrow -> push_in (LS->CU).
 
-Ground EVERYTHING in the given scene title, scene notes, and narration. The narration tells you (a) what information the scene should present and (b) where/how the viewer should be positioned - honor both. Never invent facts, places, or people not implied by the title/notes/narration. The start_frame and end_frame must be concrete, filmable visual descriptions (what is actually in the frame - subjects, setting, framing), not abstract concepts or camera jargon.
+Ground everything in whatever context is given - it may include any of: the presenter's narration (the voiceover for the scene - the strongest signal for what it's about), the scene title, the arc part the scene sits in, scene notes (paper text), and the paper's abstract. Use whatever is present; do not invent specific facts, places, or people that none of the given material implies. If little or nothing is given, invent a plausible, generic documentary shot for an academic-research film rather than refusing. The start_frame and end_frame must be concrete, filmable visual descriptions (what is actually in the frame - subjects, setting, framing), not abstract concepts or camera jargon.
 
 Respond with a JSON object of the exact shape:
 {"shot": {"shot_size": "<one of ELS,LS,MLS,MS,MCU,CU,ECU>", "movement": "<one of static,pan,tilt,push_in,pull_out,tracking,handheld>", "narrative_operation": "<one of orient,contextualize,introduce,observe,accompany,connect,reveal,direct_attention,inspect,humanize,react,expand,narrow>", "purpose": "<one short sentence: what this shot does for the viewer>", "start_frame": "<concrete visual description of the opening framing>", "end_frame": "<concrete visual description of the closing framing>", "duration_seconds": <number, typically 4-10>}}
@@ -117,34 +117,42 @@ class ShotPlanLLMClient:
             self._client = OpenAI(**kwargs)
         return self._client
 
-    def generate_shot_plan(self, title, scene_notes='', narration='', documentary_mode=None):
-        """title: the scene's title. scene_notes: the paper text the scene is
-        grounded in (section.text). narration: the presenter's recorded
-        narration about what info to present + where/how the viewer sits
-        (section.narration) - the primary driver. documentary_mode: optional
-        key into DOCUMENTARY_MODE_KEYS, biasing the framing choices.
+    def generate_shot_plan(self, title, scene_notes='', narration='', act_title='', abstract='', documentary_mode=None):
+        """Infers one shot from whatever context is available - NONE of these
+        are required:
+        - narration: the presenter's live voiceover for the scene (what they'd
+          say over it) - the primary driver when present.
+        - scene_notes: the paper text the scene is grounded in (section.text).
+        - title: the scene's own title.
+        - act_title: the arc part (act) the scene sits in.
+        - abstract: the paper's abstract (the whole doc's framing).
+        documentary_mode: optional key into DOCUMENTARY_MODE_KEYS, biasing the
+        framing. With little or nothing to go on, the model is asked to invent
+        a plausible generic documentary shot rather than refuse.
 
         Returns {'shot_size', 'movement', 'narrative_operation', 'purpose',
         'start_frame', 'end_frame', 'duration_seconds'}. Tolerant of a
         partially-bad response the same way generate_storyboard is: invalid
         enum values fall back to neutral defaults, and a missing frame
-        description falls back to a generic one derived from the title,
-        rather than failing the whole request."""
+        description falls back to the other frame."""
         if not self.is_configured():
             raise ShotPlanLLMCallError('LLM client is not configured (missing API key or openai package)')
 
-        title = (title or '').strip() or 'Untitled scene'
-        parts = [f'Scene title: {title}']
+        parts = []
+        if (narration or '').strip():
+            parts.append(f"Narration (the voiceover the presenter would say over this scene):\n{narration.strip()}")
+        if (title or '').strip():
+            parts.append(f'Scene title: {title.strip()}')
+        if (act_title or '').strip():
+            parts.append(f'This scene sits in the arc part titled: {act_title.strip()}')
         if (scene_notes or '').strip():
             parts.append(f'Scene notes (the paper text this scene is grounded in):\n{scene_notes.strip()}')
-        if (narration or '').strip():
+        if (abstract or '').strip():
+            parts.append(f"The paper's abstract (overall framing of the work):\n{abstract.strip()}")
+        if not parts:
             parts.append(
-                'Narration (what information the scene should present, and where/how the viewer should be '
-                f'positioned):\n{narration.strip()}'
-            )
-        else:
-            parts.append(
-                'No narration was recorded for this scene - infer the intent from the title and scene notes alone.'
+                'No specific material was provided for this scene - invent a plausible, generic documentary '
+                'shot for an academic-research film.'
             )
         if documentary_mode in _MODE_GUIDANCE:
             parts.append(f'Documentary mode: {_MODE_GUIDANCE[documentary_mode]}')
@@ -183,7 +191,7 @@ class ShotPlanLLMClient:
                     'shot_size': shot_size if shot_size in _SHOT_SIZES else _DEFAULT_SHOT_SIZE,
                     'movement': movement if movement in _MOVEMENTS else _DEFAULT_MOVEMENT,
                     'narrative_operation': operation if operation in _NARRATIVE_OPERATIONS else _DEFAULT_OPERATION,
-                    'purpose': (shot.get('purpose') or '').strip() or f'Present "{title}".',
+                    'purpose': (shot.get('purpose') or '').strip() or (f'Present "{title.strip()}".' if (title or '').strip() else 'Establish this scene.'),
                     'start_frame': start_frame or end_frame,
                     'end_frame': end_frame or start_frame,
                     'duration_seconds': duration if isinstance(duration, (int, float)) and duration > 0 else _DEFAULT_DURATION,

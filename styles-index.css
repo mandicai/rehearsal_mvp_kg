@@ -804,18 +804,33 @@ body.pub-to-doc-page .action-bar {
 /* Documentary modes: a full-width horizontal bar above the timeline (see
    js/paper-extract.js's renderMovieEditor), not a sidebar card. Chips lay
    out in a row (wrapping if needed) and are draggable onto a timeline act. */
+/* A thin, dark strip inside the premiere timeline, above its tracks (see
+   js/paper-extract.js's renderMovieEditor) - label, chips, and hint all on one
+   wrapping row so it stays short. Dark to match the timeline (#1b1a19). */
 .documentary-modes-bar {
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: var(--cd-card-bg);
-  border: 1px solid var(--cd-border);
-  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--cd-border-strong);
 }
 
-.documentary-modes-bar h3 {
-  margin: 0 0 8px;
+.documentary-modes-bar-title {
+  font-size: 11px;
   font-weight: 700;
-  font-size: 13px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.8);
+  white-space: nowrap;
+}
+
+.documentary-modes-bar-hint {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .clear-all-scenes-btn {
@@ -824,14 +839,36 @@ body.pub-to-doc-page .action-bar {
   padding: 4px 10px;
 }
 
+/* The chip row inline in the strip - no bottom margin (unlike the base
+   .chip-row), so the strip stays a single short line. */
 .documentary-modes-bar-row {
   flex-direction: row;
   flex-wrap: wrap;
-  margin-bottom: 8px;
+  gap: 6px;
+  margin-bottom: 0;
 }
 
 .documentary-modes-bar-row .chip {
   cursor: grab;
+}
+
+/* Chips read as light-on-dark inside the dark strip (the page's default
+   .chip.suggested is dark-on-light, invisible here). Scoped under
+   body.pub-to-doc-page so it beats that rule's specificity. */
+body.pub-to-doc-page .documentary-modes-bar .chip.suggested {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px dashed rgba(255, 255, 255, 0.35);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+body.pub-to-doc-page .documentary-modes-bar .chip.suggested:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+body.pub-to-doc-page .documentary-modes-bar .chip.suggested.selected {
+  background: var(--cd-accent-active);
+  border-color: var(--cd-accent-active);
+  color: var(--cd-accent-text);
 }
 
 /* An act being hovered while dragging a documentary mode over it (see

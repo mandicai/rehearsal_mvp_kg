@@ -1644,9 +1644,10 @@ const GENERATE_SHOT_API_URL = `${API_BASE_URL}/paper/generate_shot`;
 
 // Narration-driven shot design (backend/shot_plan_llm.py + /paper/generate_shot,
 // see js/paper-extract.js's runGenerateShot) - infers one shot and generates
-// its start + end frames from the scene's title, notes, and narration. Same
+// its start + end frames from whatever's available (narration, scene notes,
+// scene title, the arc part the scene sits in, and the paper abstract). Same
 // projectId in/out convention as fetchGenerateSketch.
-function fetchGenerateShot(sectionIndex, title, sceneNotes, narration, documentaryMode, projectId) {
+function fetchGenerateShot({ sectionIndex, title, sceneNotes, narration, actTitle, abstract, documentaryMode, projectId }) {
   return fetch(GENERATE_SHOT_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1655,6 +1656,8 @@ function fetchGenerateShot(sectionIndex, title, sceneNotes, narration, documenta
       title: title || '',
       scene_notes: sceneNotes || '',
       narration: narration || '',
+      act_title: actTitle || '',
+      abstract: abstract || '',
       ...(projectId ? { project_id: projectId } : {}),
       ...(documentaryMode ? { documentary_mode: documentaryMode } : {}),
     })

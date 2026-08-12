@@ -1366,12 +1366,12 @@ function buildSectionBlock(section, selectable) {
 
     const narrationLine = document.createElement('div');
     narrationLine.className = 'paper-section-narration';
-    // Prompts the presenter for the two things the shot designer needs (see
-    // shot_plan_llm.py): what information the scene should present, and where/
-    // how the viewer should be positioned - then "Generate shot" infers the
-    // shot from it.
+    // Just live-narrate the voiceover for this scene - what you'd actually
+    // say over it. "Generate shot" infers the shot from whatever's available
+    // (this narration, the scene notes/title, the arc part, the abstract),
+    // so the presenter doesn't have to spell out framing themselves.
     narrationLine.textContent = section.narration
-      || '(no narration yet - record what information this scene should present, and where/how the viewer should be positioned; then Generate shot)';
+      || '(no narration yet - record what you\'d want to say in this section; then Generate shot)';
     narrationAudio.appendChild(narrationLine);
 
     // --- The section's actual spoken narration audio - required to come
@@ -2727,28 +2727,23 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
   sidePanel.className = 'narrative-side-panel';
   innerLayout.appendChild(sidePanel);
 
-  // Documentary modes - a full-width horizontal bar ABOVE the timeline (see
-  // the insertBefore below), not a sidebar card. Each chip both clicks (sets
-  // the global stylistic mode for storyboard/edit-plan generation) AND drags
-  // onto a timeline act to scaffold that act's scenes (see
-  // buildNarrativeTimeline's drop target / scaffoldModeOntoAct).
+  // Documentary modes - a thin, dark strip that lives INSIDE the premiere
+  // timeline, above its tracks (inserted after buildNarrativeTimeline builds
+  // the timeline - see below). Label, chips, and a hint all sit on one row so
+  // the strip stays short. Each chip both clicks (sets the global stylistic
+  // mode for storyboard/edit-plan generation) AND drags onto a timeline act
+  // to scaffold that act's scenes (see makeActModeDropTarget / scaffoldModeOntoAct).
   const modesBlock = document.createElement('div');
   modesBlock.className = 'documentary-modes-bar';
 
-  const modesTitle = document.createElement('h3');
+  const modesTitle = document.createElement('span');
+  modesTitle.className = 'documentary-modes-bar-title';
   modesTitle.textContent = 'Documentary modes';
   modesBlock.appendChild(modesTitle);
 
   const modesRow = document.createElement('div');
   modesRow.className = 'chip-row documentary-modes-bar-row';
   modesBlock.appendChild(modesRow);
-
-  // Below the chips (not above) - the tip reads as a caption for whichever
-  // mode was just clicked, not a header for the row.
-  const modesStatus = document.createElement('div');
-  modesStatus.className = 'status-line';
-  modesStatus.textContent = 'Drag a mode onto a timeline act to scaffold its scenes, or click to set the overall mode.';
-  modesBlock.appendChild(modesStatus);
 
   DOCUMENTARY_MODES.forEach(mode => {
     const chip = document.createElement('button');
@@ -2763,9 +2758,6 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
       selectedDocumentaryMode = selectedDocumentaryMode === mode.key ? null : mode.key;
       modesRow.querySelectorAll('.chip').forEach(c => c.classList.remove('selected'));
       chip.classList.toggle('selected', selectedDocumentaryMode === mode.key);
-      modesStatus.textContent = selectedDocumentaryMode
-        ? DOCUMENTARY_MODE_PROMPTS[selectedDocumentaryMode]
-        : 'Drag a mode onto a timeline act to scaffold its scenes, or click to set the overall mode.';
       // Picking a mode is the other half of triggerFindFootageSweep's
       // precondition (alongside a drafted storyboard) - a no-op here if
       // there's no storyboard yet.
@@ -2783,8 +2775,11 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
     });
     modesRow.appendChild(chip);
   });
-  // Above the timeline (its first child), not in the sidebar.
-  arcLayout.insertBefore(modesBlock, timelineEl);
+
+  const modesHint = document.createElement('span');
+  modesHint.className = 'documentary-modes-bar-hint';
+  modesHint.textContent = 'Drag onto an act to scaffold its scenes, or click to set the overall mode.';
+  modesBlock.appendChild(modesHint);
 
   // Toggleable technique chips - see DOCUMENTARY_TECHNIQUES above for what
   // these are/aren't. Back in its own sidebar (see innerLayout above),
@@ -2796,6 +2791,14 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
   const techniquesTitle = document.createElement('h3');
   techniquesTitle.textContent = 'Documentary techniques';
   techniquesBlock.appendChild(techniquesTitle);
+
+  // Same kind of instruction the Documentary modes strip carries - tells the
+  // presenter these chips are draggable (see the chip dragstart / the
+  // scene-notes drop handler in buildSectionBlock).
+  const techniquesHint = document.createElement('div');
+  techniquesHint.className = 'chip-row-caption';
+  techniquesHint.textContent = 'Drag a technique onto a scene\'s Scene Notes to give the shot more direction.';
+  techniquesBlock.appendChild(techniquesHint);
 
   const techniquesRow = document.createElement('div');
   techniquesRow.className = 'chip-row';
@@ -2915,6 +2918,11 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
   // Now that every act's row has its final section list (including any
   // just-auto-populated blanks above), build the timeline against it.
   const clipsBySectionIndex = buildNarrativeTimeline(timelineEl, sections, assignmentsByIndex);
+
+  // The Documentary modes strip lives INSIDE the timeline, above its ruler/
+  // tracks - inserted here (not earlier) because buildNarrativeTimeline clears
+  // timelineEl's contents when it (re)builds the ruler and tracks.
+  timelineEl.insertBefore(modesBlock, timelineEl.firstChild);
 
   container.appendChild(arcLayout);
 
@@ -3290,18 +3298,30 @@ function runDraftVisualThenGenerate(section, btn, statusEl, draftedMessage, gene
 }
 
 // Narration-driven shot design (backend/shot_plan_llm.py + /paper/generate_shot):
-// from the scene's title + scene notes + recorded narration, infer one shot
-// (size/movement/purpose) and generate its start frame + end frame, shown as
-// the artboard in buildVisualBox and hard-cut into the rendered MP4. This is
-// the primary way a scene's visual is created (it replaced the old
-// Generate-sketch / sketch-sequence buttons). Re-clicking redesigns from
+// infers one shot (size/movement/purpose) and generates its start frame + end
+// frame from whatever's available - the scene's narration, scene notes, scene
+// title, the arc part (act) the scene sits in, and the paper's abstract. None
+// are required; with nothing at all the backend invents a plausible shot. The
+// frames show as the artboard in buildVisualBox and hard-cut into the rendered
+// MP4. This is the primary way a scene's visual is created (it replaced the
+// old Generate-sketch / sketch-sequence buttons); re-clicking redesigns from
 // scratch, same pattern as re-running Find Footage.
 function runGenerateShot(section, btn, statusEl) {
   btn.disabled = true;
   statusEl.textContent = 'Designing this shot (~30s: shot plan + start/end frames)...';
   statusEl.classList.remove('error');
 
-  fetchGenerateShot(section.index, section.title, section.text, section.narration, selectedDocumentaryMode, premiereProjectId)
+  const act = currentArcSections.find(a => a.key === currentAssignments[section.index]);
+  fetchGenerateShot({
+    sectionIndex: section.index,
+    title: section.title,
+    sceneNotes: section.text,
+    narration: section.narration,
+    actTitle: act ? act.label : '',
+    abstract: findAbstractText(),
+    documentaryMode: selectedDocumentaryMode,
+    projectId: premiereProjectId,
+  })
     .then(({ project_id, shot_plan, start_preview_url, end_preview_url }) => {
       premiereProjectId = project_id;
       section.shotPlan = shot_plan;
