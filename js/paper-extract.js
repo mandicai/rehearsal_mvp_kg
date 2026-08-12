@@ -1215,17 +1215,21 @@ function buildSectionBlock(section, selectable) {
     // ANIMATE_TECHNIQUES mirrors backend/animate_llm.py's TECHNIQUES (kept
     // in sync by convention, same as this file's own DOCUMENTARY_MODES/
     // documentary_modes.py pairing). animateMethodSelect picks which of
-    // backend/animate_llm.py's 3 interchangeable generation paths a click
-    // on one of the technique buttons below actually uses - each has a
-    // different prerequisite (see updateAnimateControlsState), which is
-    // why the buttons' disabled state has to be recomputed on every method
-    // change, not set once at render time.
+    // backend/animate_llm.py's generation paths a click on one of the
+    // technique buttons below uses.
+    //
+    // The two Veo paths (Image → Video, Text → Video) are intentionally no
+    // longer offered - only the fast local sketch-sequence (GIF) path
+    // remains. The select is kept (hidden) as a single-option control so the
+    // click/state handlers below can still read animateMethodSelect.value
+    // ('sketchSequence') without special-casing; re-add the Veo options here
+    // to bring them back. The Veo generation functions
+    // (runGenerateAnimatedSketch/runGenerateVideoFromText) are left in place.
     const animateMethodSelect = document.createElement('select');
     animateMethodSelect.className = 'animate-method-select';
     animateMethodSelect.title = 'How to generate the animated preview';
+    animateMethodSelect.style.display = 'none';
     [
-      { value: 'imageToVideo', label: 'Image → Video (Veo)' },
-      { value: 'textToVideo', label: 'Text → Video (Veo)' },
       { value: 'sketchSequence', label: 'Sketch sequence (fast)' },
     ].forEach(({ value, label }) => {
       const opt = document.createElement('option');
