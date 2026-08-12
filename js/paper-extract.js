@@ -1598,8 +1598,19 @@ function buildSectionBlock(section, selectable) {
   removeBtn.addEventListener('click', event => {
     event.stopPropagation();
     section.removed = !section.removed;
-    block.classList.toggle('removed', section.removed);
-    updateRemoveBtn();
+    if (selectable) {
+      // Arranged view: a deleted scene leaves the timeline and its arc row
+      // entirely (renderMovieEditor is only ever fed non-removed sections)
+      // and shows up in the "Deleted scenes" sidebar module, restorable
+      // there (see renderDeletedScenesList) - rather than lingering in place
+      // dimmed, which is the flat feed's behavior below.
+      saveDebugSession();
+      const remaining = currentSections.filter(s => !s.removed);
+      renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+    } else {
+      block.classList.toggle('removed', section.removed);
+      updateRemoveBtn();
+    }
     updateComposeStoryboardVisibility();
   });
 
@@ -1640,13 +1651,22 @@ function renderSectionFeed(container, label, sections) {
   container.innerHTML = '';
   hideSplitFloatingBtn(); // avoid a stale reference to a card this re-render just replaced
 
+  // The paper's own source material only - never the scaffold scenes added
+  // while arranging/storyboarding on storyboard.html (narrativeOnly AND
+  // assigned to an arc act - see insertSection / the arranged view's
+  // "+ Add Scene" and mode scaffolding). Those ride along in the shared saved
+  // session (see saveDebugSession) but aren't source material and mustn't
+  // swell this feed. A narrativeOnly section with no act is one added right
+  // here on the flat feed (see buildInsertSectionDivider), which does belong.
+  const sourceSections = sections.filter(section => !(section.narrativeOnly && currentAssignments[section.index]));
+
   const title = document.createElement('h2');
   title.textContent = 'Source material';
   container.appendChild(title);
 
   const header = document.createElement('div');
   header.className = 'paper-source-label';
-  header.textContent = `${sections.length} section${sections.length === 1 ? '' : 's'} extracted. You can edit section headers and content, click a section to exclude, and split or add new sections. These
+  header.textContent = `${sourceSections.length} section${sourceSections.length === 1 ? '' : 's'} extracted. You can edit section headers and content, click a section to exclude, and split or add new sections. These
   serve as source material for you to base scenes and narration on in the documentary.`;
   container.appendChild(header);
 
@@ -1656,9 +1676,9 @@ function renderSectionFeed(container, label, sections) {
   // sections (not just at the very end, below) - inserts right after the
   // section above it, so a new section can land anywhere in the list, not
   // only appended last.
-  sections.forEach((section, i) => {
+  sourceSections.forEach((section, i) => {
     feed.appendChild(buildSectionBlock(section));
-    if (i < sections.length - 1) feed.appendChild(buildInsertSectionDivider(section.index));
+    if (i < sourceSections.length - 1) feed.appendChild(buildInsertSectionDivider(section.index));
   });
   container.appendChild(feed);
 }
@@ -2324,12 +2344,21 @@ function isSceneDraftedForRole(section, roleKey) {
 // mode's scene template (see MODE_SCENE_TEMPLATES) - one A-roll/B-roll scene
 // per entry, each a blank narrativeOnly scene the presenter then fills, with
 // its role and an auto-generated edit plan (duration in seconds) already set.
-// Additive, not destructive: existing sections in the act are left untouched,
-// so nothing the presenter already wrote is lost - they can delete any
-// scaffold scenes they don't want.
+// Replaces, not accumulates: the act's existing scaffold scenes (the previous
+// mode's, plus any auto-blank/manually-added placeholders - all narrativeOnly)
+// are cleared first, so re-dragging a mode resets the act rather than piling
+// more scenes on. Real paper sections arranged into the act are kept as the
+// source content the scaffold is built around.
 function scaffoldModeOntoAct(actKey, modeKey) {
   const template = MODE_SCENE_TEMPLATES[modeKey];
   if (!template) return;
+
+  currentSections = currentSections.filter(section => {
+    const isActScaffold = section.narrativeOnly && currentAssignments[section.index] === actKey;
+    if (isActScaffold) delete currentAssignments[section.index];
+    return !isActScaffold;
+  });
+
   template.forEach(spec => {
     const scene = insertSection(-1, spec.title, '', actKey, true);
     scene.role = spec.role;
@@ -2515,6 +2544,47 @@ function renderSourceMaterialList() {
     }
 
     sourceMaterialListEl.appendChild(item);
+  });
+}
+
+// storyboard.html's "Deleted scenes" sidebar module (#deleted-scenes-module)
+// - the scenes deleted from the arranged view (see buildSectionBlock's remove
+// button, which in the arranged view drops a scene from the timeline and its
+// arc row entirely rather than dimming it in place). Each lists a Restore
+// button that puts the scene back. The whole module hides itself when nothing
+// is deleted, so it doesn't sit empty in the sidebar. A no-op on index.html,
+// which has no such module.
+function renderDeletedScenesList() {
+  if (!deletedScenesListEl) return;
+  deletedScenesListEl.innerHTML = '';
+  const deleted = currentSections.filter(section => section.removed);
+  if (deletedScenesModuleEl) deletedScenesModuleEl.style.display = deleted.length ? '' : 'none';
+
+  deleted.forEach(section => {
+    const item = document.createElement('div');
+    item.className = 'deleted-scene-item';
+
+    const title = document.createElement('div');
+    title.className = 'deleted-scene-item-title';
+    title.textContent = section.title || '(untitled scene)';
+    item.appendChild(title);
+
+    const restoreBtn = document.createElement('button');
+    restoreBtn.type = 'button';
+    restoreBtn.className = 'btn-secondary deleted-scene-restore-btn';
+    restoreBtn.textContent = 'Restore';
+    restoreBtn.addEventListener('click', () => {
+      section.removed = false;
+      saveDebugSession();
+      // renderMovieEditor re-renders this list from its own tail call, so the
+      // restored scene reappears in its arc row/timeline and leaves here.
+      const remaining = currentSections.filter(s => !s.removed);
+      renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+      updateComposeStoryboardVisibility();
+    });
+    item.appendChild(restoreBtn);
+
+    deletedScenesListEl.appendChild(item);
   });
 }
 
@@ -2872,6 +2942,7 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
   // exclude toggled, text edited, ...) - a no-op on index.html, which never
   // calls renderMovieEditor in the first place.
   renderSourceMaterialList();
+  renderDeletedScenesList();
 }
 
 // --- Rendering: a section block is the same clickable unit whether it's
@@ -3645,6 +3716,8 @@ const paperActionsEl = document.getElementById('paper-actions');
 const storyboardArcModuleEl = document.getElementById('storyboard-arc-module');
 const mediaBankModuleEl = document.getElementById('media-bank-module');
 const sourceMaterialModuleEl = document.getElementById('source-material-module');
+const deletedScenesModuleEl = document.getElementById('deleted-scenes-module');
+const deletedScenesListEl = document.getElementById('deleted-scenes-list');
 const sidebarStackEl = document.getElementById('storyboard-sidebar');
 const togglePanelsBtn = document.getElementById('toggle-panels-btn');
 const recordMediaAudioBtn = document.getElementById('record-media-audio-btn');
@@ -3947,13 +4020,24 @@ function relocateSourceMaterialToSidebar() {
   sidebarStackEl.appendChild(sourceMaterialModuleEl);
 }
 
-// Runs all 3 relocations together (both call sites always wanted all 3
+// Deleted scenes module (see renderDeletedScenesList) - moved into the same
+// sidebar, but its visibility is left to renderDeletedScenesList (hidden when
+// nothing's deleted), unlike the others which are always shown once relocated.
+function relocateDeletedScenesToSidebar() {
+  if (!sidebarStackEl || !deletedScenesModuleEl) return;
+  deletedScenesModuleEl.classList.add('module-card--in-sidebar');
+  sidebarStackEl.appendChild(deletedScenesModuleEl);
+  renderDeletedScenesList();
+}
+
+// Runs all relocations together (both call sites always wanted them all
 // anyway) and reveals #toggle-panels-btn - there's nothing worth
 // collapsing before the sidebar actually has content.
 function relocateAllSidebarModules() {
   relocateArcSuggestionToSidebar();
   relocateMediaBankToSidebar();
   relocateSourceMaterialToSidebar();
+  relocateDeletedScenesToSidebar();
   if (togglePanelsBtn) togglePanelsBtn.style.display = '';
 }
 

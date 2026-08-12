@@ -179,6 +179,14 @@
         <div id="source-material-list"></div>
       </div><!-- /#source-material-module -->
 
+      <!-- Scenes deleted from the arranged view collect here, each with a
+       Restore button (see js/paper-extract.js's renderDeletedScenesList).
+       Hidden whenever nothing's deleted - that function toggles it. -->
+      <div class="module-card" id="deleted-scenes-module" style="display: none;">
+        <h2>Deleted scenes</h2>
+        <div id="deleted-scenes-list"></div>
+      </div><!-- /#deleted-scenes-module -->
+
       <!-- The movie editor (js/paper-extract.js's renderMovieEditor) renders
        into this once an arc is arranged. -->
       <div id="paper-sections"></div>

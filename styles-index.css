@@ -241,6 +241,43 @@ body {
   line-height: 1.4;
 }
 
+/* Deleted scenes sidebar module (see js/paper-extract.js's
+   renderDeletedScenesList) - a deleted scene's title beside a Restore button. */
+#deleted-scenes-list {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.deleted-scene-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--cd-border);
+}
+
+.deleted-scene-item-title {
+  font-size: 12px;
+  font-weight: 700;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deleted-scene-restore-btn {
+  flex: 0 0 auto;
+  font-size: 11px;
+  padding: 4px 10px;
+}
+
 .sidebar-toggle-btn {
   font-family: inherit;
   font-size: 14px;
@@ -313,7 +350,7 @@ input[type="file"]::file-selector-button:hover {
 /* #region EXTRACTED SOURCE MATERIAL */
 #paper-sections {
   /* background: var(--cd-panel-bg); */
-  padding: 24px 24px 24px 24px;
+  /* padding: 24px 24px 24px 24px; */
   border-radius: 8px;
   /* Overrides .upload-sidebar's text-align: center while this sits nested
      in its .upload-sidebar-body (page 1, pre-arrangement) - harmless once
@@ -424,7 +461,8 @@ input[type="file"]::file-selector-button:hover {
 .paper-section-title {
   font-size: 16px;
   font-weight: 700;
-  /* margin-bottom: 4px; */
+  padding-bottom: 10px;
+  border-bottom: 1px dashed var(--cd-border-strong);
 }
 
 .paper-section-image {
@@ -768,7 +806,7 @@ body.pub-to-doc-page .action-bar {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 6px 0;
+  /* margin: 6px 0; */
 }
 
 .paper-section-role-label {
@@ -910,8 +948,8 @@ body.pub-to-doc-page .action-bar {
    see js/paper-extract.js's buildSectionBlock. */
 .paper-section-narration-audio {
   /* margin-top: 14px; */
-  padding-top: 12px;
-  border-top: 1px dashed rgba(255, 255, 255, 0.25);
+  /* padding-top: 12px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.25); */
   border-radius: 4px;
   transition: background 0.15s ease, box-shadow 0.15s ease;
 }
