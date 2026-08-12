@@ -19,7 +19,6 @@ SketchLLMCallError if unconfigured.
 """
 import base64
 import os
-import time
 
 import httpx
 
@@ -30,21 +29,20 @@ try:
 except ImportError:  # openai isn't installed - client stays unconfigured
     OpenAI = None
 
-# Verified live (see the plan this was built from) - the best speed/quality
-# balance among this proxy's actually-usable image models. Not
-# LLM_MODEL-configurable on purpose; most of the catalog 403s at this key's
-# permission level, so this isn't a generic "pick your model" setting.
-MODEL = 'gemini-3.1-flash-image'
+# Ordered image models, tried in turn (see generate_sketch). The first is the
+# best speed/quality; the rest are verified-working fallbacks for when it
+# rate-limits. The rate limit is a *Vertex* quota (RESOURCE_EXHAUSTED), which
+# the gemini-*-image models on this proxy likely share - so the last fallback
+# is a non-Vertex gpt-image-* model with a separate quota pool, which keeps
+# shots generating even when the whole Vertex bucket is exhausted. All three
+# verified live to work at this key's permission level (most of the rest of
+# the catalog 403s). Not LLM_MODEL-configurable on purpose.
+IMAGE_MODELS = ('gemini-3.1-flash-image', 'gemini-2.5-flash-image', 'gpt-image-2')
+MODEL = IMAGE_MODELS[0]  # kept for external reference/logging
 
-# The image model rate-limits/quota-caps aggressively ("RESOURCE_EXHAUSTED"),
-# and a shot generates TWO frames back-to-back (start + end - see server.py's
-# /paper/generate_shot), which trips it easily. Retry only on transient
-# conditions like that (rate limit / overloaded / temporarily unavailable),
-# waiting between attempts to let a per-minute window recover - never on a
-# genuine bad-prompt/permission error, which retrying wouldn't fix. Waits are
-# before the 2nd and 3rd attempts; kept short enough to stay a bounded
-# synchronous request.
-_RETRY_BACKOFF_SECONDS = (5, 12)
+# Rate-limit/overload/quota conditions ("RESOURCE_EXHAUSTED", 429, ...) - the
+# only errors worth moving on to the next model for; a genuine bad-prompt/
+# permission error fails fast (retrying or swapping models wouldn't fix it).
 _RETRYABLE_MARKERS = (
     'resource', 'exhaust', 'rate limit', 'ratelimit', 'too many requests',
     '429', '503', 'overloaded', 'unavailable', 'quota', 'try again', 'temporarily',
@@ -54,6 +52,15 @@ _RETRYABLE_MARKERS = (
 def _is_retryable_image_error(exc):
     msg = str(exc).lower()
     return any(marker in msg for marker in _RETRYABLE_MARKERS)
+
+
+def _image_size(model, style):
+    """A widescreen size for shot frames, square for sketches. gpt-image-* only
+    accepts specific sizes (1536x1024 is its 3:2 widescreen); gemini is lenient
+    and returns its own resolution from the hint."""
+    if style == 'shot_frame':
+        return '1536x1024' if model.startswith('gpt-image') else '1792x1024'
+    return '1024x1024'
 
 # Mood/composition style per documentary mode (see documentary_modes.py) -
 # same stylistic axis as storyboard_llm.py/edit_plan_llm.py's _MODE_GUIDANCE,
@@ -110,10 +117,9 @@ class SketchLLMClient:
         documentary film frame in a natural palette (see artboard-example.png),
         used for the narration-driven start/end frames (shot_plan_llm) that get
         hard-cut into the rendered MP4.
-        Returns raw PNG bytes. Retries only on transient rate-limit/overload/
-        quota errors (see _is_retryable_image_error) with a backoff between
-        attempts - a bad prompt or permission error fails fast, and there's no
-        partial-response case to patch around the way the text clients have."""
+        Returns raw PNG bytes. On a rate-limit/overload/quota error it falls
+        through to the next model in IMAGE_MODELS (a bad prompt/permission error
+        fails fast instead); raises only if every model is exhausted."""
         if not self.is_configured():
             raise SketchLLMCallError('LLM client is not configured (missing API key or openai package)')
 
@@ -130,7 +136,6 @@ class SketchLLMClient:
                 'sketch. No text, no captions, no letterbox bars, no panel borders - just the framed scene '
                 f'filling the whole image.{mode_clause} The frame shows: {visual}'
             )
-            size = '1792x1024'
         else:
             style_clause = f' Style:{mode_clause}' if mode_clause else ''
             prompt = (
@@ -139,29 +144,27 @@ class SketchLLMClient:
                 'and a brief camera-direction note (framing/movement) below or beside the panel, like a '
                 f'real film storyboard.{style_clause} The panel depicts: {visual}'
             )
-            size = '1024x1024'
 
+        # Try each model in turn: a rate-limited/exhausted model is skipped
+        # immediately for the next (rather than waiting out a quota that may be
+        # a shared-across-Vertex cap), while a genuine bad-prompt/permission
+        # error fails fast without burning the fallbacks.
+        client = self._get_client()
         last_error = None
-        for attempt in range(len(_RETRY_BACKOFF_SECONDS) + 1):
-            if attempt:
-                time.sleep(_RETRY_BACKOFF_SECONDS[attempt - 1])
+        for model in IMAGE_MODELS:
             try:
-                client = self._get_client()
-                response = client.images.generate(model=MODEL, prompt=prompt, size=size, n=1)
+                response = client.images.generate(model=model, prompt=prompt, size=_image_size(model, style), n=1)
                 b64_data = response.data[0].b64_json
                 if not b64_data:
                     raise ValueError('response had no b64_json image data')
                 return base64.b64decode(b64_data)
             except Exception as exc:  # network errors, malformed response, API errors
                 last_error = exc
-                # Only rate-limit/overload/quota conditions are worth waiting
-                # out; a bad prompt or permission error fails fast.
                 if not _is_retryable_image_error(exc):
-                    break
+                    raise SketchLLMCallError(f'Sketch generation failed: {exc}')
 
-        if _is_retryable_image_error(last_error):
-            raise SketchLLMCallError(
-                'The image model is rate-limited or over quota right now (resources exhausted). '
-                f'Wait a minute and try again. ({last_error})'
-            )
-        raise SketchLLMCallError(f'Sketch generation failed: {last_error}')
+        # Every model was rate-limited/exhausted.
+        raise SketchLLMCallError(
+            'All image models are rate-limited or over quota right now (resources exhausted). '
+            f'Wait a minute and try again. ({last_error})'
+        )

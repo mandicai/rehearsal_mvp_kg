@@ -3056,20 +3056,28 @@ function ensureFootageQueries(section) {
     .catch(() => { applyFallback(); }); // LLM down - still search on the title
 }
 
+// Freesound audio search is paused for now (per request) - Find Footage only
+// searches video. Flip back to true to re-enable the audio (sound-effect)
+// options row; the backend /media/search_audio route + fetchAudioOptions are
+// left in place.
+const FIND_FOOTAGE_INCLUDE_AUDIO = false;
+
 function runFindFootage(section, resultsEl, statusEl, btn) {
   btn.disabled = true;
-  statusEl.textContent = (section.videoQuery && section.audioQuery)
-    ? 'Searching for video and audio options...'
+  statusEl.textContent = section.videoQuery
+    ? 'Searching for video options...'
     : 'Finding searchable terms, then searching...';
   statusEl.classList.remove('error');
 
   // Returned (not fire-and-forget) so triggerFindFootageSweep can throttle
   // how many of these run at once across a whole sweep. Derives search phrases
   // first if the scene doesn't have them yet (see ensureFootageQueries).
-  return ensureFootageQueries(section).then(() => Promise.allSettled([
-    fetchVideoOptions(section.videoQuery),
-    fetchAudioOptions(section.audioQuery),
-  ])).then(([videoResult, audioResult]) => {
+  return ensureFootageQueries(section).then(() => {
+    const fetches = [fetchVideoOptions(section.videoQuery)];
+    if (FIND_FOOTAGE_INCLUDE_AUDIO) fetches.push(fetchAudioOptions(section.audioQuery));
+    return Promise.allSettled(fetches);
+  }).then((results) => {
+    const [videoResult, audioResult] = results;
     resultsEl.innerHTML = '';
 
     if (videoResult.status === 'fulfilled') {
@@ -3079,14 +3087,14 @@ function runFindFootage(section, resultsEl, statusEl, btn) {
       resultsEl.appendChild(videoRow);
     }
 
-    if (audioResult.status === 'fulfilled') {
+    if (audioResult && audioResult.status === 'fulfilled') {
       const audioRow = document.createElement('div');
       audioRow.className = 'media-audio-options';
       audioResult.value.audio.forEach(audio => audioRow.appendChild(buildMediaAudioOption(section, audio)));
       resultsEl.appendChild(audioRow);
     }
 
-    const errors = [videoResult, audioResult]
+    const errors = results
       .filter(result => result.status === 'rejected')
       .map(result => result.reason.message);
     if (errors.length) {
