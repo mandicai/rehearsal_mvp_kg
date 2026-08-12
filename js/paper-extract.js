@@ -103,12 +103,12 @@ const SCENE_ROLE_LABELS = Object.fromEntries(SCENE_ROLES.map(r => [r.key, r.labe
 // sparse spine under a dense montage. Each mode's A-roll and B-roll second
 // totals are kept roughly equal so the two tracks line up across the act.
 const MODE_SCENE_TEMPLATES = {
+  // Expository is a SINGLE voice-of-god narration scene; its B-roll cutaways
+  // live inside that one scene's visual box (see the cutaways renderer /
+  // runGenerateShot's expository branch), not as separate scenes. shotKind
+  // flags it so Generate shot produces cutaways rather than start/end frames.
   expository: [
-    { role: 'aRoll', title: 'Voice-of-god narration', durationSeconds: 24 },
-    { role: 'bRoll', title: 'Cutaway', durationSeconds: 6 },
-    { role: 'bRoll', title: 'Cutaway', durationSeconds: 6 },
-    { role: 'bRoll', title: 'Cutaway', durationSeconds: 6 },
-    { role: 'bRoll', title: 'Cutaway', durationSeconds: 6 },
+    { role: 'aRoll', title: 'Voice-of-god narration', durationSeconds: 24, shotKind: 'expositoryNarration' },
   ],
   // Observational & participatory are A-roll only - no B-roll cutaways (fly-
   // on-the-wall takes / interview segments carry the whole act themselves).
@@ -848,7 +848,50 @@ const SHOT_MOVEMENT_LABELS = {
   pull_out: 'PULL OUT', tracking: 'TRACKING', handheld: 'HANDHELD',
 };
 
+// Display labels for a cutaway's camera motion (see the cutaways renderer /
+// cutaway_llm.py's _MOTION_TYPES / directional_motion_sketches.html).
+const CUTAWAY_MOTION_LABELS = {
+  reveal: 'Reveal →', return: 'Return ←', approach: 'Approach', retreat: 'Retreat',
+  ascend: 'Ascend ↑', descend: 'Descend ↓', orbit: 'Orbit ↻',
+  countermotion: 'Countermotion', enterexit: 'Enter / Exit',
+};
+
 const VISUAL_BOX_RENDERERS = {
+  // Expository B-roll cutaways (see runGenerateCutaways / /paper/generate_cutaways):
+  // a horizontal scroll of cards, each an AI background still with an animated
+  // orange camera-frame overlay (motion-<type>, ported from
+  // directional_motion_sketches.html) and a caption. Planning-only previews.
+  cutaways(section) {
+    if (!section.cutaways || !section.cutaways.length) return null;
+    const bust = section.cutawaysGeneratedAt ? `?t=${section.cutawaysGeneratedAt}` : '';
+    const row = document.createElement('div');
+    row.className = 'cutaways-row';
+    section.cutaways.forEach(cut => {
+      const card = document.createElement('div');
+      card.className = 'cutaway-card';
+
+      const stage = document.createElement('div');
+      stage.className = `cutaway-stage motion-${cut.motion_type || 'approach'}`;
+      const img = document.createElement('img');
+      img.className = 'cutaway-bg';
+      img.src = `${cut.preview_url}${bust}`;
+      img.alt = cut.caption || 'cutaway';
+      stage.appendChild(img);
+      const cam = document.createElement('div'); // the animated camera frame
+      cam.className = 'cutaway-camera';
+      stage.appendChild(cam);
+      card.appendChild(stage);
+
+      const cap = document.createElement('div');
+      cap.className = 'cutaway-caption';
+      const motionLabel = CUTAWAY_MOTION_LABELS[cut.motion_type] || cut.motion_type || '';
+      cap.textContent = motionLabel ? `${cut.caption} · ${motionLabel}` : (cut.caption || '');
+      card.appendChild(cap);
+
+      row.appendChild(card);
+    });
+    return row;
+  },
   // The narration-driven shot: a start frame → end frame artboard (see
   // /paper/generate_shot and artboard-example.png) - solid-bordered start
   // frame, an arrow, dashed-bordered end frame, with a shot-size/movement
@@ -993,7 +1036,7 @@ function buildVisualBox(section) {
   box.className = 'paper-section-visual-box';
 
   let rendered = null;
-  for (const key of [section.visualSource, 'shotFrames', 'stockVideo', 'video', 'animatedSketch', 'sketch', 'image']) {
+  for (const key of [section.visualSource, 'cutaways', 'shotFrames', 'stockVideo', 'video', 'animatedSketch', 'sketch', 'image']) {
     if (!key) continue;
     rendered = VISUAL_BOX_RENDERERS[key](section);
     if (rendered) break;
@@ -1187,41 +1230,45 @@ function buildSectionBlock(section, selectable) {
 
   // Drop target for dragging in either a documentary-technique chip (see
   // renderMovieEditor) or a Source material excerpt (see
-  // renderSourceMaterialList) - appends rather than replacing, so
-  // dropping in a few things builds up this section's working text.
-  // stopPropagation on all three so this doesn't also bubble up into
-  // .narrative-act-row's own drop handler (handleChipDrop, for
-  // reordering/reassigning sections between arc rows).
-  body.addEventListener('dragover', event => {
-    event.preventDefault();
-    event.stopPropagation();
-    body.classList.add('drag-over');
-  });
-  body.addEventListener('dragleave', event => {
-    event.stopPropagation();
-    body.classList.remove('drag-over');
-  });
-  body.addEventListener('drop', event => {
-    event.preventDefault();
-    event.stopPropagation();
-    body.classList.remove('drag-over');
+  // renderSourceMaterialList) - appends rather than replacing, so dropping in
+  // a few things builds up this section's working text. Wired onto whichever
+  // element wraps the field (in the shot card that's the whole Scene Notes
+  // block - label + field - so the entire area is the target; in the flat
+  // feed it's the field itself). stopPropagation on all three so this doesn't
+  // also bubble up into .narrative-act-row's own drop handler (handleChipDrop,
+  // for reordering/reassigning sections between arc rows).
+  const wireNotesDrop = dropEl => {
+    dropEl.addEventListener('dragover', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      dropEl.classList.add('drag-over');
+    });
+    dropEl.addEventListener('dragleave', event => {
+      event.stopPropagation();
+      dropEl.classList.remove('drag-over');
+    });
+    dropEl.addEventListener('drop', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      dropEl.classList.remove('drag-over');
 
-    const technique = event.dataTransfer.getData('application/x-technique');
-    const sourceIndexRaw = event.dataTransfer.getData('application/x-source-material-index');
+      const technique = event.dataTransfer.getData('application/x-technique');
+      const sourceIndexRaw = event.dataTransfer.getData('application/x-source-material-index');
 
-    let addition = '';
-    if (technique) {
-      addition = technique;
-    } else if (sourceIndexRaw !== '') {
-      const source = currentSections.find(s => s.index === parseInt(sourceIndexRaw, 10));
-      if (source) addition = source.text || '';
-    }
-    if (!addition) return;
+      let addition = '';
+      if (technique) {
+        addition = technique;
+      } else if (sourceIndexRaw !== '') {
+        const source = currentSections.find(s => s.index === parseInt(sourceIndexRaw, 10));
+        if (source) addition = source.text || '';
+      }
+      if (!addition) return;
 
-    section.text = section.text ? `${section.text}\n\n${addition}` : addition;
-    body.textContent = section.text;
-    saveDebugSession();
-  });
+      section.text = section.text ? `${section.text}\n\n${addition}` : addition;
+      body.textContent = section.text;
+      saveDebugSession();
+    });
+  };
 
   if (selectable) {
     // Built here, appended in reading order at the bottom of this branch:
@@ -1556,11 +1603,18 @@ function buildSectionBlock(section, selectable) {
     narrationBlock.appendChild(narrationAudio);
     block.appendChild(narrationBlock);
 
+    // The whole Scene Notes area (label + editable field) is one drop target,
+    // so dragging a technique/source excerpt anywhere over it highlights and
+    // drops into the field - not just the narrow editable sliver.
+    const notesBlock = document.createElement('div');
+    notesBlock.className = 'paper-section-notes-block';
     const sceneNotesLabel = document.createElement('div');
     sceneNotesLabel.className = 'paper-section-text-label';
     sceneNotesLabel.textContent = 'Scene Notes';
-    block.appendChild(sceneNotesLabel);
-    block.appendChild(body);
+    notesBlock.appendChild(sceneNotesLabel);
+    notesBlock.appendChild(body);
+    wireNotesDrop(notesBlock);
+    block.appendChild(notesBlock);
 
     if (section.entities && section.entities.length) {
       const entitiesLine = document.createElement('div');
@@ -1589,6 +1643,7 @@ function buildSectionBlock(section, selectable) {
       image.alt = section.title;
       block.appendChild(image);
     }
+    wireNotesDrop(body); // flat feed: the field itself is the drop target
     block.appendChild(body);
   }
 
@@ -2364,6 +2419,7 @@ function scaffoldModeOntoAct(actKey, modeKey) {
   template.forEach(spec => {
     const scene = insertSection(-1, spec.title, '', actKey, true);
     scene.role = spec.role;
+    if (spec.shotKind) scene.shotKind = spec.shotKind; // e.g. expository's voice-of-god narration -> cutaways
     // The edit plan is auto-generated here from the mode spec itself (not an
     // LLM call) - just the duration for now, with the same neutral defaults
     // /premiere/export and the ffmpeg render already tolerate.
@@ -3387,6 +3443,13 @@ function runDraftVisualThenGenerate(section, btn, statusEl, draftedMessage, gene
 // old Generate-sketch / sketch-sequence buttons); re-clicking redesigns from
 // scratch, same pattern as re-running Find Footage.
 function runGenerateShot(section, btn, statusEl) {
+  // An expository voice-of-god scene generates B-roll cutaways (inline in its
+  // visual box) instead of a start/end-frame shot - see runGenerateCutaways.
+  if (section.shotKind === 'expositoryNarration') {
+    runGenerateCutaways(section, btn, statusEl);
+    return;
+  }
+
   btn.disabled = true;
   statusEl.textContent = 'Designing this shot (~30s: shot plan + start/end frames)...';
   statusEl.classList.remove('error');
@@ -3423,6 +3486,48 @@ function runGenerateShot(section, btn, statusEl) {
         kenBurns: (section.editPlan && section.editPlan.kenBurns) || { enabled: false, pan: null },
         textOverlay: (section.editPlan && section.editPlan.textOverlay) || null,
       };
+      const remaining = currentSections.filter(s => !s.removed);
+      renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+      editPlanActionEl.style.display = '';
+      premiereExportActionEl.style.display = '';
+      saveDebugSession();
+    })
+    .catch(err => {
+      statusEl.textContent = err.message;
+      statusEl.classList.add('error');
+      btn.disabled = false;
+    });
+}
+
+// Expository scenes: infer B-roll cutaways from the narration (+ notes/title/
+// abstract) and generate a background still per cutaway (backend/cutaway_llm.py
+// + /paper/generate_cutaways). Stored on the scene and shown inline in its
+// visual box as a horizontal scroll of directional motion sketches (an AI
+// background with an animated camera-frame overlay - see the cutaways
+// renderer). Planning-only; re-clicking regenerates.
+function runGenerateCutaways(section, btn, statusEl) {
+  btn.disabled = true;
+  statusEl.textContent = 'Finding cutaways from the narration + generating stills (~30-60s)...';
+  statusEl.classList.remove('error');
+
+  const act = currentArcSections.find(a => a.key === currentAssignments[section.index]);
+  fetchGenerateCutaways({
+    sectionIndex: section.index,
+    narration: section.narration,
+    title: section.title,
+    sceneNotes: section.text,
+    actTitle: act ? act.label : '',
+    abstract: findAbstractText(),
+    documentaryMode: selectedDocumentaryMode,
+    projectId: premiereProjectId,
+  })
+    .then(({ project_id, cutaways }) => {
+      premiereProjectId = project_id;
+      section.cutaways = cutaways || [];
+      // Fresh cache-buster so re-generated stills (same filenames on the
+      // backend) aren't served from the browser cache - see the renderer.
+      section.cutawaysGeneratedAt = Date.now();
+      section.visualSource = 'cutaways';
       const remaining = currentSections.filter(s => !s.removed);
       renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
       editPlanActionEl.style.display = '';
@@ -3755,12 +3860,15 @@ function runCheckForPreview() {
 // there is, or neither.
 function resolveSectionVisualForRender(section) {
   const previewBySource = {
+    // Expository cutaways are planning-only, but the scene still needs a
+    // still under its narration - use the first cutaway's background image.
+    cutaways: section.cutaways && section.cutaways.length && section.cutaways[0].preview_url,
     stockVideo: section.selectedVideo && section.selectedVideo.localPreviewUrl,
     video: section.uploadedFootagePreviewUrl,
     animatedSketch: section.animatedSketchPreviewUrl,
     sketch: section.sketchPreviewUrl,
   };
-  for (const key of [section.visualSource, 'stockVideo', 'video', 'animatedSketch', 'sketch']) {
+  for (const key of [section.visualSource, 'cutaways', 'stockVideo', 'video', 'animatedSketch', 'sketch']) {
     if (key && previewBySource[key]) return { previewUrl: previewBySource[key], figureDataUrl: null };
   }
   if (section.image) return { previewUrl: null, figureDataUrl: section.image };
@@ -3777,6 +3885,7 @@ function runRenderMovie() {
   const storyboarded = currentSections.filter(section =>
     !section.removed && currentAssignments[section.index] && (
       (section.startFramePreviewUrl && section.endFramePreviewUrl) ||
+      (section.cutaways && section.cutaways.length) ||
       section.visual || section.selectedVideo || section.uploadedFootagePreviewUrl || section.image
     ));
   if (storyboarded.length === 0) {

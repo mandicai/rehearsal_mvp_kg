@@ -1641,6 +1641,35 @@ function fetchUploadMediaBankItem(file, projectId) {
 
 const GENERATE_SKETCH_API_URL = `${API_BASE_URL}/paper/generate_sketch`;
 const GENERATE_SHOT_API_URL = `${API_BASE_URL}/paper/generate_shot`;
+const GENERATE_CUTAWAYS_API_URL = `${API_BASE_URL}/paper/generate_cutaways`;
+
+// Expository B-roll cutaways (backend/cutaway_llm.py + /paper/generate_cutaways,
+// see js/paper-extract.js's runGenerateCutaways) - infers cutaways from the
+// narration and returns each with a caption, camera motion, and a generated
+// background still. Same projectId in/out convention as fetchGenerateShot.
+function fetchGenerateCutaways({ sectionIndex, narration, title, sceneNotes, actTitle, abstract, documentaryMode, projectId }) {
+  return fetch(GENERATE_CUTAWAYS_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      section_index: sectionIndex,
+      narration: narration || '',
+      title: title || '',
+      scene_notes: sceneNotes || '',
+      act_title: actTitle || '',
+      abstract: abstract || '',
+      ...(projectId ? { project_id: projectId } : {}),
+      ...(documentaryMode ? { documentary_mode: documentaryMode } : {}),
+    })
+  })
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(
+        `Could not reach the cutaways server at ${GENERATE_CUTAWAYS_API_URL} (${err.message}). Check that the backend is running and reachable.`
+      );
+    });
+}
 
 // Narration-driven shot design (backend/shot_plan_llm.py + /paper/generate_shot,
 // see js/paper-extract.js's runGenerateShot) - infers one shot and generates

@@ -221,12 +221,32 @@ body {
    buildSectionBlock drop handler) - same dashed-border "pick me up" hint
    as .media-bank-item.draggable. */
 .source-material-item {
-  padding: 8px 10px;
+  position: relative;
+  padding: 8px 10px 8px 24px; /* extra left room for the drag grip */
   border-radius: 6px;
   /* background: rgba(0, 0, 0, 0.15); */
   cursor: grab;
   border: 1px solid var(--cd-border);
   /* border: 1px dashed rgba(255, 255, 255, 0.4); */
+}
+
+/* Same 6-dot grip as the draggable chips (.chip-draggable), signalling these
+   items drag onto a scene's Scene Notes - two columns of three in
+   currentColor, pinned to the left edge. */
+.source-material-item::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 11px;
+  width: 6px;
+  height: 9px;
+  background-image: radial-gradient(circle at center, currentColor 0 1px, transparent 1.5px);
+  background-size: 3px 3px;
+  opacity: 0.4;
+}
+
+.source-material-item:active {
+  cursor: grabbing;
 }
 
 .source-material-item-title {
@@ -950,8 +970,14 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.selected {
   border-left: 3px solid #9b59b6;
 }
 
-/* Drop target for a documentary-technique chip or a Source material
-   excerpt (see js/paper-extract.js's buildSectionBlock). */
+/* Drop target for a documentary-technique chip or a Source material excerpt
+   (see js/paper-extract.js's buildSectionBlock) - the whole Scene Notes block
+   (label + field) on shot cards, or the bare field on the flat feed. */
+.paper-section-notes-block {
+  border-radius: 6px;
+}
+
+.paper-section-notes-block.drag-over,
 .paper-section-text.drag-over {
   background: rgba(241, 135, 0, 0.15);
   box-shadow: 0 0 0 2px #f18700;
@@ -1106,6 +1132,108 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.selected {
   font-size: 12px;
   line-height: 1.4;
   color: rgba(255, 255, 255, 0.85);
+}
+
+/* Expository B-roll cutaways (see js/paper-extract.js's cutaways renderer):
+   a horizontal scroll of cards, each an AI background still with an animated
+   orange camera-frame overlay (the directional motion sketch) + a caption.
+   The camera moves/zooms/pans over the still to show the intended move; the
+   dark box-shadow spread dims everything outside the frame so it reads as
+   "what the camera sees." Motions ported from directional_motion_sketches.html. */
+.cutaways-row {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  overflow-x: auto;
+  padding-bottom: 6px;
+}
+
+.cutaway-card {
+  flex: 0 0 auto;
+  width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cutaway-stage {
+  position: relative;
+  width: 240px;
+  height: 135px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #000;
+}
+
+.cutaway-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.cutaway-camera {
+  position: absolute;
+  left: 20%;
+  top: 18%;
+  width: 60%;
+  height: 60%;
+  border: 2px solid #d56347;
+  border-radius: 4px;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.32); /* dim outside the framed area */
+  pointer-events: none;
+}
+
+.cutaway-camera::after {
+  content: "CAMERA";
+  position: absolute;
+  left: 0;
+  top: -13px;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #d56347;
+}
+
+.cutaway-caption {
+  font-size: 11px;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* Per-motion camera behavior. Each holds at the start (0-20%) then moves, on
+   a loop, same rhythm as directional_motion_sketches.html. */
+.cutaway-stage.motion-reveal .cutaway-camera { left: 4%; top: 11%; width: 48%; height: 78%; animation: cutReveal 5s ease-in-out infinite; }
+@keyframes cutReveal { 0%, 20% { transform: translateX(0); } 70%, 100% { transform: translateX(96%); } }
+
+.cutaway-stage.motion-return .cutaway-camera { left: auto; right: 4%; top: 11%; width: 48%; height: 78%; animation: cutReturn 5s ease-in-out infinite; }
+@keyframes cutReturn { 0%, 20% { transform: translateX(0); } 70%, 100% { transform: translateX(-96%); } }
+
+.cutaway-stage.motion-approach .cutaway-camera { left: 4%; top: 6%; width: 92%; height: 88%; animation: cutApproach 5s ease-in-out infinite; }
+@keyframes cutApproach { 0%, 20% { left: 4%; top: 6%; width: 92%; height: 88%; } 70%, 100% { left: 30%; top: 28%; width: 40%; height: 44%; } }
+
+.cutaway-stage.motion-retreat .cutaway-camera { left: 30%; top: 28%; width: 40%; height: 44%; animation: cutRetreat 5s ease-in-out infinite; }
+@keyframes cutRetreat { 0%, 20% { left: 30%; top: 28%; width: 40%; height: 44%; } 70%, 100% { left: 4%; top: 6%; width: 92%; height: 88%; } }
+
+.cutaway-stage.motion-ascend .cutaway-camera { left: 20%; top: 34%; width: 60%; height: 56%; animation: cutAscend 5s ease-in-out infinite; }
+@keyframes cutAscend { 0%, 20% { transform: translateY(0); } 70%, 100% { transform: translateY(-46%); } }
+
+.cutaway-stage.motion-descend .cutaway-camera { left: 20%; top: 10%; width: 60%; height: 56%; animation: cutDescend 5s ease-in-out infinite; }
+@keyframes cutDescend { 0%, 20% { transform: translateY(0); } 70%, 100% { transform: translateY(46%); } }
+
+.cutaway-stage.motion-orbit .cutaway-camera { left: 22%; top: 20%; width: 56%; height: 60%; animation: cutOrbit 6s ease-in-out infinite; }
+@keyframes cutOrbit { 0% { transform: translate(0, 0) rotate(0); } 25% { transform: translate(8%, 4%) rotate(2deg); } 50% { transform: translate(0, 8%) rotate(0); } 75% { transform: translate(-8%, 4%) rotate(-2deg); } 100% { transform: translate(0, 0) rotate(0); } }
+
+.cutaway-stage.motion-countermotion .cutaway-camera { left: 20%; top: 14%; width: 56%; height: 66%; animation: cutCounter 4s ease-in-out infinite; }
+@keyframes cutCounter { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(14%); } 75% { transform: translateX(-14%); } }
+
+.cutaway-stage.motion-enterexit .cutaway-camera { left: 20%; top: 16%; width: 52%; height: 64%; animation: cutEnterExit 5s ease-in-out infinite; }
+@keyframes cutEnterExit { 0% { transform: translateX(-150%); opacity: 0; } 20% { transform: translateX(0); opacity: 1; } 60% { transform: translateX(0); opacity: 1; } 90%, 100% { transform: translateX(160%); opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .cutaway-camera { animation: none !important; }
 }
 
 .paper-section-footage-actions {

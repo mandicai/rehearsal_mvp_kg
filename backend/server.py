@@ -118,6 +118,7 @@ from storyboard_llm import StoryboardLLMClient, StoryboardLLMCallError
 from edit_plan_llm import EditPlanLLMClient, EditPlanLLMCallError
 from sketch_llm import SketchLLMClient, SketchLLMCallError
 from shot_plan_llm import ShotPlanLLMClient, ShotPlanLLMCallError
+from cutaway_llm import CutawayLLMClient, CutawayLLMCallError
 from animate_llm import (
     AnimateLLMClient, AnimateLLMCallError, TECHNIQUES as ANIMATE_TECHNIQUES,
     build_sequence_prompts, compose_gif,
@@ -263,6 +264,7 @@ storyboard_client = StoryboardLLMClient()
 edit_plan_client = EditPlanLLMClient()
 sketch_client = SketchLLMClient()
 shot_plan_client = ShotPlanLLMClient()
+cutaway_client = CutawayLLMClient()
 animate_client = AnimateLLMClient()
 carta_entity_client = CartaLLMClient()
 pexels_client = PexelsClient()
@@ -755,6 +757,65 @@ def paper_generate_shot():
         'start_preview_url': _preview_url(start_path),
         'end_preview_url': _preview_url(end_path),
     })
+
+
+@app.route('/paper/generate_cutaways', methods=['POST'])
+def paper_generate_cutaways():
+    # B-roll cutaways for an expository scene's voice-of-god narration (see
+    # backend/cutaway_llm.py and js/paper-extract.js's Generate-shot flow for
+    # an expository scene): infer the narration's important phrases/entities,
+    # generate a background still per cutaway, and pair each with a directional
+    # camera motion the UI animates over it. Planning-only previews - not the
+    # render (the scene renders as the first cutaway still under its narration).
+    data = request.get_json(silent=True) or {}
+
+    try:
+        section_index = int(data.get('section_index'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'section_index is required and must be an integer'}), 400
+
+    narration = (data.get('narration') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS]
+    title = (data.get('title') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
+    scene_notes = (data.get('scene_notes') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
+    abstract = (data.get('abstract') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS]
+
+    documentary_mode, err = _parse_documentary_mode(data)
+    if err:
+        return err
+
+    project_id = (data.get('project_id') or '').strip() or next_premiere_project_id()
+
+    if not cutaway_client.is_configured() or not sketch_client.is_configured():
+        return jsonify({'error': _SKETCH_NOT_CONFIGURED_ERROR}), 503
+
+    try:
+        cutaways = cutaway_client.generate_cutaways(narration, title, scene_notes, abstract, documentary_mode)
+    except CutawayLLMCallError as exc:
+        return jsonify({'error': str(exc)}), 500
+
+    sketch_dir = premiere_sketch_dir(project_id)
+    sketch_dir.mkdir(parents=True, exist_ok=True)
+
+    result = []
+    for i, cut in enumerate(cutaways):
+        if i:
+            # Space the per-cutaway image calls so the batch doesn't burst the
+            # image model's quota (same reasoning as /paper/generate_shot).
+            time.sleep(_SHOT_FRAME_GAP_SECONDS)
+        try:
+            png = sketch_client.generate_sketch(
+                cut['background_visual'][:MAX_SKETCH_VISUAL_CHARS], documentary_mode, style='shot_frame')
+        except SketchLLMCallError as exc:
+            return jsonify({'error': str(exc)}), 500
+        saved = sketch_dir / f'{section_index}_cutaway_{i}.png'
+        saved.write_bytes(png)
+        result.append({
+            'caption': cut['caption'],
+            'motion_type': cut['motion_type'],
+            'preview_url': '/' + saved.relative_to(PREMIERE_EXPORTS_DIR.parent).as_posix(),
+        })
+
+    return jsonify({'project_id': project_id, 'cutaways': result})
 
 
 _ANIMATE_NOT_CONFIGURED_ERROR = (
