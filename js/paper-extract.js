@@ -1328,19 +1328,18 @@ function buildSectionBlock(section, selectable) {
     const mediaResults = document.createElement('div');
     mediaResults.className = 'paper-section-media';
 
-    // Only meaningful once a storyboard exists - video_query/audio_query
-    // are LLM-suggested search phrases from that step.
-    if (section.videoQuery) {
-      const findFootageBtn = document.createElement('button');
-      findFootageBtn.type = 'button';
-      findFootageBtn.className = 'btn-secondary find-footage-btn';
-      findFootageBtn.textContent = 'Find footage';
-      findFootageBtn.addEventListener('click', event => {
-        event.stopPropagation();
-        runFindFootage(section, mediaResults, sectionStatus, findFootageBtn);
-      });
-      footageActions.appendChild(findFootageBtn);
-    }
+    // Always available. If the scene doesn't yet have LLM-suggested search
+    // phrases (video_query/audio_query), runFindFootage derives them from the
+    // scene's title/notes/narration on the fly (see ensureFootageQueries).
+    const findFootageBtn = document.createElement('button');
+    findFootageBtn.type = 'button';
+    findFootageBtn.className = 'btn-secondary find-footage-btn';
+    findFootageBtn.textContent = 'Find footage';
+    findFootageBtn.addEventListener('click', event => {
+      event.stopPropagation();
+      runFindFootage(section, mediaResults, sectionStatus, findFootageBtn);
+    });
+    footageActions.appendChild(findFootageBtn);
 
     // Alternative to Record/Find: the researcher's own footage file from
     // disk, uploaded to premiere_exports/ (see backend/premiere_bridge.py)
@@ -3018,17 +3017,59 @@ function appendStoryboardLine(container, label, text) {
 // result set. The *selection* (section.selectedVideo/selectedAudio) does
 // persist on the section object, same as visual/narration/entities, so it
 // survives the results row disappearing on the next unrelated re-render.
+// Turns a scene's title/notes/narration into filmable stock-search phrases
+// (video_query/audio_query) when it doesn't have them yet - the storyboard
+// LLM step (storyboard_llm.py) exists precisely to translate academic content
+// into something a camera could capture (never jargon/entity names). Resolves
+// once section.videoQuery/audioQuery are populated. Falls back to the scene
+// title if there's nothing to derive from or the LLM call fails, so Find
+// Footage always has *something* to search.
+function ensureFootageQueries(section) {
+  if (section.videoQuery && section.audioQuery) return Promise.resolve();
+
+  const applyFallback = () => {
+    section.videoQuery = section.videoQuery || (section.title || '').trim() || 'documentary b-roll';
+    section.audioQuery = section.audioQuery || (section.title || '').trim() || 'ambience';
+  };
+
+  const content = [section.text, section.narration].filter(part => part && part.trim()).join('\n\n').trim();
+  if (!content) {
+    applyFallback();
+    return Promise.resolve();
+  }
+
+  const documentaryGoal = (documentaryIntentInput ? documentaryIntentInput.value : recordedTranscript).trim();
+  return fetchStoryboard(
+    [{ index: section.index, title: section.title, text: content, act: currentAssignments[section.index] }],
+    documentaryGoal, currentArcSections.map(s => s.label), selectedDocumentaryMode
+  )
+    .then(({ storyboard }) => {
+      const result = (storyboard || []).find(s => s.index === section.index);
+      if (result) {
+        section.videoQuery = section.videoQuery || result.video_query;
+        section.audioQuery = section.audioQuery || result.audio_query;
+        if (!(section.entities && section.entities.length)) section.entities = result.entities || [];
+      }
+      applyFallback();
+      saveDebugSession();
+    })
+    .catch(() => { applyFallback(); }); // LLM down - still search on the title
+}
+
 function runFindFootage(section, resultsEl, statusEl, btn) {
   btn.disabled = true;
-  statusEl.textContent = 'Searching for video and audio options...';
+  statusEl.textContent = (section.videoQuery && section.audioQuery)
+    ? 'Searching for video and audio options...'
+    : 'Finding searchable terms, then searching...';
   statusEl.classList.remove('error');
 
   // Returned (not fire-and-forget) so triggerFindFootageSweep can throttle
-  // how many of these run at once across a whole sweep.
-  return Promise.allSettled([
+  // how many of these run at once across a whole sweep. Derives search phrases
+  // first if the scene doesn't have them yet (see ensureFootageQueries).
+  return ensureFootageQueries(section).then(() => Promise.allSettled([
     fetchVideoOptions(section.videoQuery),
     fetchAudioOptions(section.audioQuery),
-  ]).then(([videoResult, audioResult]) => {
+  ])).then(([videoResult, audioResult]) => {
     resultsEl.innerHTML = '';
 
     if (videoResult.status === 'fulfilled') {
