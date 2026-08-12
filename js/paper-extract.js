@@ -78,6 +78,60 @@ const DOCUMENTARY_MODE_PROMPTS = {
   poetic: 'Poetic works best led by mood and imagery over exposition - try a sketch sequence to set an evocative tone.',
 };
 
+// Default on-screen seconds for a scene with no edit plan yet - the timeline
+// sizes each scene's clip by its duration (see buildNarrativeTimeline), so a
+// scene needs some length even before an edit plan fills in a real one.
+const DEFAULT_SCENE_SECONDS = 5;
+
+// The three timeline tracks a scene can belong to - a scene IS one of these
+// (its role/label, shown per-scene in buildSectionBlock and used as the track
+// it lands in on the timeline). Keys match buildNarrativeTimeline's TRACK_DEFS.
+const SCENE_ROLES = [
+  { key: 'aRoll', label: 'A-roll' },
+  { key: 'bRoll', label: 'B-roll' },
+  { key: 'soundEffects', label: 'Sound effects' },
+];
+const SCENE_ROLE_LABELS = Object.fromEntries(SCENE_ROLES.map(r => [r.key, r.label]));
+
+// What dragging a documentary mode onto a timeline act scaffolds there: a
+// list of scenes to auto-create, each with a track role and an on-screen
+// duration (seconds) that also seeds its edit plan. Only expository's shape
+// was specified by the user (one long A-roll voice-of-god narration over
+// several short B-roll cutaways); the other three are a judgment call from
+// each mode's grammar - observational's long continuous takes with little
+// cutaway, participatory's balanced interview/reference cutting, poetic's
+// sparse spine under a dense montage. Each mode's A-roll and B-roll second
+// totals are kept roughly equal so the two tracks line up across the act.
+const MODE_SCENE_TEMPLATES = {
+  expository: [
+    { role: 'aRoll', title: 'Voice-of-god narration', durationSeconds: 24 },
+    { role: 'bRoll', title: 'Cutaway', durationSeconds: 6 },
+    { role: 'bRoll', title: 'Cutaway', durationSeconds: 6 },
+    { role: 'bRoll', title: 'Cutaway', durationSeconds: 6 },
+    { role: 'bRoll', title: 'Cutaway', durationSeconds: 6 },
+  ],
+  observational: [
+    { role: 'aRoll', title: 'Continuous take', durationSeconds: 12 },
+    { role: 'aRoll', title: 'Continuous take', durationSeconds: 12 },
+    { role: 'bRoll', title: 'Brief cutaway', durationSeconds: 6 },
+  ],
+  participatory: [
+    { role: 'aRoll', title: 'Interview', durationSeconds: 12 },
+    { role: 'bRoll', title: 'Referenced footage', durationSeconds: 12 },
+    { role: 'aRoll', title: 'Interview', durationSeconds: 12 },
+    { role: 'bRoll', title: 'Referenced footage', durationSeconds: 12 },
+  ],
+  poetic: [
+    { role: 'aRoll', title: 'Narration fragment', durationSeconds: 24 },
+    { role: 'bRoll', title: 'Montage image', durationSeconds: 4 },
+    { role: 'bRoll', title: 'Montage image', durationSeconds: 4 },
+    { role: 'bRoll', title: 'Montage image', durationSeconds: 4 },
+    { role: 'bRoll', title: 'Montage image', durationSeconds: 4 },
+    { role: 'bRoll', title: 'Montage image', durationSeconds: 4 },
+    { role: 'bRoll', title: 'Montage image', durationSeconds: 4 },
+  ],
+};
+
 // Specific filming/editing tactics, shown as toggleable chips under the
 // arc outline (see renderMovieEditor) - a lighter-weight, multi-select
 // complement to DOCUMENTARY_MODES above: a mode is a single stance for the
@@ -1021,9 +1075,6 @@ function buildSectionBlock(section, selectable) {
   title.className = 'paper-section-title';
   title.textContent = section.title;
 
-  const meta = document.createElement('div');
-  meta.className = 'paper-section-meta';
-
   const body = document.createElement('div');
   body.className = 'paper-section-text';
   body.textContent = section.text || '(no text captured for this section)';
@@ -1044,9 +1095,38 @@ function buildSectionBlock(section, selectable) {
   });
   makeEditable(body, () => section.text || '(no text captured for this section)', value => {
     section.text = value;
-    updateMeta();
     saveDebugSession();
   }, { multiline: true });
+
+  // Which timeline track this scene is (its role/label) - A-roll, B-roll, or
+  // Sound effects. Auto-inferred (see getSceneRole), overridable here;
+  // changing it moves the scene's clip to the matching track on the timeline
+  // (see buildNarrativeTimeline), so a full re-render follows. Only shown on
+  // the arranged-view shot cards (selectable), not the flat pre-arrangement
+  // feed - there's no track/timeline concept before an arrangement exists.
+  const roleRow = document.createElement('div');
+  roleRow.className = 'paper-section-role';
+  const roleLabelEl = document.createElement('span');
+  roleLabelEl.className = 'paper-section-role-label';
+  roleLabelEl.textContent = 'Track';
+  const roleSelect = document.createElement('select');
+  roleSelect.className = 'paper-section-role-select';
+  SCENE_ROLES.forEach(r => {
+    const opt = document.createElement('option');
+    opt.value = r.key;
+    opt.textContent = r.label;
+    roleSelect.appendChild(opt);
+  });
+  roleSelect.value = getSceneRole(section);
+  roleSelect.addEventListener('click', event => event.stopPropagation()); // don't select the card
+  roleSelect.addEventListener('change', () => {
+    section.role = roleSelect.value;
+    saveDebugSession();
+    const remaining = currentSections.filter(s => !s.removed);
+    renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+  });
+  roleRow.appendChild(roleLabelEl);
+  roleRow.appendChild(roleSelect);
 
   // Drop target for dragging in either a documentary-technique chip (see
   // renderMovieEditor) or a Source material excerpt (see
@@ -1083,7 +1163,6 @@ function buildSectionBlock(section, selectable) {
 
     section.text = section.text ? `${section.text}\n\n${addition}` : addition;
     body.textContent = section.text;
-    updateMeta();
     saveDebugSession();
   });
 
@@ -1455,21 +1534,28 @@ function buildSectionBlock(section, selectable) {
     //   if (plan.textOverlay) appendStoryboardLine(narrationAudio, 'Overlay', plan.textOverlay);
     // }
 
-    // Reading order: title, then narration (what to say), then the
-    // paper's own text - reference material the shot is grounded in, not
-    // shot direction, hence its own "Scene Notes" label rather than
-    // reusing meta/body's original unlabeled look - then the visual box/
-    // footage actions last, once the presenter knows what the shot's
+    // Reading order: title, then a labeled "Narration" block (what to say),
+    // then the paper's own text under a "Scene Notes" label - reference
+    // material the shot is grounded in, not shot direction - then the visual
+    // box/footage actions last, once the presenter knows what the shot's
     // about and what they're saying over it.
+    block.classList.add(`role-${getSceneRole(section)}`);
     block.appendChild(removeBtn);
     block.appendChild(title);
+    block.appendChild(roleRow);
+
+    // Same small caption style as "Scene Notes" below, labeling the
+    // narration block that follows it.
+    const narrationLabel = document.createElement('div');
+    narrationLabel.className = 'paper-section-text-label';
+    narrationLabel.textContent = 'Narration';
+    block.appendChild(narrationLabel);
     block.appendChild(narrationAudio);
 
     const sceneNotesLabel = document.createElement('div');
     sceneNotesLabel.className = 'paper-section-text-label';
     sceneNotesLabel.textContent = 'Scene Notes';
     block.appendChild(sceneNotesLabel);
-    block.appendChild(meta);
     block.appendChild(body);
 
     if (section.entities && section.entities.length) {
@@ -1496,15 +1582,8 @@ function buildSectionBlock(section, selectable) {
       image.alt = section.title;
       block.appendChild(image);
     }
-    block.appendChild(meta);
     block.appendChild(body);
   }
-
-  function updateMeta() {
-    const charCount = section.text.length.toLocaleString();
-    meta.textContent = `${charCount} characters`;
-  }
-  updateMeta();
 
   function updateRemoveBtn() {
     removeBtn.textContent = section.removed ? '↺' : '×';
@@ -2200,6 +2279,71 @@ function buildTimelineTrack(timelineEl, label) {
   return body;
 }
 
+// A scene's timeline track role: an explicit user override (section.role, set
+// via buildSectionBlock's role picker or a scaffolded mode template) if
+// present, else inferred from whatever's attached - a picked stock clip reads
+// as B-roll, a generated/uploaded primary visual as A-roll, otherwise A-roll
+// by default (the narrative spine). Sound effects is only ever an explicit
+// choice (a supplementary sound pick doesn't, on its own, make a whole scene
+// a sound-effects scene).
+function getSceneRole(section) {
+  if (section.role && SCENE_ROLE_LABELS[section.role]) return section.role;
+  if (section.visualSource === 'stockVideo') return 'bRoll';
+  if (['sketch', 'animatedSketch', 'video'].includes(section.visualSource)) return 'aRoll';
+  return 'aRoll';
+}
+
+// A scene's on-screen duration in seconds - from its (auto- or hand-)
+// generated edit plan, falling back to a flat default so the timeline can
+// still size it before an edit plan exists.
+function getSceneDuration(section) {
+  const d = section.editPlan && section.editPlan.durationSeconds;
+  return (typeof d === 'number' && d > 0) ? d : DEFAULT_SCENE_SECONDS;
+}
+
+// Whether a scene's clip reads as filled / drafted for its own track role -
+// A-roll on primary-visual state, B-roll on stock-pick state, sound effects
+// on the sound-pick state (each on the same "real asset > drafted text only >
+// nothing" ladder used elsewhere).
+function isSceneFilledForRole(section, roleKey) {
+  if (roleKey === 'bRoll') return section.visualSource === 'stockVideo';
+  if (roleKey === 'soundEffects') return !!section.selectedAudio;
+  return ['sketch', 'animatedSketch', 'video'].includes(section.visualSource);
+}
+function isSceneDraftedForRole(section, roleKey) {
+  if (roleKey === 'bRoll') return !!section.videoQuery;
+  if (roleKey === 'soundEffects') return !!section.audioQuery;
+  return !!(section.visual && section.visual.trim());
+}
+
+// Dragging a documentary mode onto a timeline act scaffolds that act with the
+// mode's scene template (see MODE_SCENE_TEMPLATES) - one A-roll/B-roll scene
+// per entry, each a blank narrativeOnly scene the presenter then fills, with
+// its role and an auto-generated edit plan (duration in seconds) already set.
+// Additive, not destructive: existing sections in the act are left untouched,
+// so nothing the presenter already wrote is lost - they can delete any
+// scaffold scenes they don't want.
+function scaffoldModeOntoAct(actKey, modeKey) {
+  const template = MODE_SCENE_TEMPLATES[modeKey];
+  if (!template) return;
+  template.forEach(spec => {
+    const scene = insertSection(-1, spec.title, '', actKey, true);
+    scene.role = spec.role;
+    // The edit plan is auto-generated here from the mode spec itself (not an
+    // LLM call) - just the duration for now, with the same neutral defaults
+    // /premiere/export and the ffmpeg render already tolerate.
+    scene.editPlan = {
+      transitionIn: 'hard_cut',
+      durationSeconds: spec.durationSeconds,
+      kenBurns: { enabled: false, pan: null },
+      textOverlay: null,
+    };
+  });
+  saveDebugSession();
+  const remaining = currentSections.filter(s => !s.removed);
+  renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+}
+
 function buildNarrativeTimeline(timelineEl, sections, assignmentsByIndex) {
   timelineEl.innerHTML = '';
 
@@ -2207,34 +2351,39 @@ function buildNarrativeTimeline(timelineEl, sections, assignmentsByIndex) {
   ruler.className = 'premiere-timeline-ruler';
   timelineEl.appendChild(ruler);
 
-  // Narration first, then A-roll/B-roll (the two visual tracks - A-roll is
-  // the shot's own primary visual - a generated sketch/animated sketch, or
-  // real uploaded footage; B-roll is externally-sourced supplementary
-  // footage - a Find Footage/stock pick, see runFindFootage/stock_media.py),
-  // then Sound effects last.
+  // A-roll (the shot's own primary visual - a generated sketch/animated
+  // sketch, or real uploaded footage), B-roll (externally-sourced
+  // supplementary footage - a Find Footage/stock pick), then Sound effects.
+  // Each scene belongs to exactly ONE of these (its role - see getSceneRole),
+  // and appears as a single clip in that track sized by its duration in
+  // seconds (see getSceneDuration). The old standalone NARRATION track was
+  // removed - A-roll now carries the narrative spine.
   const TRACK_DEFS = [
-    {
-      label: 'NARRATION',
-      isFilled: section => !!section.narrationAudioPreviewUrl,
-      isDrafted: section => !!(section.narration && section.narration.trim()),
-    },
-    {
-      label: 'A-ROLL',
-      isFilled: section => ['sketch', 'animatedSketch', 'video'].includes(section.visualSource),
-      isDrafted: section => section.visualSource !== 'stockVideo' && !!(section.visual && section.visual.trim()),
-    },
-    {
-      label: 'B-ROLL',
-      isFilled: section => section.visualSource === 'stockVideo',
-      isDrafted: section => section.visualSource !== 'stockVideo' && !!section.videoQuery,
-    },
-    {
-      label: 'SOUND EFFECTS',
-      isFilled: section => !!section.selectedAudio,
-      isDrafted: section => !section.selectedAudio && !!section.audioQuery,
-    },
+    { key: 'aRoll', label: 'A-ROLL' },
+    { key: 'bRoll', label: 'B-ROLL' },
+    { key: 'soundEffects', label: 'SOUND EFFECTS' },
   ];
   const trackBodies = TRACK_DEFS.map(def => buildTimelineTrack(timelineEl, def.label));
+
+  // Dropping a mode onto an act scaffolds scenes there (see
+  // scaffoldModeOntoAct) - the whole act column (ruler label + every track
+  // group) is a drop target, so it can be dropped anywhere over the act.
+  const makeActModeDropTarget = (el, actKey) => {
+    el.addEventListener('dragover', event => {
+      if (!event.dataTransfer.types.includes('application/x-documentary-mode')) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'copy';
+      el.classList.add('mode-drop-over');
+    });
+    el.addEventListener('dragleave', () => el.classList.remove('mode-drop-over'));
+    el.addEventListener('drop', event => {
+      el.classList.remove('mode-drop-over');
+      const modeKey = event.dataTransfer.getData('application/x-documentary-mode');
+      if (!modeKey || !MODE_SCENE_TEMPLATES[modeKey]) return;
+      event.preventDefault();
+      scaffoldModeOntoAct(actKey, modeKey);
+    });
+  };
 
   const clipsBySectionIndex = new Map();
 
@@ -2242,48 +2391,67 @@ function buildNarrativeTimeline(timelineEl, sections, assignmentsByIndex) {
     const rowSections = sections.filter(s => assignmentsByIndex[s.index] === act.key);
     if (rowSections.length === 0) return; // renderMovieEditor auto-populates blank rows before this runs
 
-    // flex-basis pinned to 0 (not the "grow"-only shorthand's implied
-    // auto) on all three - otherwise the ruler label's own text width
-    // would compete with its flex-grow share, throwing off its width
-    // relative to the plain, content-less clips in the tracks below and
-    // misaligning the ruler against them.
-    const actFlex = `${rowSections.length} 1 0`;
+    // Each scene sits in its own role's track, its clip sized by its
+    // duration in seconds. An act's on-screen width is its longest track's
+    // total seconds (max across tracks), so the tracks line up and a
+    // 30s-of-A-roll act is visibly wider than a 10s one.
+    const scenesByTrack = { aRoll: [], bRoll: [], soundEffects: [] };
+    rowSections.forEach(section => { scenesByTrack[getSceneRole(section)].push(section); });
+    const trackTotals = TRACK_DEFS.map(def => scenesByTrack[def.key].reduce((sum, s) => sum + getSceneDuration(s), 0));
+    const actTotal = Math.max(1, ...trackTotals);
+
+    // flex-basis pinned to 0 (not the shorthand's implied auto) so the ruler
+    // label's own text width doesn't compete with its flex-grow share and
+    // misalign the ruler against the content-less clips below it.
+    const actFlex = `${actTotal} 1 0`;
 
     const rulerGroup = document.createElement('div');
     rulerGroup.className = 'premiere-timeline-act';
     rulerGroup.style.flex = actFlex;
     rulerGroup.textContent = act.label;
+    rulerGroup.title = 'Drag a documentary mode here to scaffold scenes for this act';
+    makeActModeDropTarget(rulerGroup, act.key);
     ruler.appendChild(rulerGroup);
 
     const trackGroups = trackBodies.map(body => {
       const group = document.createElement('div');
       group.className = 'premiere-timeline-act-group';
       group.style.flex = actFlex;
+      makeActModeDropTarget(group, act.key);
       body.appendChild(group);
       return group;
     });
 
-    rowSections.forEach(section => {
-      // Double-click (not single) so a click doesn't fight with the
-      // hover/scale affordance above, and matches the explicit ask this
-      // was built for - scroll to the real section card, not just select it.
-      const scrollToSection = () => {
-        const target = document.querySelector(`.paper-section-block[data-section-index="${section.index}"]`);
-        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      };
-
-      const clips = TRACK_DEFS.map((def, i) => {
+    TRACK_DEFS.forEach((def, ti) => {
+      scenesByTrack[def.key].forEach(section => {
+        const seconds = getSceneDuration(section);
         const clip = document.createElement('div');
         clip.className = 'premiere-timeline-clip';
-        clip.classList.toggle('filled', def.isFilled(section));
-        clip.classList.toggle('drafted', !def.isFilled(section) && def.isDrafted(section));
-        clip.title = section.title;
-        clip.addEventListener('dblclick', scrollToSection);
-        trackGroups[i].appendChild(clip);
-        return clip;
+        clip.style.flex = `${seconds} 1 0`; // width proportional to duration
+        clip.classList.toggle('filled', isSceneFilledForRole(section, def.key));
+        clip.classList.toggle('drafted', !isSceneFilledForRole(section, def.key) && isSceneDraftedForRole(section, def.key));
+        clip.title = `${section.title} · ${Math.round(seconds)}s`;
+        // Double-click (not single) so a click doesn't fight with the
+        // hover/scale affordance - scrolls to the real section card.
+        clip.addEventListener('dblclick', () => {
+          const target = document.querySelector(`.paper-section-block[data-section-index="${section.index}"]`);
+          if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+        trackGroups[ti].appendChild(clip);
+        if (!clipsBySectionIndex.has(section.index)) clipsBySectionIndex.set(section.index, []);
+        clipsBySectionIndex.get(section.index).push(clip);
       });
 
-      clipsBySectionIndex.set(section.index, clips);
+      // A trailing spacer fills the rest of a track shorter than the act's
+      // longest, so all three tracks stay aligned under the same act width
+      // (and a short B-roll track visibly leaves the act's tail uncovered).
+      const remainder = actTotal - trackTotals[ti];
+      if (remainder > 0.001) {
+        const spacer = document.createElement('div');
+        spacer.className = 'premiere-timeline-clip spacer';
+        spacer.style.flex = `${remainder} 1 0`;
+        trackGroups[ti].appendChild(spacer);
+      }
     });
   });
 
@@ -2448,10 +2616,7 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
   timelineEl.className = 'premiere-timeline';
   arcLayout.appendChild(timelineEl);
 
-  // Below the timeline: a sidebar (Documentary techniques + Documentary
-  // modes) beside the rows - same 2-column arrangement the old
-  // .narrative-arc-outline sidebar used, just holding these two instead of
-  // that sidebar's own jump-list (now the timeline's job).
+  // Below the timeline: a sidebar (Documentary techniques) beside the rows.
   const innerLayout = document.createElement('div');
   innerLayout.className = 'narrative-arc-inner-layout';
   arcLayout.appendChild(innerLayout);
@@ -2460,28 +2625,27 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
   sidePanel.className = 'narrative-side-panel';
   innerLayout.appendChild(sidePanel);
 
-  // Documentary modes - above Documentary techniques below (presenter picks
-  // a mode first, techniques second). Same card styling as techniques, but
-  // each mode is a single click-through prompt rather than a toggle: since
-  // there's no LLM suggesting one anymore, picking a mode here is purely
-  // the presenter's own call, and clicking it nudges them toward a
-  // concrete next action for that mode (DOCUMENTARY_MODE_PROMPTS above)
-  // rather than just recording an abstract stylistic preference.
+  // Documentary modes - a full-width horizontal bar ABOVE the timeline (see
+  // the insertBefore below), not a sidebar card. Each chip both clicks (sets
+  // the global stylistic mode for storyboard/edit-plan generation) AND drags
+  // onto a timeline act to scaffold that act's scenes (see
+  // buildNarrativeTimeline's drop target / scaffoldModeOntoAct).
   const modesBlock = document.createElement('div');
-  modesBlock.className = 'narrative-arc-techniques';
+  modesBlock.className = 'documentary-modes-bar';
 
   const modesTitle = document.createElement('h3');
   modesTitle.textContent = 'Documentary modes';
   modesBlock.appendChild(modesTitle);
 
   const modesRow = document.createElement('div');
-  modesRow.className = 'chip-row';
+  modesRow.className = 'chip-row documentary-modes-bar-row';
   modesBlock.appendChild(modesRow);
 
   // Below the chips (not above) - the tip reads as a caption for whichever
   // mode was just clicked, not a header for the row.
   const modesStatus = document.createElement('div');
   modesStatus.className = 'status-line';
+  modesStatus.textContent = 'Drag a mode onto a timeline act to scaffold its scenes, or click to set the overall mode.';
   modesBlock.appendChild(modesStatus);
 
   DOCUMENTARY_MODES.forEach(mode => {
@@ -2490,14 +2654,16 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
     chip.className = 'chip suggested';
     chip.classList.toggle('selected', selectedDocumentaryMode === mode.key);
     chip.textContent = mode.label;
-    chip.title = mode.description;
+    chip.title = `${mode.description} — drag onto a timeline act to scaffold its scenes`;
     chip.addEventListener('click', () => {
       // Toggle, same as the technique chips below - clicking the
       // already-active mode clears back to "no mode chosen."
       selectedDocumentaryMode = selectedDocumentaryMode === mode.key ? null : mode.key;
       modesRow.querySelectorAll('.chip').forEach(c => c.classList.remove('selected'));
       chip.classList.toggle('selected', selectedDocumentaryMode === mode.key);
-      modesStatus.textContent = selectedDocumentaryMode ? DOCUMENTARY_MODE_PROMPTS[selectedDocumentaryMode] : '';
+      modesStatus.textContent = selectedDocumentaryMode
+        ? DOCUMENTARY_MODE_PROMPTS[selectedDocumentaryMode]
+        : 'Drag a mode onto a timeline act to scaffold its scenes, or click to set the overall mode.';
       // Picking a mode is the other half of triggerFindFootageSweep's
       // precondition (alongside a drafted storyboard) - a no-op here if
       // there's no storyboard yet.
@@ -2506,9 +2672,17 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
       // comment) - no saveDebugSession call here, same as the arc-template/
       // arc-suggestion picks it's grouped with.
     });
+    // Draggable onto a timeline act (see buildNarrativeTimeline's
+    // makeActModeDropTarget) to scaffold that act's scenes from this mode.
+    chip.draggable = true;
+    chip.addEventListener('dragstart', event => {
+      event.dataTransfer.setData('application/x-documentary-mode', mode.key);
+      event.dataTransfer.effectAllowed = 'copy';
+    });
     modesRow.appendChild(chip);
   });
-  sidePanel.appendChild(modesBlock);
+  // Above the timeline (its first child), not in the sidebar.
+  arcLayout.insertBefore(modesBlock, timelineEl);
 
   // Toggleable technique chips - see DOCUMENTARY_TECHNIQUES above for what
   // these are/aren't. Back in its own sidebar (see innerLayout above),

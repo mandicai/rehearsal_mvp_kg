@@ -424,7 +424,7 @@ input[type="file"]::file-selector-button:hover {
 .paper-section-title {
   font-size: 16px;
   font-weight: 700;
-  margin-bottom: 4px;
+  /* margin-bottom: 4px; */
 }
 
 .paper-section-image {
@@ -563,11 +563,11 @@ body.pub-to-doc-page .action-bar {
   gap: 20px;
 }
 
-/* Below the timeline: a sidebar (Documentary techniques + Documentary
-   modes) beside the rows - the same 2-column arrangement the old
-   .narrative-arc-outline sidebar used (see js/paper-extract.js's
-   renderMovieEditor), just holding these two instead of that sidebar's own
-   jump-list, which the timeline above now handles instead. */
+/* Below the timeline: a sidebar (Documentary techniques) beside the rows -
+   the same 2-column arrangement the old .narrative-arc-outline sidebar used
+   (see js/paper-extract.js's renderMovieEditor), minus the jump-list the
+   timeline above now handles. (Documentary modes moved out to a full-width
+   bar above the timeline - see .documentary-modes-bar.) */
 .narrative-arc-inner-layout {
   display: flex;
   gap: 20px;
@@ -578,7 +578,7 @@ body.pub-to-doc-page .action-bar {
   flex: 0 0 220px;
   min-width: 0;
   position: sticky;
-  top: 170px; /* below the sticky .premiere-timeline (top: 0) above it - an estimate (ruler + 4 tracks now, up from 2), not visually confirmed */
+  top: 140px; /* below the sticky .premiere-timeline (top: 0) above it - an estimate (ruler + 3 tracks now that NARRATION was removed), not visually confirmed */
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -712,6 +712,96 @@ body.pub-to-doc-page .action-bar {
   font-size: 13px;
 }
 
+/* Documentary modes: a full-width horizontal bar above the timeline (see
+   js/paper-extract.js's renderMovieEditor), not a sidebar card. Chips lay
+   out in a row (wrapping if needed) and are draggable onto a timeline act. */
+.documentary-modes-bar {
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--cd-card-bg);
+  border: 1px solid var(--cd-border);
+  margin-bottom: 8px;
+}
+
+.documentary-modes-bar h3 {
+  margin: 0 0 8px;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.documentary-modes-bar-row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.documentary-modes-bar-row .chip {
+  cursor: grab;
+}
+
+/* An act being hovered while dragging a documentary mode over it (see
+   makeActModeDropTarget) - the drop scaffolds that act's scenes. */
+.premiere-timeline-act.mode-drop-over,
+.premiere-timeline-act-group.mode-drop-over {
+  outline: 2px dashed var(--cd-accent);
+  outline-offset: -2px;
+  background: rgba(241, 135, 0, 0.12);
+}
+
+/* A trailing spacer padding a track shorter than its act's longest track so
+   the three tracks stay aligned (see buildNarrativeTimeline) - invisible, and
+   not interactive like a real clip. */
+.premiere-timeline-clip.spacer {
+  background: transparent;
+  border: none;
+  cursor: default;
+}
+
+.premiere-timeline-clip.spacer:hover {
+  transform: none;
+}
+
+/* Which timeline track a scene is (its role/label) - shown on each shot card
+   (see buildSectionBlock), a small labeled dropdown to override the
+   auto-inferred role. */
+.paper-section-role {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+}
+
+.paper-section-role-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.6;
+}
+
+.paper-section-role-select {
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--cd-card-bg);
+  color: inherit;
+  border: 1px solid var(--cd-border-strong);
+}
+
+/* A colored left edge per role so a card's track reads at a glance, matching
+   the timeline's own filled-clip accent for A-roll/B-roll. */
+.paper-section-block-shot.role-aRoll {
+  border-left: 3px solid var(--cd-accent);
+}
+
+.paper-section-block-shot.role-bRoll {
+  border-left: 3px solid #4a90d9;
+}
+
+.paper-section-block-shot.role-soundEffects {
+  border-left: 3px solid #9b59b6;
+}
+
 /* Drop target for a documentary-technique chip or a Source material
    excerpt (see js/paper-extract.js's buildSectionBlock). */
 .paper-section-text.drag-over {
@@ -819,7 +909,7 @@ body.pub-to-doc-page .action-bar {
 /* Also the drop target for dragging an audio clip in from "Your Media" -
    see js/paper-extract.js's buildSectionBlock. */
 .paper-section-narration-audio {
-  margin-top: 14px;
+  /* margin-top: 14px; */
   padding-top: 12px;
   border-top: 1px dashed rgba(255, 255, 255, 0.25);
   border-radius: 4px;
