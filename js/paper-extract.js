@@ -1177,13 +1177,14 @@ function buildSectionBlock(section, selectable) {
     const footageActions = document.createElement('div');
     footageActions.className = 'paper-section-footage-actions';
 
-    const footageStatus = document.createElement('div');
-    // find-footage-status (in addition to the shared status-line styling) -
-    // triggerFindFootageSweep needs to locate this specific status line
-    // (and the find-footage-btn/paper-section-media siblings below) inside
-    // a re-rendered block by selector, since it isn't the only .status-line
-    // in this block.
-    footageStatus.className = 'status-line find-footage-status';
+    // The single status line for the whole shot card - every operation
+    // (find footage, sketch/animate generation, webcam/upload, narration
+    // recording/assignment) writes here, and it sits at the very bottom of
+    // the block (see the append order below). The find-footage-status class
+    // (alongside the shared status-line styling) lets triggerFindFootageSweep
+    // locate it by selector inside a re-rendered block.
+    const sectionStatus = document.createElement('div');
+    sectionStatus.className = 'status-line find-footage-status';
 
     // One click both drafts this section's visual/narration/entities/
     // video_query/audio_query (the same LLM call the sticky action bar's
@@ -1207,7 +1208,7 @@ function buildSectionBlock(section, selectable) {
       : 'Add section text or narration first - there\'s nothing to base a visual on yet.';
     sketchBtn.addEventListener('click', event => {
       event.stopPropagation();
-      runGenerateSketch(section, sketchBtn, footageStatus);
+      runGenerateSketch(section, sketchBtn, sectionStatus);
     });
     footageActions.appendChild(sketchBtn);
 
@@ -1249,9 +1250,9 @@ function buildSectionBlock(section, selectable) {
       animateBtn.addEventListener('click', event => {
         event.stopPropagation();
         const method = animateMethodSelect.value;
-        if (method === 'imageToVideo') runGenerateAnimatedSketch(section, key, animateBtn, footageStatus);
-        else if (method === 'textToVideo') runGenerateVideoFromText(section, key, animateBtn, footageStatus);
-        else runGenerateSketchSequence(section, key, animateBtn, footageStatus);
+        if (method === 'imageToVideo') runGenerateAnimatedSketch(section, key, animateBtn, sectionStatus);
+        else if (method === 'textToVideo') runGenerateVideoFromText(section, key, animateBtn, sectionStatus);
+        else runGenerateSketchSequence(section, key, animateBtn, sectionStatus);
       });
       footageActions.appendChild(animateBtn);
       animateBtns.push(animateBtn);
@@ -1298,8 +1299,8 @@ function buildSectionBlock(section, selectable) {
       try {
         stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       } catch (err) {
-        footageStatus.textContent = `Could not access webcam: ${err.message}`;
-        footageStatus.classList.add('error');
+        sectionStatus.textContent = `Could not access webcam: ${err.message}`;
+        sectionStatus.classList.add('error');
         return;
       }
       activeStream = stream;
@@ -1332,12 +1333,12 @@ function buildSectionBlock(section, selectable) {
         const blob = new Blob(chunks, { type: webcamMimeType });
         const file = new File([blob], `webcam-section-${section.index}-${Date.now()}.${extension}`, { type: webcamMimeType });
         recordBtn.textContent = 'Record webcam';
-        runUploadFootage(section, file, footageStatus, recordBtn);
+        runUploadFootage(section, file, sectionStatus, recordBtn);
       });
       activeRecorder.start();
       recordBtn.textContent = 'Stop Recording';
-      footageStatus.textContent = 'Recording - click again to stop.';
-      footageStatus.classList.remove('error');
+      sectionStatus.textContent = 'Recording - click again to stop.';
+      sectionStatus.classList.remove('error');
     });
     footageActions.appendChild(recordBtn);
 
@@ -1353,7 +1354,7 @@ function buildSectionBlock(section, selectable) {
       findFootageBtn.textContent = 'Find footage';
       findFootageBtn.addEventListener('click', event => {
         event.stopPropagation();
-        runFindFootage(section, mediaResults, footageStatus, findFootageBtn);
+        runFindFootage(section, mediaResults, sectionStatus, findFootageBtn);
       });
       footageActions.appendChild(findFootageBtn);
     }
@@ -1369,7 +1370,7 @@ function buildSectionBlock(section, selectable) {
     uploadFootageInput.addEventListener('click', event => event.stopPropagation());
     uploadFootageInput.addEventListener('change', () => {
       const file = uploadFootageInput.files[0];
-      if (file) runUploadFootage(section, file, footageStatus, uploadFootageInput);
+      if (file) runUploadFootage(section, file, sectionStatus, uploadFootageInput);
     });
     footageActions.appendChild(uploadFootageInput);
 
@@ -1404,9 +1405,6 @@ function buildSectionBlock(section, selectable) {
     const narrationAudioControls = document.createElement('div');
     narrationAudioControls.className = 'paper-section-narration-audio-controls';
 
-    const narrationStatus = document.createElement('div');
-    narrationStatus.className = 'status-line';
-
     if (section.narrationAudioPreviewUrl) {
       const playNarrationBtn = document.createElement('button');
       playNarrationBtn.type = 'button';
@@ -1429,8 +1427,8 @@ function buildSectionBlock(section, selectable) {
           })
           .catch(err => {
             playNarrationBtn.disabled = false;
-            narrationStatus.textContent = `Could not play narration: ${err.message}`;
-            narrationStatus.classList.add('error');
+            sectionStatus.textContent = `Could not play narration: ${err.message}`;
+            sectionStatus.classList.add('error');
           });
       });
       narrationAudioControls.appendChild(playNarrationBtn);
@@ -1453,8 +1451,8 @@ function buildSectionBlock(section, selectable) {
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       } catch (err) {
-        narrationStatus.textContent = `Could not access microphone: ${err.message}`;
-        narrationStatus.classList.add('error');
+        sectionStatus.textContent = `Could not access microphone: ${err.message}`;
+        sectionStatus.classList.add('error');
         return;
       }
       narrationRecordStream = stream;
@@ -1471,17 +1469,16 @@ function buildSectionBlock(section, selectable) {
         const extension = extensionMatch ? extensionMatch[1] : 'webm';
         const blob = new Blob(chunks, { type: mimeType });
         const file = new File([blob], `narration-section-${section.index}-${Date.now()}.${extension}`, { type: mimeType });
-        runRecordSectionNarration(section, file, narrationStatus);
+        runRecordSectionNarration(section, file, sectionStatus);
       });
       narrationRecorder.start();
       recordNarrationBtn.textContent = 'Stop Recording';
-      narrationStatus.textContent = 'Recording - click again to stop.';
-      narrationStatus.classList.remove('error');
+      sectionStatus.textContent = 'Recording - click again to stop.';
+      sectionStatus.classList.remove('error');
     });
     narrationAudioControls.appendChild(recordNarrationBtn);
 
     narrationAudio.appendChild(narrationAudioControls);
-    narrationAudio.appendChild(narrationStatus);
 
     // Drop target for dragging an audio clip in from "Your Media" (see
     // renderMediaBankItems) - a quicker alternative to recording fresh
@@ -1509,11 +1506,11 @@ function buildSectionBlock(section, selectable) {
       const item = mediaBankItems[parseInt(indexRaw, 10)];
       if (!item) return;
       if (item.kind !== 'audio') {
-        narrationStatus.textContent = 'Only audio clips can be used as narration.';
-        narrationStatus.classList.add('error');
+        sectionStatus.textContent = 'Only audio clips can be used as narration.';
+        sectionStatus.classList.add('error');
         return;
       }
-      runAssignDraggedNarration(section, item, narrationStatus);
+      runAssignDraggedNarration(section, item, sectionStatus);
     });
 
     // Stock/found ambience (see Find Footage above) - not the presenter's
@@ -1575,7 +1572,7 @@ function buildSectionBlock(section, selectable) {
     // The status line sits at the very bottom of the block, under all the
     // rest of the content (visual box, footage actions, media results),
     // rather than wedged between the actions and their results.
-    block.appendChild(footageStatus);
+    block.appendChild(sectionStatus);
   } else {
     // Pre-arrangement flat feed - just the source material, no shot
     // production details yet (there's no act/shot concept before an
@@ -2683,6 +2680,30 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
       renderMovieEditor(resultsEl, currentLabel, sections, assignmentsByIndex);
     });
     topRow.appendChild(clearSelectionBtn);
+  }
+
+  // Empties the whole timeline in one go - every arranged scene moves to the
+  // "Deleted scenes" sidebar module (restorable there, same as deleting one
+  // by hand), rather than being destroyed, so it's reversible. Confirmed
+  // first since it clears everything at once. Shown only when there's
+  // actually something arranged to clear.
+  if (arranged.length > 0) {
+    const clearAllBtn = document.createElement('button');
+    clearAllBtn.type = 'button';
+    clearAllBtn.className = 'btn-secondary';
+    clearAllBtn.textContent = 'Clear all scenes';
+    clearAllBtn.title = 'Move every scene to Deleted scenes (restorable there)';
+    clearAllBtn.addEventListener('click', () => {
+      if (!window.confirm("Clear all scenes from the timeline? They'll move to Deleted scenes, where you can restore them.")) return;
+      currentSections.forEach(s => {
+        if (currentAssignments[s.index] && !s.removed) s.removed = true;
+      });
+      selectedSectionIndices.clear();
+      saveDebugSession();
+      const remaining = currentSections.filter(s => !s.removed);
+      renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+    });
+    topRow.appendChild(clearAllBtn);
   }
 
   actionBar.appendChild(topRow);
