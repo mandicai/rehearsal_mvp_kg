@@ -87,6 +87,7 @@ import json
 import os
 import re
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -639,6 +640,12 @@ _SKETCH_NOT_CONFIGURED_ERROR = (
     'Generating a sketch requires an LLM API key. Set OPENAI_API_KEY (or OPENROUTER_API_KEY) in backend/.env.'
 )
 
+# Deliberate gap between a shot's two frame-image calls (see
+# /paper/generate_shot) so the pair doesn't burst the image model's
+# per-minute limit. A shot takes ~30s of model time already, so a few extra
+# seconds here is negligible against the odds of a RESOURCE_EXHAUSTED failure.
+_SHOT_FRAME_GAP_SECONDS = 6
+
 
 @app.route('/paper/generate_sketch', methods=['POST'])
 def paper_generate_sketch():
@@ -718,6 +725,11 @@ def paper_generate_shot():
     try:
         start_png = sketch_client.generate_sketch(
             shot_plan['start_frame'][:MAX_SKETCH_VISUAL_CHARS], documentary_mode, style='shot_frame')
+        # Space the two frame calls out so the pair doesn't burst the image
+        # model's per-minute limit ("resources have been exhausted") - cheaper
+        # than relying on the retry/backoff in sketch_llm to recover after the
+        # fact. See _SHOT_FRAME_GAP_SECONDS.
+        time.sleep(_SHOT_FRAME_GAP_SECONDS)
         end_png = sketch_client.generate_sketch(
             shot_plan['end_frame'][:MAX_SKETCH_VISUAL_CHARS], documentary_mode, style='shot_frame')
     except SketchLLMCallError as exc:
