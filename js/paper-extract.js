@@ -1245,20 +1245,17 @@ function buildSectionBlock(section, selectable) {
     sectionStatus.className = 'status-line find-footage-status';
 
     // The scene's primary visual: a narration-driven shot - a start frame →
-    // end frame + camera move designed from the scene's title, scene notes,
-    // and recorded narration (see runGenerateShot / /paper/generate_shot).
-    // Works best once narration is recorded (the Record narration button is
-    // in the narration block above), but falls back to the scene notes so
-    // it's never a hard blocker. Clicking again redesigns from scratch.
-    const hasShotBasis = !!(section.text && section.text.trim()) || !!(section.narration && section.narration.trim());
+    // end frame + camera move designed from whatever's available (narration,
+    // scene notes, scene title, the arc part, the paper abstract), inventing
+    // a plausible shot if there's nothing at all (see runGenerateShot /
+    // /paper/generate_shot). Never disabled - it always has *something* to go
+    // on (at minimum the scene title / arc part), and even with nothing the
+    // backend generates a shot rather than refusing. Clicking again redesigns.
     const generateShotBtn = document.createElement('button');
     generateShotBtn.type = 'button';
     generateShotBtn.className = 'btn-secondary';
     generateShotBtn.textContent = section.startFramePreviewUrl ? 'Re-generate shot' : 'Generate shot';
-    generateShotBtn.disabled = !hasShotBasis;
-    generateShotBtn.title = hasShotBasis
-      ? "Design this scene's shot (start frame → end frame) from its narration"
-      : "Record narration (or add scene notes) first - there's nothing to base a shot on yet.";
+    generateShotBtn.title = "Design this scene's shot (start frame → end frame) from its narration, notes, and title";
     generateShotBtn.addEventListener('click', event => {
       event.stopPropagation();
       runGenerateShot(section, generateShotBtn, sectionStatus);
