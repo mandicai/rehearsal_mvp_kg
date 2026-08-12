@@ -2682,30 +2682,6 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
     topRow.appendChild(clearSelectionBtn);
   }
 
-  // Empties the whole timeline in one go - every arranged scene moves to the
-  // "Deleted scenes" sidebar module (restorable there, same as deleting one
-  // by hand), rather than being destroyed, so it's reversible. Confirmed
-  // first since it clears everything at once. Shown only when there's
-  // actually something arranged to clear.
-  if (arranged.length > 0) {
-    const clearAllBtn = document.createElement('button');
-    clearAllBtn.type = 'button';
-    clearAllBtn.className = 'btn-secondary';
-    clearAllBtn.textContent = 'Clear all scenes';
-    clearAllBtn.title = 'Move every scene to Deleted scenes (restorable there)';
-    clearAllBtn.addEventListener('click', () => {
-      if (!window.confirm("Clear all scenes from the timeline? They'll move to Deleted scenes, where you can restore them.")) return;
-      currentSections.forEach(s => {
-        if (currentAssignments[s.index] && !s.removed) s.removed = true;
-      });
-      selectedSectionIndices.clear();
-      saveDebugSession();
-      const remaining = currentSections.filter(s => !s.removed);
-      renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
-    });
-    topRow.appendChild(clearAllBtn);
-  }
-
   actionBar.appendChild(topRow);
   container.appendChild(actionBar);
 
@@ -2741,9 +2717,39 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
   const modesBlock = document.createElement('div');
   modesBlock.className = 'documentary-modes-bar';
 
+  // Title on the left, "Clear all scenes" on the right - this bar sits right
+  // above the timeline and is always visible (unlike the action bar, which is
+  // hidden), so it's where the timeline-level controls belong.
+  const modesHeader = document.createElement('div');
+  modesHeader.className = 'documentary-modes-bar-header';
   const modesTitle = document.createElement('h3');
   modesTitle.textContent = 'Documentary modes';
-  modesBlock.appendChild(modesTitle);
+  modesHeader.appendChild(modesTitle);
+
+  // Empties the whole timeline in one go - every arranged scene moves to the
+  // "Deleted scenes" sidebar module (restorable there, same as deleting one
+  // by hand), rather than being destroyed, so it's reversible. Confirmed
+  // first since it clears everything at once. Shown only when there's
+  // actually something arranged to clear.
+  if (arranged.length > 0) {
+    const clearAllBtn = document.createElement('button');
+    clearAllBtn.type = 'button';
+    clearAllBtn.className = 'btn-secondary clear-all-scenes-btn';
+    clearAllBtn.textContent = 'Clear all scenes';
+    clearAllBtn.title = 'Move every scene to Deleted scenes (restorable there)';
+    clearAllBtn.addEventListener('click', () => {
+      if (!window.confirm("Clear all scenes from the timeline? They'll move to Deleted scenes, where you can restore them.")) return;
+      currentSections.forEach(s => {
+        if (currentAssignments[s.index] && !s.removed) s.removed = true;
+      });
+      selectedSectionIndices.clear();
+      saveDebugSession();
+      const remaining = currentSections.filter(s => !s.removed);
+      renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+    });
+    modesHeader.appendChild(clearAllBtn);
+  }
+  modesBlock.appendChild(modesHeader);
 
   const modesRow = document.createElement('div');
   modesRow.className = 'chip-row documentary-modes-bar-row';
