@@ -116,6 +116,7 @@ from narrative_arc_llm import NarrativeArcLLMClient, NarrativeArcLLMCallError
 from storyboard_llm import StoryboardLLMClient, StoryboardLLMCallError
 from edit_plan_llm import EditPlanLLMClient, EditPlanLLMCallError
 from sketch_llm import SketchLLMClient, SketchLLMCallError
+from shot_plan_llm import ShotPlanLLMClient, ShotPlanLLMCallError
 from animate_llm import (
     AnimateLLMClient, AnimateLLMCallError, TECHNIQUES as ANIMATE_TECHNIQUES,
     build_sequence_prompts, compose_gif,
@@ -260,6 +261,7 @@ narrative_arc_client = NarrativeArcLLMClient()
 storyboard_client = StoryboardLLMClient()
 edit_plan_client = EditPlanLLMClient()
 sketch_client = SketchLLMClient()
+shot_plan_client = ShotPlanLLMClient()
 animate_client = AnimateLLMClient()
 carta_entity_client = CartaLLMClient()
 pexels_client = PexelsClient()
@@ -676,6 +678,67 @@ def paper_generate_sketch():
     preview_url = '/' + saved_path.relative_to(PREMIERE_EXPORTS_DIR.parent).as_posix()
 
     return jsonify({'project_id': project_id, 'preview_url': preview_url})
+
+
+@app.route('/paper/generate_shot', methods=['POST'])
+def paper_generate_shot():
+    # Narration-driven shot design (see backend/shot_plan_llm.py and
+    # js/paper-extract.js's "Generate shot"): from the scene's title + scene
+    # notes + recorded narration, infer one shot (size/movement/narrative
+    # operation + a start frame and end frame), then render both frames as
+    # images. The two frames are shown as an artboard in the UI and hard-cut
+    # into the MP4 (movie_render.render_shot's two-still branch).
+    data = request.get_json(silent=True) or {}
+
+    try:
+        section_index = int(data.get('section_index'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'section_index is required and must be an integer'}), 400
+
+    title = (data.get('title') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
+    scene_notes = (data.get('scene_notes') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
+    narration = (data.get('narration') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS]
+    if not title and not scene_notes and not narration:
+        return jsonify({'error': 'at least one of title, scene_notes, or narration is required'}), 400
+
+    documentary_mode, err = _parse_documentary_mode(data)
+    if err:
+        return err
+
+    project_id = (data.get('project_id') or '').strip() or next_premiere_project_id()
+
+    if not shot_plan_client.is_configured() or not sketch_client.is_configured():
+        return jsonify({'error': _SKETCH_NOT_CONFIGURED_ERROR}), 503
+
+    try:
+        shot_plan = shot_plan_client.generate_shot_plan(title, scene_notes, narration, documentary_mode)
+    except ShotPlanLLMCallError as exc:
+        return jsonify({'error': str(exc)}), 500
+
+    try:
+        start_png = sketch_client.generate_sketch(
+            shot_plan['start_frame'][:MAX_SKETCH_VISUAL_CHARS], documentary_mode, style='shot_frame')
+        end_png = sketch_client.generate_sketch(
+            shot_plan['end_frame'][:MAX_SKETCH_VISUAL_CHARS], documentary_mode, style='shot_frame')
+    except SketchLLMCallError as exc:
+        return jsonify({'error': str(exc)}), 500
+
+    sketch_dir = premiere_sketch_dir(project_id)
+    sketch_dir.mkdir(parents=True, exist_ok=True)
+    start_path = sketch_dir / f'{section_index}_start.png'
+    end_path = sketch_dir / f'{section_index}_end.png'
+    start_path.write_bytes(start_png)
+    end_path.write_bytes(end_png)
+
+    def _preview_url(p):
+        return '/' + p.relative_to(PREMIERE_EXPORTS_DIR.parent).as_posix()
+
+    return jsonify({
+        'project_id': project_id,
+        'shot_plan': shot_plan,
+        'start_preview_url': _preview_url(start_path),
+        'end_preview_url': _preview_url(end_path),
+    })
 
 
 _ANIMATE_NOT_CONFIGURED_ERROR = (
@@ -1170,21 +1233,30 @@ def render_start():
             return jsonify({'error': f'section {i} must be an object'}), 400
         title = (section.get('title') or '').strip() or f'section {i}'
 
-        # Visual: a resolved local file wins (stock video, uploaded footage,
-        # sketch, animated sketch - all under premiere_exports/), else the
-        # paper figure decoded from its data URL. A shot with neither can't
-        # be rendered, so reject the whole request rather than silently drop
-        # a shot and produce a shorter video than the presenter arranged.
+        # Visual, in priority order:
+        # 1. A narration-driven start/end frame PAIR (see /paper/generate_shot)
+        #    - both must resolve; render_shot hard-cuts between them.
+        # 2. A single resolved local file (stock video, uploaded footage,
+        #    sketch - all under premiere_exports/).
+        # 3. The paper figure decoded from its data URL.
+        # A shot with none can't be rendered, so reject the whole request
+        # rather than silently drop a shot and produce a shorter video than
+        # the presenter arranged.
+        start_frame_resolved = resolve_static_preview_path(section.get('start_frame_preview_url'))
+        end_frame_resolved = resolve_static_preview_path(section.get('end_frame_preview_url'))
+        two_frame = start_frame_resolved is not None and end_frame_resolved is not None
+
         visual_path = None
-        resolved_visual = resolve_static_preview_path(section.get('visual_preview_url'))
-        if resolved_visual is not None:
-            visual_path = str(resolved_visual)
-        elif section.get('figure_image_data_url'):
-            decoded = _decode_figure_data_url(section.get('figure_image_data_url'), figures_dir, i)
-            if decoded is not None:
-                visual_path = str(decoded)
-        if visual_path is None:
-            return jsonify({'error': f'section "{title}" has no usable visual - generate or pick one, then try again'}), 400
+        if not two_frame:
+            resolved_visual = resolve_static_preview_path(section.get('visual_preview_url'))
+            if resolved_visual is not None:
+                visual_path = str(resolved_visual)
+            elif section.get('figure_image_data_url'):
+                decoded = _decode_figure_data_url(section.get('figure_image_data_url'), figures_dir, i)
+                if decoded is not None:
+                    visual_path = str(decoded)
+            if visual_path is None:
+                return jsonify({'error': f'section "{title}" has no usable visual - generate or pick one, then try again'}), 400
 
         narration_resolved = resolve_static_preview_path(section.get('narration_audio_path'))
         sfx_resolved = resolve_static_preview_path(section.get('stock_audio_preview_url'))
@@ -1193,6 +1265,8 @@ def render_start():
         ken_burns = edit_plan.get('ken_burns') or {}
         shots.append({
             'visual_path': visual_path,
+            'start_visual_path': str(start_frame_resolved) if two_frame else None,
+            'end_visual_path': str(end_frame_resolved) if two_frame else None,
             'narration_audio_path': str(narration_resolved) if narration_resolved else None,
             'sfx_audio_path': str(sfx_resolved) if sfx_resolved else None,
             'duration_seconds': edit_plan.get('duration_seconds'),

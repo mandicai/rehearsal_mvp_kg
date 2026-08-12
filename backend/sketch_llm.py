@@ -78,30 +78,51 @@ class SketchLLMClient:
             self._client = OpenAI(**kwargs)
         return self._client
 
-    def generate_sketch(self, visual, documentary_mode=None):
-        """visual: a shot's storyboard 'visual' text (storyboard_llm.py's
-        generate_storyboard output) - a plain-English scene description,
-        already free of literal academic jargon.
+    def generate_sketch(self, visual, documentary_mode=None, style='sketch'):
+        """visual: a shot's visual description - a plain-English scene
+        description, already free of literal academic jargon (from
+        storyboard_llm's `visual`, or shot_plan_llm's start_frame/end_frame).
         documentary_mode: optional key into DOCUMENTARY_MODE_KEYS (see
         documentary_modes.py) - same stylistic axis as storyboard/edit-plan,
-        biasing sketch mood/composition rather than narration/pacing.
-        Returns raw PNG bytes. No tolerant-parsing/retry-loop here (unlike
-        the text clients) - an image call either returns a usable image or
-        it doesn't; there's no partial-response case to patch around."""
+        biasing mood/composition.
+        style: 'sketch' (default) = the rough B&W storyboard panel used by the
+        Generate-Sketch flow; 'shot_frame' = a clean, semi-flat 16:9
+        documentary film frame in a natural palette (see artboard-example.png),
+        used for the narration-driven start/end frames (shot_plan_llm) that get
+        hard-cut into the rendered MP4.
+        Returns raw PNG bytes. No tolerant-parsing/retry-loop here (unlike the
+        text clients) - an image call either returns a usable image or it
+        doesn't; there's no partial-response case to patch around."""
         if not self.is_configured():
             raise SketchLLMCallError('LLM client is not configured (missing API key or openai package)')
 
-        style_clause = f' Style: {_MODE_SKETCH_STYLE[documentary_mode]}.' if documentary_mode in _MODE_SKETCH_STYLE else ''
-        prompt = (
-            'A single storyboard panel, rough black-and-white pencil sketch style - loose hand-drawn '
-            'line art, not a finished illustration. Include a small corner label with a shot number, '
-            'and a brief camera-direction note (framing/movement) below or beside the panel, like a '
-            f'real film storyboard.{style_clause} The panel depicts: {visual}'
-        )
+        mode_clause = f' {_MODE_SKETCH_STYLE[documentary_mode]}.' if documentary_mode in _MODE_SKETCH_STYLE else ''
+        if style == 'shot_frame':
+            # A finished-looking documentary frame, 16:9, no text/borders (the
+            # start/end labels + arrow are added by the UI's HTML artboard, and
+            # any on-screen text would get baked into the rendered MP4). Wider
+            # than 1:1 so it fills 1920x1080 without heavy pillarboxing.
+            prompt = (
+                'A single cinematic documentary film frame, 16:9 widescreen composition. Semi-flat '
+                'illustration with clean lines and a natural, understated color palette (soft greens, muted '
+                'blues, warm neutrals) - a polished storyboard frame, not a photograph and not a rough pencil '
+                'sketch. No text, no captions, no letterbox bars, no panel borders - just the framed scene '
+                f'filling the whole image.{mode_clause} The frame shows: {visual}'
+            )
+            size = '1792x1024'
+        else:
+            style_clause = f' Style:{mode_clause}' if mode_clause else ''
+            prompt = (
+                'A single storyboard panel, rough black-and-white pencil sketch style - loose hand-drawn '
+                'line art, not a finished illustration. Include a small corner label with a shot number, '
+                'and a brief camera-direction note (framing/movement) below or beside the panel, like a '
+                f'real film storyboard.{style_clause} The panel depicts: {visual}'
+            )
+            size = '1024x1024'
 
         try:
             client = self._get_client()
-            response = client.images.generate(model=MODEL, prompt=prompt, size='1024x1024', n=1)
+            response = client.images.generate(model=MODEL, prompt=prompt, size=size, n=1)
             b64_data = response.data[0].b64_json
             if not b64_data:
                 raise ValueError('response had no b64_json image data')

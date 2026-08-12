@@ -201,38 +201,52 @@ def _escape_filter_path(path):
     return path.replace('\\', '\\\\').replace(':', r'\:')
 
 
-def _audio_inputs_and_filter(shot, effective_seconds):
+# The scale/pad/normalize chain shared by every still (single or start/end
+# pair) - letterbox/pillarbox into the target frame, fixed sar/fps, yuv420p.
+_STILL_NORM_CHAIN = (
+    f'scale={_WIDTH}:{_HEIGHT}:force_original_aspect_ratio=decrease,'
+    f'pad={_WIDTH}:{_HEIGHT}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={_FPS},format=yuv420p'
+)
+
+
+def _audio_inputs_and_filter(shot, effective_seconds, audio_base_index=1):
     """Builds the ffmpeg input args and the audio half of a filtergraph for
     a shot - narration at full level, a sound effect ducked under it, or a
     solo sound effect at a bed level, or generated silence when there's
-    neither. Returns (input_args, filter_str, audio_label, needs_shortest).
+    neither. Returns (input_args, filter_str, audio_label).
+
+    audio_base_index is the ffmpeg input index the FIRST audio input will
+    land at - i.e. the number of video inputs already declared before these
+    (1 for the usual single-visual shot, 2 for a start/end still pair). The
+    filtergraph's `[N:a]` labels are computed from it.
 
     The video side always caps the shot at effective_seconds via -t, so the
     audio only needs to be *at least* that long (silence/anullsrc is
     infinite; a real track is trimmed by the same -t)."""
     narration = shot.get('narration_audio_path')
     sfx = shot.get('sfx_audio_path')
+    n = audio_base_index
 
     if narration and sfx:
         inputs = ['-i', str(narration), '-i', str(sfx)]
         flt = (
-            f'[1:a]aresample={_SAMPLE_RATE},aformat=channel_layouts=stereo,volume=1.0[nar];'
-            f'[2:a]aresample={_SAMPLE_RATE},aformat=channel_layouts=stereo,volume={_SFX_DUCKED_VOLUME}[sfx];'
+            f'[{n}:a]aresample={_SAMPLE_RATE},aformat=channel_layouts=stereo,volume=1.0[nar];'
+            f'[{n + 1}:a]aresample={_SAMPLE_RATE},aformat=channel_layouts=stereo,volume={_SFX_DUCKED_VOLUME}[sfx];'
             '[nar][sfx]amix=inputs=2:duration=longest:normalize=0[aout]'
         )
         return inputs, flt, '[aout]'
     if narration:
         inputs = ['-i', str(narration)]
-        flt = f'[1:a]aresample={_SAMPLE_RATE},aformat=channel_layouts=stereo[aout]'
+        flt = f'[{n}:a]aresample={_SAMPLE_RATE},aformat=channel_layouts=stereo[aout]'
         return inputs, flt, '[aout]'
     if sfx:
         inputs = ['-i', str(sfx)]
-        flt = f'[1:a]aresample={_SAMPLE_RATE},aformat=channel_layouts=stereo,volume={_SFX_SOLO_VOLUME}[aout]'
+        flt = f'[{n}:a]aresample={_SAMPLE_RATE},aformat=channel_layouts=stereo,volume={_SFX_SOLO_VOLUME}[aout]'
         return inputs, flt, '[aout]'
     # No audio at all - a generated silent stereo track, so every shot
     # still has a uniform audio stream for the concat to line up.
     inputs = ['-f', 'lavfi', '-i', f'anullsrc=channel_layout=stereo:sample_rate={_SAMPLE_RATE}']
-    flt = f'[1:a]anull[aout]'
+    flt = f'[{n}:a]anull[aout]'
     return inputs, flt, '[aout]'
 
 
@@ -253,15 +267,18 @@ def _effective_seconds(shot):
 def render_shot(shot, output_path, tmp_dir):
     """Renders one shot spec to a normalized MP4 at output_path.
 
-    shot keys: visual_path (required, a still image or a real clip),
-    narration_audio_path / sfx_audio_path (optional local paths),
-    duration_seconds (from the edit plan), ken_burns {enabled, pan},
-    text_overlay (optional str). tmp_dir is a caller-owned scratch dir for
-    the drawtext textfile."""
-    visual_path = shot.get('visual_path')
-    if not visual_path or not Path(visual_path).is_file():
-        raise MovieRenderError(f'shot has no readable visual: {visual_path!r}')
+    A shot is one of:
+    - a start/end still PAIR (start_visual_path + end_visual_path) - the
+      narration-driven shot design (see backend/shot_plan_llm.py): the start
+      frame is held for the first half of the shot, then a hard cut to the
+      end frame for the second half, with the audio mix over the whole shot.
+    - a single visual_path - a still (Ken Burns via ken_burns) or a real clip
+      (looped/trimmed to length).
 
+    Other keys: narration_audio_path / sfx_audio_path (optional local paths),
+    duration_seconds (from the edit plan), ken_burns {enabled, pan} (single
+    still only), text_overlay (optional str). tmp_dir is a caller-owned
+    scratch dir for the drawtext textfile."""
     seconds = _effective_seconds(shot)
     total_frames = max(int(round(seconds * _FPS)), 1)
 
@@ -272,20 +289,47 @@ def render_shot(shot, output_path, tmp_dir):
         with os.fdopen(fd, 'w', encoding='utf-8') as f:
             f.write(overlay_text)
 
-    still = _is_still(visual_path)
-    if still:
-        video_input = ['-loop', '1', '-i', str(visual_path)]
-        video_filter = _video_filter_for_still(shot, total_frames, overlay_file)
+    start_path = shot.get('start_visual_path')
+    end_path = shot.get('end_visual_path')
+    two_still = bool(start_path and end_path and Path(start_path).is_file() and Path(end_path).is_file())
+
+    if two_still:
+        # Two frames, hard cut at the midpoint - each held for half the shot
+        # (-loop 1 -t bounds each looped still); the concat filter joins them
+        # into one continuous video stream, and the audio mix (from input
+        # index 2, after the two image inputs) plays over the whole shot.
+        half = max(seconds / 2.0, 0.1)
+        video_input = [
+            '-loop', '1', '-t', f'{half:.3f}', '-i', str(start_path),
+            '-loop', '1', '-t', f'{half:.3f}', '-i', str(end_path),
+        ]
+        parts = [f'[0:v]{_STILL_NORM_CHAIN}[v0]', f'[1:v]{_STILL_NORM_CHAIN}[v1]']
+        if overlay_file is not None:
+            parts.append('[v0][v1]concat=n=2:v=1:a=0[vcat]')
+            parts.append(f'[vcat]{_drawtext_expr(overlay_file)},format=yuv420p[vout]')
+        else:
+            parts.append('[v0][v1]concat=n=2:v=1:a=0[vout]')
+        video_part = ';'.join(parts)
+        audio_base = 2
     else:
-        # -stream_loop -1 loops a clip shorter than the shot (capped by -t);
-        # a longer clip is simply trimmed by -t. Either way the shot lasts
-        # exactly `seconds`.
-        video_input = ['-stream_loop', '-1', '-i', str(visual_path)]
-        video_filter = _video_filter_for_clip(overlay_file)
+        visual_path = shot.get('visual_path')
+        if not visual_path or not Path(visual_path).is_file():
+            raise MovieRenderError(f'shot has no readable visual: {visual_path!r}')
+        if _is_still(visual_path):
+            video_input = ['-loop', '1', '-i', str(visual_path)]
+            video_filter = _video_filter_for_still(shot, total_frames, overlay_file)
+        else:
+            # -stream_loop -1 loops a clip shorter than the shot (capped by -t);
+            # a longer clip is simply trimmed by -t. Either way the shot lasts
+            # exactly `seconds`.
+            video_input = ['-stream_loop', '-1', '-i', str(visual_path)]
+            video_filter = _video_filter_for_clip(overlay_file)
+        video_part = f'[0:v]{video_filter}[vout]'
+        audio_base = 1
 
-    audio_inputs, audio_filter, audio_label = _audio_inputs_and_filter(shot, seconds)
+    audio_inputs, audio_filter, audio_label = _audio_inputs_and_filter(shot, seconds, audio_base)
 
-    filter_complex = f'[0:v]{video_filter}[vout];{audio_filter}'
+    filter_complex = f'{video_part};{audio_filter}'
     cmd = [
         FFMPEG_BIN, '-y',
         *video_input,
