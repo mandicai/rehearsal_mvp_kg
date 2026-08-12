@@ -1640,6 +1640,33 @@ function fetchUploadMediaBankItem(file, projectId) {
 // upload here, so a plain JSON body instead of FormData.
 
 const GENERATE_SKETCH_API_URL = `${API_BASE_URL}/paper/generate_sketch`;
+const GENERATE_SHOT_API_URL = `${API_BASE_URL}/paper/generate_shot`;
+
+// Narration-driven shot design (backend/shot_plan_llm.py + /paper/generate_shot,
+// see js/paper-extract.js's runGenerateShot) - infers one shot and generates
+// its start + end frames from the scene's title, notes, and narration. Same
+// projectId in/out convention as fetchGenerateSketch.
+function fetchGenerateShot(sectionIndex, title, sceneNotes, narration, documentaryMode, projectId) {
+  return fetch(GENERATE_SHOT_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      section_index: sectionIndex,
+      title: title || '',
+      scene_notes: sceneNotes || '',
+      narration: narration || '',
+      ...(projectId ? { project_id: projectId } : {}),
+      ...(documentaryMode ? { documentary_mode: documentaryMode } : {}),
+    })
+  })
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(
+        `Could not reach the shot server at ${GENERATE_SHOT_API_URL} (${err.message}). Check that the backend is running and reachable.`
+      );
+    });
+}
 
 function fetchGenerateSketch(sectionIndex, visual, projectId, documentaryMode) {
   return fetch(GENERATE_SKETCH_API_URL, {

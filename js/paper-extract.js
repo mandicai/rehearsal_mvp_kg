@@ -842,7 +842,65 @@ function runSplitSectionAt(section, offset) {
 // shadows anything done after it (recording new webcam footage, say) -
 // each returns null when its own section field isn't set, so the caller
 // can just move on to the next candidate.
+// Human-readable movement labels for the shot-frames artboard header (see
+// the shotFrames renderer) - keys are shot_plan_llm.py's movement vocabulary.
+const SHOT_MOVEMENT_LABELS = {
+  static: 'STATIC', pan: 'PAN', tilt: 'TILT', push_in: 'PUSH IN',
+  pull_out: 'PULL OUT', tracking: 'TRACKING', handheld: 'HANDHELD',
+};
+
 const VISUAL_BOX_RENDERERS = {
+  // The narration-driven shot: a start frame → end frame artboard (see
+  // /paper/generate_shot and artboard-example.png) - solid-bordered start
+  // frame, an arrow, dashed-bordered end frame, with a shot-size/movement
+  // label and the shot's purpose. Both frames hard-cut together in the
+  // rendered MP4 (movie_render.render_shot's two-still branch).
+  shotFrames(section) {
+    if (!section.startFramePreviewUrl || !section.endFramePreviewUrl) return null;
+    const plan = section.shotPlan || {};
+    const bust = section.shotFramesGeneratedAt ? `?t=${section.shotFramesGeneratedAt}` : '';
+
+    const board = document.createElement('div');
+    board.className = 'shot-frames';
+
+    const move = SHOT_MOVEMENT_LABELS[plan.movement] || (plan.movement || '').toUpperCase();
+    const header = document.createElement('div');
+    header.className = 'shot-frames-header';
+    header.textContent = [move, plan.shot_size].filter(Boolean).join(' · ');
+    board.appendChild(header);
+
+    const row = document.createElement('div');
+    row.className = 'shot-frames-row';
+    const makeFrame = (cls, url, caption) => {
+      const wrap = document.createElement('div');
+      wrap.className = `shot-frame ${cls}`;
+      const img = document.createElement('img');
+      img.className = 'shot-frame-img';
+      img.src = `${url}${bust}`;
+      img.alt = caption;
+      wrap.appendChild(img);
+      const cap = document.createElement('div');
+      cap.className = 'shot-frame-caption';
+      cap.textContent = caption;
+      wrap.appendChild(cap);
+      return wrap;
+    };
+    row.appendChild(makeFrame('shot-frame-start', section.startFramePreviewUrl, 'START FRAME'));
+    const arrow = document.createElement('div');
+    arrow.className = 'shot-frames-arrow';
+    arrow.textContent = '→';
+    row.appendChild(arrow);
+    row.appendChild(makeFrame('shot-frame-end', section.endFramePreviewUrl, 'END FRAME'));
+    board.appendChild(row);
+
+    if (plan.purpose) {
+      const purpose = document.createElement('div');
+      purpose.className = 'shot-frames-purpose';
+      purpose.textContent = `Purpose: ${plan.purpose}`;
+      board.appendChild(purpose);
+    }
+    return board;
+  },
   stockVideo(section) {
     if (!section.selectedVideo) return null;
     const player = document.createElement('video');
@@ -936,7 +994,7 @@ function buildVisualBox(section) {
   box.className = 'paper-section-visual-box';
 
   let rendered = null;
-  for (const key of [section.visualSource, 'stockVideo', 'video', 'animatedSketch', 'sketch', 'image']) {
+  for (const key of [section.visualSource, 'shotFrames', 'stockVideo', 'video', 'animatedSketch', 'sketch', 'image']) {
     if (!key) continue;
     rendered = VISUAL_BOX_RENDERERS[key](section);
     if (rendered) break;
@@ -1186,98 +1244,26 @@ function buildSectionBlock(section, selectable) {
     const sectionStatus = document.createElement('div');
     sectionStatus.className = 'status-line find-footage-status';
 
-    // One click both drafts this section's visual/narration/entities/
-    // video_query/audio_query (the same LLM call the sticky action bar's
-    // "Generate Storyboard for All/Selected" makes in bulk - see
-    // runGenerateStoryboardForSections) and immediately turns the
-    // resulting visual description into an actual sketch image (backend/
-    // sketch_llm.py) - see runGenerateSketch below, which does both steps
-    // in sequence. Clicking again redrafts and regenerates from scratch,
-    // rather than needing a separate "re-generate visual" step first.
-    // Needs actual text or narration to work from - there's nothing for
-    // the LLM to extract entities or a visual idea from otherwise (see
-    // runGenerateSketch's own text+narration combining).
-    const hasStoryboardBasis = !!(section.text && section.text.trim()) || !!(section.narration && section.narration.trim());
-    const sketchBtn = document.createElement('button');
-    sketchBtn.type = 'button';
-    sketchBtn.className = 'btn-secondary';
-    sketchBtn.textContent = section.sketchPreviewUrl ? 'Re-generate sketch' : 'Generate sketch';
-    sketchBtn.disabled = !hasStoryboardBasis;
-    sketchBtn.title = hasStoryboardBasis
-      ? ''
-      : 'Add section text or narration first - there\'s nothing to base a visual on yet.';
-    sketchBtn.addEventListener('click', event => {
+    // The scene's primary visual: a narration-driven shot - a start frame →
+    // end frame + camera move designed from the scene's title, scene notes,
+    // and recorded narration (see runGenerateShot / /paper/generate_shot).
+    // Works best once narration is recorded (the Record narration button is
+    // in the narration block above), but falls back to the scene notes so
+    // it's never a hard blocker. Clicking again redesigns from scratch.
+    const hasShotBasis = !!(section.text && section.text.trim()) || !!(section.narration && section.narration.trim());
+    const generateShotBtn = document.createElement('button');
+    generateShotBtn.type = 'button';
+    generateShotBtn.className = 'btn-secondary';
+    generateShotBtn.textContent = section.startFramePreviewUrl ? 'Re-generate shot' : 'Generate shot';
+    generateShotBtn.disabled = !hasShotBasis;
+    generateShotBtn.title = hasShotBasis
+      ? "Design this scene's shot (start frame → end frame) from its narration"
+      : "Record narration (or add scene notes) first - there's nothing to base a shot on yet.";
+    generateShotBtn.addEventListener('click', event => {
       event.stopPropagation();
-      runGenerateSketch(section, sketchBtn, sectionStatus);
+      runGenerateShot(section, generateShotBtn, sectionStatus);
     });
-    footageActions.appendChild(sketchBtn);
-
-    // Animates a shot to demonstrate one specific camera technique -
-    // ANIMATE_TECHNIQUES mirrors backend/animate_llm.py's TECHNIQUES (kept
-    // in sync by convention, same as this file's own DOCUMENTARY_MODES/
-    // documentary_modes.py pairing). animateMethodSelect picks which of
-    // backend/animate_llm.py's generation paths a click on one of the
-    // technique buttons below uses.
-    //
-    // The two Veo paths (Image → Video, Text → Video) are intentionally no
-    // longer offered - only the fast local sketch-sequence (GIF) path
-    // remains. The select is kept (hidden) as a single-option control so the
-    // click/state handlers below can still read animateMethodSelect.value
-    // ('sketchSequence') without special-casing; re-add the Veo options here
-    // to bring them back. The Veo generation functions
-    // (runGenerateAnimatedSketch/runGenerateVideoFromText) are left in place.
-    const animateMethodSelect = document.createElement('select');
-    animateMethodSelect.className = 'animate-method-select';
-    animateMethodSelect.title = 'How to generate the animated preview';
-    animateMethodSelect.style.display = 'none';
-    [
-      { value: 'sketchSequence', label: 'Sketch sequence (fast)' },
-    ].forEach(({ value, label }) => {
-      const opt = document.createElement('option');
-      opt.value = value;
-      opt.textContent = label;
-      animateMethodSelect.appendChild(opt);
-    });
-    animateMethodSelect.addEventListener('click', event => event.stopPropagation());
-    footageActions.appendChild(animateMethodSelect);
-
-    const animateBtns = [];
-    for (const { key, label } of ANIMATE_TECHNIQUES) {
-      const animateBtn = document.createElement('button');
-      animateBtn.type = 'button';
-      animateBtn.className = 'btn-secondary animate-sketch-btn';
-      animateBtn.textContent = label;
-      animateBtn.addEventListener('click', event => {
-        event.stopPropagation();
-        const method = animateMethodSelect.value;
-        if (method === 'imageToVideo') runGenerateAnimatedSketch(section, key, animateBtn, sectionStatus);
-        else if (method === 'textToVideo') runGenerateVideoFromText(section, key, animateBtn, sectionStatus);
-        else runGenerateSketchSequence(section, key, animateBtn, sectionStatus);
-      });
-      footageActions.appendChild(animateBtn);
-      animateBtns.push(animateBtn);
-    }
-
-    // imageToVideo needs a sketch already generated (it animates that
-    // exact image); the other two only need the same text-or-narration
-    // basis Generate Sketch itself needs (see runDraftVisualThenGenerate,
-    // which they both draft a fresh visual through before generating).
-    function updateAnimateControlsState() {
-      const method = animateMethodSelect.value;
-      const enabled = method === 'imageToVideo' ? !!section.sketchPreviewUrl : hasStoryboardBasis;
-      const reason = method === 'imageToVideo'
-        ? 'Generate a sketch first - this animates that exact image.'
-        : 'Add section text or narration first - there\'s nothing to base a visual on yet.';
-      animateBtns.forEach(animateBtn => {
-        animateBtn.disabled = !enabled;
-        animateBtn.title = enabled ? '' : reason;
-      });
-    }
-    animateMethodSelect.addEventListener('change', event => {
-      event.stopPropagation();
-      updateAnimateControlsState();
-    });
-    updateAnimateControlsState();
+    footageActions.appendChild(generateShotBtn);
 
     // Captures video+audio via getUserMedia/MediaRecorder, then uploads the
     // recorded clip through the same /premiere/upload_footage bridge as a
@@ -1380,7 +1366,12 @@ function buildSectionBlock(section, selectable) {
 
     const narrationLine = document.createElement('div');
     narrationLine.className = 'paper-section-narration';
-    narrationLine.textContent = section.narration || '(no narration yet - record it, or drag a clip in from Your Media)';
+    // Prompts the presenter for the two things the shot designer needs (see
+    // shot_plan_llm.py): what information the scene should present, and where/
+    // how the viewer should be positioned - then "Generate shot" infers the
+    // shot from it.
+    narrationLine.textContent = section.narration
+      || '(no narration yet - record what information this scene should present, and where/how the viewer should be positioned; then Generate shot)';
     narrationAudio.appendChild(narrationLine);
 
     // --- The section's actual spoken narration audio - required to come
@@ -3298,9 +3289,59 @@ function runDraftVisualThenGenerate(section, btn, statusEl, draftedMessage, gene
     });
 }
 
+// Narration-driven shot design (backend/shot_plan_llm.py + /paper/generate_shot):
+// from the scene's title + scene notes + recorded narration, infer one shot
+// (size/movement/purpose) and generate its start frame + end frame, shown as
+// the artboard in buildVisualBox and hard-cut into the rendered MP4. This is
+// the primary way a scene's visual is created (it replaced the old
+// Generate-sketch / sketch-sequence buttons). Re-clicking redesigns from
+// scratch, same pattern as re-running Find Footage.
+function runGenerateShot(section, btn, statusEl) {
+  btn.disabled = true;
+  statusEl.textContent = 'Designing this shot (~30s: shot plan + start/end frames)...';
+  statusEl.classList.remove('error');
+
+  fetchGenerateShot(section.index, section.title, section.text, section.narration, selectedDocumentaryMode, premiereProjectId)
+    .then(({ project_id, shot_plan, start_preview_url, end_preview_url }) => {
+      premiereProjectId = project_id;
+      section.shotPlan = shot_plan;
+      section.startFramePreviewUrl = start_preview_url;
+      section.endFramePreviewUrl = end_preview_url;
+      // The backend saves both frames for this section to the same filenames
+      // (see /paper/generate_shot) - a fresh cache-busting key each time so
+      // buildVisualBox's <img src> isn't served the browser's cached copy.
+      section.shotFramesGeneratedAt = Date.now();
+      // Generating a shot is a deliberate choice - it wins the visualSource
+      // lookup in buildVisualBox (same reasoning as runUploadFootage's own).
+      section.visualSource = 'shotFrames';
+      // The shot plan's duration drives both the timeline clip width
+      // (getSceneDuration) and the render (movie_render) - fold it into the
+      // section's edit plan, keeping any other edit-plan fields already set.
+      section.editPlan = {
+        transitionIn: (section.editPlan && section.editPlan.transitionIn) || 'hard_cut',
+        durationSeconds: shot_plan.duration_seconds,
+        kenBurns: (section.editPlan && section.editPlan.kenBurns) || { enabled: false, pan: null },
+        textOverlay: (section.editPlan && section.editPlan.textOverlay) || null,
+      };
+      const remaining = currentSections.filter(s => !s.removed);
+      renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+      editPlanActionEl.style.display = '';
+      premiereExportActionEl.style.display = '';
+      if (renderMovieActionEl) renderMovieActionEl.style.display = '';
+      saveDebugSession();
+    })
+    .catch(err => {
+      statusEl.textContent = err.message;
+      statusEl.classList.add('error');
+      btn.disabled = false;
+    });
+}
+
 // AI-generated storyboard reference image (backend/sketch_llm.py) - a rough
 // planning aid, not real footage, so re-clicking this just regenerates/
 // replaces it (same pattern as re-clicking "Find Footage" re-searches).
+// Retained for older saved sessions' visuals; no button creates one now (the
+// Generate-shot flow above replaced it).
 function runGenerateSketch(section, btn, statusEl) {
   runDraftVisualThenGenerate(section, btn, statusEl, 'Generating a sketch (~10-15s)...', () =>
     fetchGenerateSketch(section.index, section.visual, premiereProjectId, selectedDocumentaryMode)
@@ -3631,9 +3672,17 @@ function resolveSectionVisualForRender(section) {
 let renderPollTimer = null;
 
 function runRenderMovie() {
-  const storyboarded = currentSections.filter(section => !section.removed && currentAssignments[section.index] && section.visual);
+  // Renderable = arranged and has some visual: a narration-driven shot (start
+  // + end frames), a generated storyboard visual, a stock/uploaded clip, or
+  // the paper figure. (Shot-frame scenes don't set section.visual, so this
+  // can't just check that.)
+  const storyboarded = currentSections.filter(section =>
+    !section.removed && currentAssignments[section.index] && (
+      (section.startFramePreviewUrl && section.endFramePreviewUrl) ||
+      section.visual || section.selectedVideo || section.uploadedFootagePreviewUrl || section.image
+    ));
   if (storyboarded.length === 0) {
-    setRenderMovieStatus('No storyboarded sections yet - generate a storyboard first.', true);
+    setRenderMovieStatus('No shots yet - generate a shot (or pick footage) for a scene first.', true);
     return;
   }
 
@@ -3643,15 +3692,25 @@ function runRenderMovie() {
   // server error mid-render.
   const payload = [];
   for (const section of storyboarded) {
-    const { previewUrl, figureDataUrl } = resolveSectionVisualForRender(section);
-    if (!previewUrl && !figureDataUrl) {
-      setRenderMovieStatus(`"${section.title}" has no usable visual yet - pick footage, generate a sketch, or use its figure image, then try again.`, true);
-      return;
+    // A narration-driven shot (start + end frames) takes priority - it
+    // hard-cuts between the two frames in the render. Otherwise fall back to
+    // the single resolved visual (stock/uploaded/sketch) or the paper figure.
+    const hasShotFrames = !!(section.startFramePreviewUrl && section.endFramePreviewUrl);
+    let previewUrl = null;
+    let figureDataUrl = null;
+    if (!hasShotFrames) {
+      ({ previewUrl, figureDataUrl } = resolveSectionVisualForRender(section));
+      if (!previewUrl && !figureDataUrl) {
+        setRenderMovieStatus(`"${section.title}" has no usable visual yet - generate a shot, pick footage, or use its figure image, then try again.`, true);
+        return;
+      }
     }
     payload.push({
       title: section.title,
+      start_frame_preview_url: hasShotFrames ? section.startFramePreviewUrl : null,
+      end_frame_preview_url: hasShotFrames ? section.endFramePreviewUrl : null,
       visual_preview_url: previewUrl,
-      figure_image_data_url: previewUrl ? null : figureDataUrl,
+      figure_image_data_url: (previewUrl || hasShotFrames) ? null : figureDataUrl,
       narration_audio_path: section.narrationAudioPreviewUrl || null,
       stock_audio_preview_url: (section.selectedAudio && section.selectedAudio.localPreviewUrl) || null,
       edit_plan: section.editPlan
