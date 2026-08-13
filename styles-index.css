@@ -94,6 +94,63 @@ body {
   margin: 0 0 16px;
 }
 
+/* "How it fits together" explainer at the top of the arranged view
+   (js/paper-extract.js's buildHowItFitsPanel) - a collapsible .module-card
+   that names Arc/Mode/Techniques and the A-roll/B-roll planning-lane idea in
+   plain language. Full-width in the arranged column (not the 700px centered
+   default) and visually quieter than a working module. */
+.module-card.how-it-fits {
+  max-width: none;
+  margin: 0 0 20px;
+  padding: 14px 18px;
+}
+
+.how-it-fits-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.how-it-fits-title {
+  font-family: var(--cd-font-heading);
+  font-size: 14px;
+  letter-spacing: 0.05em;
+}
+
+.how-it-fits-toggle {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.how-it-fits-body {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin-top: 12px;
+}
+
+.module-card.how-it-fits.collapsed .how-it-fits-body {
+  display: none;
+}
+
+.how-it-fits-term {
+  font-weight: 600;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.how-it-fits-desc {
+  font-size: 12px;
+  opacity: 0.75;
+  line-height: 1.45;
+}
+
 /* --- html/index.html only: the documentary-intent module (a .module-card)
    and the extracted-sections feed both live in .main-column, to the right
    of the collapsible "Your research paper" upload-sidebar. */
@@ -585,12 +642,27 @@ input[type="file"]::file-selector-button:hover {
 .arc-suggestion-parts {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
   margin-bottom: 10px;
 }
 
 .arc-suggestion-part {
   font-size: 12px;
+  line-height: 1.4;
+}
+
+.arc-suggestion-part-name {
+  font-weight: 600;
+}
+
+/* The paper sections mapped into this chapter (the concrete preview - see
+   renderArcSuggestion) - lighter, indented under the chapter name. */
+.arc-suggestion-part-sections {
+  font-size: 11px;
+  opacity: 0.7;
+  margin-top: 2px;
+  padding-left: 10px;
+  border-left: 2px solid var(--cd-border-strong);
   line-height: 1.4;
 }
 

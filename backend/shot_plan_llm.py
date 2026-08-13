@@ -117,7 +117,7 @@ class ShotPlanLLMClient:
             self._client = OpenAI(**kwargs)
         return self._client
 
-    def generate_shot_plan(self, title, scene_notes='', narration='', act_title='', abstract='', documentary_mode=None):
+    def generate_shot_plan(self, title, scene_notes='', narration='', act_title='', abstract='', documentary_mode=None, techniques=None):
         """Infers one shot from whatever context is available - NONE of these
         are required:
         - narration: the presenter's live voiceover for the scene (what they'd
@@ -156,6 +156,9 @@ class ShotPlanLLMClient:
             )
         if documentary_mode in _MODE_GUIDANCE:
             parts.append(f'Documentary mode: {_MODE_GUIDANCE[documentary_mode]}')
+        tech = [t.strip() for t in (techniques or []) if isinstance(t, str) and t.strip()]
+        if tech:
+            parts.append('Favor these filming/editing techniques where they naturally fit the material: ' + ', '.join(tech) + '.')
         user_content = '\n\n'.join(parts)
 
         last_error = None

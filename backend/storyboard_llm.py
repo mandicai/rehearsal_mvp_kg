@@ -108,7 +108,7 @@ class StoryboardLLMClient:
             self._client = OpenAI(**kwargs)
         return self._client
 
-    def generate_storyboard(self, sections, documentary_goal='', arc_sections=None, documentary_mode=None):
+    def generate_storyboard(self, sections, documentary_goal='', arc_sections=None, documentary_mode=None, techniques=None):
         """sections: [{'index': int, 'title': str, 'text': str, 'act': str,
         'entities': [{'name': str, ...}, ...] (optional)}, ...]. `entities`,
         when present, comes from segmentation_carta's per-chunk extraction
@@ -154,7 +154,9 @@ class StoryboardLLMClient:
         ) if documentary_goal else ''
         arc_line = f'Narrative arc parts, in order: {list(arc_sections)!r}\n\n' if arc_sections else ''
         mode_line = f'\n\nDocumentary mode: {_MODE_GUIDANCE[documentary_mode]}' if documentary_mode in _MODE_GUIDANCE else ''
-        user_content = f'{arc_line}Sections:\n\n{listing}{goal_line}{mode_line}'
+        tech = [t.strip() for t in (techniques or []) if isinstance(t, str) and t.strip()]
+        tech_line = ('\n\nFavor these filming/editing techniques where they naturally fit: ' + ', '.join(tech) + '.') if tech else ''
+        user_content = f'{arc_line}Sections:\n\n{listing}{goal_line}{mode_line}{tech_line}'
         expected_indices = {s['index'] for s in sections}
         by_index = {s['index']: s for s in sections}
 

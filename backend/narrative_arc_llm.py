@@ -105,7 +105,9 @@ Five common templates (name: parts (with descriptions)):
 
 Recommend the single best-fitting arc first, followed by 2-4 other reasonable alternative arcs, ranked roughly by fit. For each one, prefer reusing one of the five templates above verbatim (matching its exact name, part names, descriptions, spelling, and order) if it's a reasonable fit for what the filmmaker described; invent a new one (a short 3-8 word name of your own, plus 3-7 short named parts, in the order a viewer would encounter them, each with a one-sentence description) only if none of the five fit well - don't invent a near-duplicate of one that already fits. Only the top recommendation needs a written reason: write 1-3 sentences that concretely reference specific things the filmmaker actually said (in their narration and/or their chosen focus statement(s), whichever they gave you) or that the paper's abstract establishes, explaining why this arc fits - don't invent details not present in what they gave you.
 
-Respond with a single JSON object of the exact shape {{"recommended": {{"arc_name": "<short name for this whole arc>", "sections": [{{"name": "<part name>", "description": "<one sentence on what this part should illustrate>"}}, ...], "reasoning": "<1-3 sentences>"}}, "alternatives": [{{"arc_name": "...", "sections": [{{"name": "...", "description": "..."}}, ...]}}, ...]}}, each sections list in narrative order, with 2-4 entries in alternatives. Respond with only the JSON object, no other text."""
+If you are also given the paper's actual sections (each with an index), then for EVERY arc you return - the recommendation AND all alternatives - distribute those sections across the arc's parts: assign each section index to exactly one part (the part where that section's content best belongs), keeping the sections in their given reading order within and across parts, and covering every index exactly once. Put the assigned indices in each part's "section_indices". This is how the paper's real content maps into each arc, so the filmmaker can see concretely what each arc would do. If no sections are given, use an empty "section_indices" for each part.
+
+Respond with a single JSON object of the exact shape {{"recommended": {{"arc_name": "<short name for this whole arc>", "sections": [{{"name": "<part name>", "description": "<one sentence on what this part should illustrate>", "section_indices": [<int>, ...]}}, ...], "reasoning": "<1-3 sentences>"}}, "alternatives": [{{"arc_name": "...", "sections": [{{"name": "...", "description": "...", "section_indices": [<int>, ...]}}, ...]}}, ...]}}, each sections list in narrative order, with 2-4 entries in alternatives. Respond with only the JSON object, no other text."""
 
 class NarrativeArcLLMCallError(Exception):
     pass
@@ -143,7 +145,7 @@ class NarrativeArcLLMClient:
             self._client = OpenAI(**kwargs)
         return self._client
 
-    def suggest_arcs_from_intent(self, transcript, focus_statements=None, abstract=None):
+    def suggest_arcs_from_intent(self, transcript, focus_statements=None, abstract=None, sections=None):
         """transcript: the full text of a filmmaker's spoken narration -
         optional (pass '' or None) if the presenter never recorded and only
         picked focus_statements instead (see js/paper-extract.js's
@@ -160,19 +162,32 @@ class NarrativeArcLLMClient:
         section, if the paper had one and it was found (see server.py's
         route, which does that lookup) - additional grounding alongside
         whatever the filmmaker said, not a substitute for it.
+        sections: optional list of the paper's real sections as
+        [{'index': int, 'title': str}, ...]. When given, every index is
+        distributed across each arc's parts (see each part's returned
+        'section_indices'), so the frontend can preview how each arc would
+        organize this specific paper and auto-place the sections into the
+        chosen arc's chapters (js/paper-extract.js's runAcceptArc) - no
+        separate placement call needed.
         Ranks the single best-fitting arc (with reasoning tied to what the
         filmmaker actually said) plus a few alternatives, letting the
         presenter accept the top pick or choose a different one - once
         accepted, its named parts become the narrative-act groups the
-        frontend shows right away (js/paper-extract.js's runAcceptArc), with
-        no further LLM call to place paper sections into them.
-        Returns (recommended: {'arc_name': str, 'sections': [{'name': str, 'description': str}, ...], 'reasoning': str},
+        frontend shows right away (js/paper-extract.js's runAcceptArc).
+        Returns (recommended: {'arc_name': str, 'sections': [{'name': str, 'description': str, 'section_indices': [int, ...]}, ...], 'reasoning': str},
         alternatives: [{'arc_name': str, 'sections': [...]}, ...]) - arc_name
         is a short label for the whole arc (distinct from each part's own
-        name), so the frontend can show/label alternatives without having
-        to summarize a whole sections list itself."""
+        name); each part's section_indices are the paper-section indices
+        mapped into it (empty when no sections were given), covering every
+        given index exactly once across the arc."""
         if not self.is_configured():
             raise NarrativeArcLLMCallError('LLM client is not configured (missing API key or openai package)')
+
+        # The paper's real sections to distribute across each arc's parts (see
+        # the section_indices handling in parse_arc). Kept as an ordered list of
+        # valid indices for the tolerant "cover every index exactly once" fixup.
+        paper_sections = [s for s in (sections or []) if isinstance(s, dict) and isinstance(s.get('index'), int)]
+        valid_indices = [s['index'] for s in paper_sections]
 
         parts = []
         if transcript:
@@ -182,7 +197,33 @@ class NarrativeArcLLMClient:
             parts.append(f'Chosen focus statement(s):\n{bulleted}')
         if abstract:
             parts.append(f"The paper's own abstract:\n\n{abstract}")
+        if paper_sections:
+            listing = '\n'.join(f"[{s['index']}] {(s.get('title') or '').strip() or 'Untitled'}" for s in paper_sections)
+            parts.append(
+                'The paper\'s sections (assign every index to exactly one part of each arc, via '
+                f'"section_indices"):\n{listing}'
+            )
         user_content = '\n\n'.join(parts)
+
+        def assign_section_indices(sections_out, sections_raw):
+            """Distribute valid_indices across the arc's parts from the model's
+            per-part section_indices - each index used once, in order; any valid
+            index the model left out (or duplicated/mislabeled) is appended to
+            the last part so every section is covered exactly once."""
+            if not valid_indices:
+                for sec in sections_out:
+                    sec['section_indices'] = []
+                return
+            remaining = list(valid_indices)
+            for sec, raw in zip(sections_out, sections_raw):
+                picked = []
+                for idx in (raw.get('section_indices') or []):
+                    if isinstance(idx, int) and idx in remaining:
+                        remaining.remove(idx)
+                        picked.append(idx)
+                sec['section_indices'] = picked
+            if remaining:  # anything unassigned -> last part, so nothing is dropped
+                sections_out[-1]['section_indices'].extend(remaining)
 
         def parse_arc(raw):
             if not isinstance(raw, dict):
@@ -194,8 +235,9 @@ class NarrativeArcLLMClient:
             if (not isinstance(sections_raw, list) or not (2 <= len(sections_raw) <= 8)
                     or not all(isinstance(s, dict) and isinstance(s.get('name'), str) and s.get('name').strip() for s in sections_raw)):
                 raise ValueError(f'bad sections list: {sections_raw!r}')
-            sections = [{'name': s['name'].strip(), 'description': (s.get('description') or '').strip()} for s in sections_raw]
-            return arc_name, sections
+            sections_out = [{'name': s['name'].strip(), 'description': (s.get('description') or '').strip()} for s in sections_raw]
+            assign_section_indices(sections_out, sections_raw)
+            return arc_name, sections_out
 
         last_error = None
         for _ in range(2):  # one retry on transient failure

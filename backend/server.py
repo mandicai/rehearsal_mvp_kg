@@ -453,6 +453,31 @@ def _parse_documentary_mode(data):
     return mode, None
 
 
+# Cap on how many technique labels we forward to an LLM (a stylistic hint, not
+# a payload) and how long each may be - keeps a malformed/oversized client
+# request from bloating the prompt. Unknown strings are harmless (they're just
+# free-text hints), so we don't validate against a fixed vocabulary.
+MAX_TECHNIQUES = 12
+MAX_TECHNIQUE_CHARS = 80
+
+
+def _parse_techniques(data):
+    """Optional list of filming/editing technique labels the presenter has
+    selected (js/paper-extract.js's selectedTechniques). Free-text stylistic
+    hints appended to shot/cutaway/storyboard prompts. Returns a cleaned list
+    (possibly empty); tolerant of a non-list or junk entries."""
+    raw = data.get('techniques')
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for t in raw:
+        if isinstance(t, str) and t.strip():
+            out.append(t.strip()[:MAX_TECHNIQUE_CHARS])
+        if len(out) >= MAX_TECHNIQUES:
+            break
+    return out
+
+
 @app.route('/paper/suggest_arcs', methods=['POST'])
 def paper_suggest_arcs():
     # Ranked arc recommendations from a recorded narration (+ optional
@@ -473,6 +498,20 @@ def paper_suggest_arcs():
             return jsonify({'error': f'focus_statements must be a list of up to {MAX_FOCUS_STATEMENTS} strings'}), 400
         focus_statements = [s.strip()[:MAX_FOCUS_STATEMENT_CHARS] for s in focus_statements_raw if s.strip()]
 
+    # The paper's real sections (index + title), so the arc suggestions can
+    # map each section into a part - the frontend previews that mapping and
+    # auto-places the sections into the chosen arc's chapters (see
+    # js/paper-extract.js's renderArcSuggestion/runAcceptArc). Optional and
+    # tolerant: malformed entries are dropped rather than rejected.
+    sections = None
+    sections_raw = data.get('sections')
+    if isinstance(sections_raw, list):
+        sections = [
+            {'index': s['index'], 'title': (s.get('title') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]}
+            for s in sections_raw[:MAX_STORYBOARD_SECTIONS]
+            if isinstance(s, dict) and isinstance(s.get('index'), int)
+        ]
+
     # A recording is the usual case, but the presenter can reach this step
     # via a chosen focus chip alone (see js/paper-extract.js's
     # updateComposeStoryboardVisibility) - only reject if neither exists.
@@ -485,7 +524,8 @@ def paper_suggest_arcs():
         return jsonify({'error': _NARRATIVE_ARC_NOT_CONFIGURED_ERROR}), 503
 
     try:
-        recommended, alternatives = narrative_arc_client.suggest_arcs_from_intent(transcript, focus_statements, abstract)
+        recommended, alternatives = narrative_arc_client.suggest_arcs_from_intent(
+            transcript, focus_statements, abstract, sections)
     except NarrativeArcLLMCallError as exc:
         return jsonify({'error': str(exc)}), 500
 
@@ -556,7 +596,7 @@ def paper_storyboard():
         section['entities'] = entities_by_index[section['index']]
 
     try:
-        storyboard = storyboard_client.generate_storyboard(cleaned, documentary_goal, arc_sections, documentary_mode)
+        storyboard = storyboard_client.generate_storyboard(cleaned, documentary_goal, arc_sections, documentary_mode, techniques=_parse_techniques(data))
     except StoryboardLLMCallError as exc:
         return jsonify({'error': str(exc)}), 500
 
@@ -724,7 +764,7 @@ def paper_generate_shot():
 
     try:
         shot_plan = shot_plan_client.generate_shot_plan(
-            title, scene_notes, narration, act_title, abstract, documentary_mode)
+            title, scene_notes, narration, act_title, abstract, documentary_mode, techniques=_parse_techniques(data))
     except ShotPlanLLMCallError as exc:
         return jsonify({'error': str(exc)}), 500
 
@@ -789,7 +829,7 @@ def paper_generate_cutaways():
         return jsonify({'error': _SKETCH_NOT_CONFIGURED_ERROR}), 503
 
     try:
-        cutaways = cutaway_client.generate_cutaways(narration, title, scene_notes, abstract, documentary_mode)
+        cutaways = cutaway_client.generate_cutaways(narration, title, scene_notes, abstract, documentary_mode, techniques=_parse_techniques(data))
     except CutawayLLMCallError as exc:
         return jsonify({'error': str(exc)}), 500
 

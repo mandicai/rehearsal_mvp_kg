@@ -48,7 +48,7 @@ const API_BASE_URL = window.API_BASE_URL || _detectApiBaseUrl();
 
 const SUGGEST_ARCS_API_URL = `${API_BASE_URL}/paper/suggest_arcs`;
 
-function fetchSuggestArcs(transcript, focusStatements, abstract) {
+function fetchSuggestArcs(transcript, focusStatements, abstract, sections) {
   return fetch(SUGGEST_ARCS_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -56,6 +56,9 @@ function fetchSuggestArcs(transcript, focusStatements, abstract) {
       transcript,
       ...(focusStatements && focusStatements.length ? { focus_statements: focusStatements } : {}),
       ...(abstract ? { abstract } : {}),
+      // Paper sections (index + title) so each arc can map them into its parts
+      // (see renderArcSuggestion/runAcceptArc).
+      ...(sections && sections.length ? { sections } : {}),
     })
   })
     .then(handleJsonResponse)
@@ -1514,7 +1517,7 @@ function fetchPaperExtraction(file) {
 
 const STORYBOARD_API_URL = `${API_BASE_URL}/paper/storyboard`;
 
-function fetchStoryboard(sections, documentaryGoal, arcSections, documentaryMode) {
+function fetchStoryboard(sections, documentaryGoal, arcSections, documentaryMode, techniques) {
   return fetch(STORYBOARD_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1523,6 +1526,7 @@ function fetchStoryboard(sections, documentaryGoal, arcSections, documentaryMode
       documentary_goal: documentaryGoal || '',
       ...(arcSections ? { arc_sections: arcSections } : {}),
       ...(documentaryMode ? { documentary_mode: documentaryMode } : {}),
+      ...(techniques && techniques.length ? { techniques } : {}),
     })
   })
     .then(handleJsonResponse)
@@ -1647,7 +1651,7 @@ const GENERATE_CUTAWAYS_API_URL = `${API_BASE_URL}/paper/generate_cutaways`;
 // see js/paper-extract.js's runGenerateCutaways) - infers cutaways from the
 // narration and returns each with a caption, camera motion, and a generated
 // background still. Same projectId in/out convention as fetchGenerateShot.
-function fetchGenerateCutaways({ sectionIndex, narration, title, sceneNotes, actTitle, abstract, documentaryMode, projectId }) {
+function fetchGenerateCutaways({ sectionIndex, narration, title, sceneNotes, actTitle, abstract, documentaryMode, techniques, projectId }) {
   return fetch(GENERATE_CUTAWAYS_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1660,6 +1664,7 @@ function fetchGenerateCutaways({ sectionIndex, narration, title, sceneNotes, act
       abstract: abstract || '',
       ...(projectId ? { project_id: projectId } : {}),
       ...(documentaryMode ? { documentary_mode: documentaryMode } : {}),
+      ...(techniques && techniques.length ? { techniques } : {}),
     })
   })
     .then(handleJsonResponse)
@@ -1676,7 +1681,7 @@ function fetchGenerateCutaways({ sectionIndex, narration, title, sceneNotes, act
 // its start + end frames from whatever's available (narration, scene notes,
 // scene title, the arc part the scene sits in, and the paper abstract). Same
 // projectId in/out convention as fetchGenerateSketch.
-function fetchGenerateShot({ sectionIndex, title, sceneNotes, narration, actTitle, abstract, documentaryMode, projectId }) {
+function fetchGenerateShot({ sectionIndex, title, sceneNotes, narration, actTitle, abstract, documentaryMode, techniques, projectId }) {
   return fetch(GENERATE_SHOT_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1689,6 +1694,7 @@ function fetchGenerateShot({ sectionIndex, title, sceneNotes, narration, actTitl
       abstract: abstract || '',
       ...(projectId ? { project_id: projectId } : {}),
       ...(documentaryMode ? { documentary_mode: documentaryMode } : {}),
+      ...(techniques && techniques.length ? { techniques } : {}),
     })
   })
     .then(handleJsonResponse)

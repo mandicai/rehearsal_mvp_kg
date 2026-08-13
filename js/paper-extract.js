@@ -1889,13 +1889,24 @@ function findAbstractText() {
   return abstractSection ? abstractSection.text : '';
 }
 
+// The paper's real sections (index + title) sent with an arc-suggestion
+// request so each suggested arc can map them into its parts - the preview and
+// auto-placement on accept (see renderArcSuggestion/runAcceptArc). Excludes
+// excluded (removed) sections and narrativeOnly scaffold/placeholder scenes,
+// which aren't real paper content.
+function paperSectionsForArc() {
+  return currentSections
+    .filter(s => !s.removed && !s.narrativeOnly)
+    .map(s => ({ index: s.index, title: s.title }));
+}
+
 function runSuggestArcs() {
   suggestArcsBtn.disabled = true;
   suggestArcsStatusEl.textContent = 'Suggesting narrative arcs ...';
   suggestArcsStatusEl.classList.remove('error');
   arcSuggestionPanelEl.style.display = 'none';
 
-  fetchSuggestArcs(recordedTranscript, Array.from(selectedFocusStatements), findAbstractText())
+  fetchSuggestArcs(recordedTranscript, Array.from(selectedFocusStatements), findAbstractText(), paperSectionsForArc())
     .then(({ recommended, alternatives }) => {
       suggestArcsStatusEl.textContent = '';
       suggestArcsBtn.disabled = false;
@@ -1930,12 +1941,29 @@ function renderArcSuggestion(current, others) {
   title.textContent = current.arc_name;
   card.appendChild(title);
 
+  // Concrete preview: under each chapter, list the actual paper sections that
+  // would map into it (from the suggestion's section_indices), so the presenter
+  // can compare what each arc would really do with THIS paper - not just an
+  // abstract blurb. Falls back to name+description alone if no mapping exists.
+  const titleByIndex = new Map(currentSections.map(s => [s.index, s.title]));
   const partsList = document.createElement('div');
   partsList.className = 'arc-suggestion-parts';
   current.sections.forEach(part => {
     const partEl = document.createElement('div');
     partEl.className = 'arc-suggestion-part';
-    partEl.textContent = part.description ? `${part.name} - ${part.description}` : part.name;
+
+    const nameEl = document.createElement('div');
+    nameEl.className = 'arc-suggestion-part-name';
+    nameEl.textContent = part.description ? `${part.name} - ${part.description}` : part.name;
+    partEl.appendChild(nameEl);
+
+    const titles = (part.section_indices || []).map(i => titleByIndex.get(i)).filter(Boolean);
+    if (titles.length) {
+      const secEl = document.createElement('div');
+      secEl.className = 'arc-suggestion-part-sections';
+      secEl.textContent = titles.join(' · ');
+      partEl.appendChild(secEl);
+    }
     partsList.appendChild(partEl);
   });
   card.appendChild(partsList);
@@ -2012,7 +2040,7 @@ function renderArcSuggestion(current, others) {
     customBtn.disabled = true;
     suggestArcsStatusEl.textContent = 'Resolving your own focus into a narrative arc ...';
     suggestArcsStatusEl.classList.remove('error');
-    fetchSuggestArcs(recordedTranscript, Array.from(selectedFocusStatements).concat([customText]), findAbstractText())
+    fetchSuggestArcs(recordedTranscript, Array.from(selectedFocusStatements).concat([customText]), findAbstractText(), paperSectionsForArc())
       .then(({ recommended, alternatives }) => {
         suggestArcsStatusEl.textContent = '';
         renderArcSuggestion(recommended, alternatives);
@@ -2042,33 +2070,35 @@ function renderArcSuggestion(current, others) {
 function runAcceptArc(arc) {
   selectedNarrationArc = { sections: arc.sections, arc_name: arc.arc_name };
   currentArcSections = arc.sections.map(s => ({ key: s.name, label: s.name, description: s.description || '' }));
-  currentAssignments = {};
   selectedSectionIndices = new Set();
 
-  // A previously accepted arc's storyboard/edit-plan work was written for
-  // acts that may no longer exist once a different arc is accepted - stale
-  // either way, so clear it and let the presenter regenerate fresh.
-  currentSections.forEach(section => {
-    delete section.visual;
-    delete section.narration;
-    delete section.editPlan;
+  // Preserve & re-map (non-destructive): keep every real paper section and all
+  // its generated work (visual/narration/edit plan/shot frames/cutaways/
+  // footage) and re-assign those sections into the NEW arc's chapters from the
+  // suggestion's section->part mapping. Nothing generated is silently wiped.
+  // Only BLANK scaffold placeholders (narrativeOnly with no content, tied to
+  // the old chapters) are dropped; a scaffold scene the presenter actually
+  // filled in is kept (it just becomes unassigned - re-draggable - since it
+  // has no place in the new mapping).
+  const hasContent = s => !!(
+    (s.text && s.text.trim()) || s.narration || s.narrationAudioPreviewUrl ||
+    s.startFramePreviewUrl || (s.cutaways && s.cutaways.length) ||
+    s.visualSource || s.selectedVideo || s.selectedAudio || s.uploadedFootagePreviewUrl
+  );
+  currentSections = currentSections.filter(s => !(s.narrativeOnly && !hasContent(s)));
+
+  currentAssignments = {};
+  const validIndices = new Set(currentSections.map(s => s.index));
+  arc.sections.forEach(part => {
+    (part.section_indices || []).forEach(idx => {
+      if (validIndices.has(idx)) currentAssignments[idx] = part.name;
+    });
   });
 
   const remaining = currentSections.filter(section => !section.removed);
   renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
   paperActionsEl.style.display = '';
   setStoryboardStatus('');
-  editPlanActionEl.style.display = 'none';
-  overallEditNotes = '';
-  setEditPlanStatus('');
-  editPlanOverallNotesEl.textContent = '';
-  premiereExportActionEl.style.display = 'none';
-  setPremiereExportStatus('');
-  premiereExportFolderEl.textContent = '';
-  setPreviewStatus('');
-  previewVideoEl.style.display = 'none';
-  previewVideoEl.removeAttribute('src');
-
   relocateAllSidebarModules();
   saveDebugSession();
 }
@@ -2668,6 +2698,70 @@ function renderDeletedScenesList() {
   });
 }
 
+// A compact, collapsible "How it fits together" explainer at the top of the
+// arranged view - the workflow (Arc / Mode / Techniques) is hard to read for
+// non-experts, so this names each layer in plain language with one concrete
+// example, and spells out that A-roll/B-roll are planning lanes and Render MP4
+// IS the preview (there's no separate one). Collapse state persists in
+// localStorage so a returning user isn't re-shown it every render.
+const HOW_IT_FITS_STORAGE_KEY = 'howItFitsCollapsed';
+
+function buildHowItFitsPanel() {
+  const collapsed = (() => {
+    try { return localStorage.getItem(HOW_IT_FITS_STORAGE_KEY) === '1'; } catch (e) { return false; }
+  })();
+
+  const panel = document.createElement('div');
+  panel.className = 'module-card how-it-fits' + (collapsed ? ' collapsed' : '');
+
+  const header = document.createElement('button');
+  header.type = 'button';
+  header.className = 'how-it-fits-header';
+  header.setAttribute('aria-expanded', String(!collapsed));
+  const title = document.createElement('span');
+  title.className = 'how-it-fits-title';
+  title.textContent = 'How it fits together';
+  const toggle = document.createElement('span');
+  toggle.className = 'how-it-fits-toggle';
+  toggle.textContent = collapsed ? 'Show' : 'Hide';
+  header.appendChild(title);
+  header.appendChild(toggle);
+  panel.appendChild(header);
+
+  const body = document.createElement('div');
+  body.className = 'how-it-fits-body';
+  const rows = [
+    ['Arc = chapters', 'The overall structure of your film — e.g. Puzzle → Findings → Implications. Each paper section is placed into one chapter.'],
+    ['Mode = how a chapter is shot', 'Drag a mode onto a chapter to scaffold its scenes and visual style — e.g. Expository = one voice-of-god narration with B-roll cutaways.'],
+    ['Techniques = shot-level direction', 'Select techniques to bias every generated shot toward that style, or drag one onto a scene’s Scene Notes for shot-specific direction.'],
+    ['A-roll / B-roll are planning lanes', 'They organize your scenes; they are not a separate video step. Your documentary is the scenes in order — click Render MP4 to watch and hear the actual film. That is the preview.'],
+  ];
+  rows.forEach(([term, desc]) => {
+    const row = document.createElement('div');
+    row.className = 'how-it-fits-row';
+    const t = document.createElement('span');
+    t.className = 'how-it-fits-term';
+    t.textContent = term;
+    const d = document.createElement('span');
+    d.className = 'how-it-fits-desc';
+    d.textContent = desc;
+    row.appendChild(t);
+    row.appendChild(d);
+    body.appendChild(row);
+  });
+  panel.appendChild(body);
+
+  header.addEventListener('click', () => {
+    const nowCollapsed = !panel.classList.contains('collapsed');
+    panel.classList.toggle('collapsed', nowCollapsed);
+    toggle.textContent = nowCollapsed ? 'Show' : 'Hide';
+    header.setAttribute('aria-expanded', String(!nowCollapsed));
+    try { localStorage.setItem(HOW_IT_FITS_STORAGE_KEY, nowCollapsed ? '1' : '0'); } catch (e) { /* ignore */ }
+  });
+
+  return panel;
+}
+
 function renderMovieEditor(container, label, sections, assignmentsByIndex) {
   container.innerHTML = '';
 
@@ -2734,6 +2828,7 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
     headingRow.appendChild(actions);
   }
   container.appendChild(headingRow);
+  container.appendChild(buildHowItFitsPanel());
 
   const actionBar = document.createElement('div');
   actionBar.className = 'action-bar';
@@ -2888,7 +2983,7 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
   // scene-notes drop handler in buildSectionBlock).
   const techniquesHint = document.createElement('div');
   techniquesHint.className = 'chip-row-caption';
-  techniquesHint.textContent = 'Drag a technique onto a scene\'s Scene Notes to give the shot more direction.';
+  techniquesHint.textContent = 'Selected techniques bias every generated shot toward that style. You can also drag one onto a scene\'s Scene Notes for shot-specific direction.';
   techniquesBlock.appendChild(techniquesHint);
 
   const techniquesRow = document.createElement('div');
@@ -3113,7 +3208,7 @@ function ensureFootageQueries(section) {
   const documentaryGoal = (documentaryIntentInput ? documentaryIntentInput.value : recordedTranscript).trim();
   return fetchStoryboard(
     [{ index: section.index, title: section.title, text: content, act: currentAssignments[section.index] }],
-    documentaryGoal, currentArcSections.map(s => s.label), selectedDocumentaryMode
+    documentaryGoal, currentArcSections.map(s => s.label), selectedDocumentaryMode, Array.from(selectedTechniques)
   )
     .then(({ storyboard }) => {
       const result = (storyboard || []).find(s => s.index === section.index);
@@ -3394,7 +3489,7 @@ function runDraftVisualThenGenerate(section, btn, statusEl, draftedMessage, gene
 
   fetchStoryboard(
     [{ index: section.index, title: section.title, text: content, act: currentAssignments[section.index] }],
-    documentaryGoal, currentArcSections.map(s => s.label), selectedDocumentaryMode
+    documentaryGoal, currentArcSections.map(s => s.label), selectedDocumentaryMode, Array.from(selectedTechniques)
   )
     .then(({ storyboard }) => {
       const result = storyboard.find(s => s.index === section.index);
@@ -3464,6 +3559,7 @@ function runGenerateShot(section, btn, statusEl) {
     actTitle: act ? act.label : '',
     abstract: findAbstractText(),
     documentaryMode: selectedDocumentaryMode,
+    techniques: Array.from(selectedTechniques),
     projectId: premiereProjectId,
   })
     .then(({ project_id, shot_plan, start_preview_url, end_preview_url }) => {
@@ -3520,6 +3616,7 @@ function runGenerateCutaways(section, btn, statusEl) {
     actTitle: act ? act.label : '',
     abstract: findAbstractText(),
     documentaryMode: selectedDocumentaryMode,
+    techniques: Array.from(selectedTechniques),
     projectId: premiereProjectId,
   })
     .then(({ project_id, cutaways }) => {
@@ -3690,7 +3787,7 @@ function runGenerateStoryboardForSections(sectionsToUse, triggerBtn) {
   // The backend only ever sees one "content" field per section either way.
   fetchStoryboard(sectionsToUse.map(({ index, title, text, narration }) => ({
     index, title, text: [text, narration].filter(part => part && part.trim()).join('\n\n'), act: currentAssignments[index],
-  })), documentaryGoal, currentArcSections.map(s => s.label), selectedDocumentaryMode)
+  })), documentaryGoal, currentArcSections.map(s => s.label), selectedDocumentaryMode, Array.from(selectedTechniques))
     .then(({ storyboard }) => {
       storyboard.forEach(({ index, visual, narration, entities, video_query, audio_query }) => {
         const section = currentSections.find(s => s.index === index);

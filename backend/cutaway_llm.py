@@ -93,7 +93,7 @@ class CutawayLLMClient:
             self._client = OpenAI(**kwargs)
         return self._client
 
-    def generate_cutaways(self, narration, title='', scene_notes='', abstract='', documentary_mode=None):
+    def generate_cutaways(self, narration, title='', scene_notes='', abstract='', documentary_mode=None, techniques=None):
         """Returns a list (1..MAX_CUTAWAYS) of {'caption', 'background_visual',
         'motion_type'} inferred from the narration. Tolerant of a partially-bad
         response the same way the other *_llm.py clients are: entries missing a
@@ -115,6 +115,9 @@ class CutawayLLMClient:
             parts.append('No narration was provided - invent a few plausible, generic documentary cutaways.')
         if documentary_mode in _MODE_GUIDANCE:
             parts.append(f'Documentary mode: {_MODE_GUIDANCE[documentary_mode]}')
+        tech = [t.strip() for t in (techniques or []) if isinstance(t, str) and t.strip()]
+        if tech:
+            parts.append('Favor these filming/editing techniques where they naturally fit: ' + ', '.join(tech) + '.')
         user_content = '\n\n'.join(parts)
 
         last_error = None
