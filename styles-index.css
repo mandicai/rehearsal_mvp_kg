@@ -2001,28 +2001,6 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
   opacity: 1;
 }
 
-/* Popover shown near the cursor when text is highlighted inside a section's
-   body (see the splitFloatingBtn wiring in js/paper-extract.js) - positioned
-   via inline style.left/top, absolute so it scrolls with the page. */
-.split-floating-btn {
-  position: absolute;
-  z-index: 1000;
-  padding: 6px 12px;
-  border-radius: 6px;
-  border: none;
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  background: #262523;
-  color: #FFFFFF;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-}
-
-.split-floating-btn:hover {
-  background: #3a3936;
-}
-
 .segment-card .chip.entity,
 .segment-card .chip.keyphrase,
 .graph-panel .chip.entity,

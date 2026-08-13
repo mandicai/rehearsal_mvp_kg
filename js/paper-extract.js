@@ -719,7 +719,7 @@ function runTranscribeIntent(blob, durationSeconds, mimeType) {
 // so a click-then-blur with no edit can't clobber real content with
 // whatever placeholder text happened to be showing (e.g. "(no text
 // captured for this section)" for an empty section).
-function makeEditable(el, getValue, setValue, { multiline } = {}) {
+function makeEditable(el, getValue, setValue, { multiline, allowEmpty } = {}) {
   el.classList.add('editable-field');
 
   el.addEventListener('click', event => {
@@ -755,7 +755,14 @@ function makeEditable(el, getValue, setValue, { multiline } = {}) {
     const oldValue = getValue();
     const newValue = el.textContent.trim();
     if (!newValue) {
-      el.textContent = oldValue; // don't allow clearing a field to empty
+      if (allowEmpty) {
+        // Clear the underlying value; getValue() then returns the placeholder,
+        // so the field shows that (e.g. Scene Notes emptied out).
+        setValue('');
+        el.textContent = getValue();
+      } else {
+        el.textContent = oldValue; // don't allow clearing a field (e.g. titles)
+      }
       return;
     }
     if (newValue !== oldValue) {
@@ -765,8 +772,8 @@ function makeEditable(el, getValue, setValue, { multiline } = {}) {
 }
 
 // Indices are assigned once and never reused (see the state comment near
-// currentSections), so a manually-created section - via "+ Add Section" or
-// a split - needs a genuinely new one rather than reusing/incrementing off
+// currentSections), so a manually-created section - via "+ Add Section" -
+// needs a genuinely new one rather than reusing/incrementing off
 // currentSections.length (which drifts once any section is added/removed).
 function nextSectionIndex() {
   return Math.max(-1, ...currentSections.map(s => s.index)) + 1;
@@ -782,9 +789,7 @@ function nextSectionIndex() {
 // "+ Add Section" click, or an empty act row auto-populating itself with
 // one - see renderMovieEditor) - excluded from storyboard.html's "Source
 // material" sidebar list (see renderSourceMaterialList) so that list stays
-// a true reflection of the paper's own extracted sections. A split (see
-// runSplitSectionAt) doesn't set this - its "new" second half is still
-// real excerpted text, not a blank stand-in.
+// a true reflection of the paper's own extracted sections.
 function insertSection(afterIndex, title, text, act, narrativeOnly) {
   const section = { index: nextSectionIndex(), title, text, image: null, removed: false };
   if (narrativeOnly) section.narrativeOnly = true;
@@ -792,37 +797,6 @@ function insertSection(afterIndex, title, text, act, narrativeOnly) {
   currentSections.splice(pos === -1 ? currentSections.length : pos + 1, 0, section);
   if (act) currentAssignments[section.index] = act;
   return section;
-}
-
-// Splits `section`'s text into two sections at `offset` (a character offset
-// into section.text - see the floating split-button wiring below, which
-// computes this from where the presenter highlighted text) - falls back to
-// the text's midpoint if `offset` is missing/degenerate. Prompts for the new
-// section's title; returns false (no-op) if cancelled. The original section
-// keeps the first half and has its now-stale storyboard/edit-plan fields
-// cleared, same reasoning handleChipDrop/runAcceptArc already apply when a
-// section's content/placement changes.
-function runSplitSectionAt(section, offset) {
-  const text = section.text || '';
-  let splitOffset = offset;
-  if (!Number.isFinite(splitOffset) || splitOffset <= 0 || splitOffset >= text.length) {
-    splitOffset = Math.floor(text.length / 2);
-  }
-
-  const newTitle = window.prompt('Title for the new section:', `${section.title} (continued)`);
-  if (!newTitle || !newTitle.trim()) return false;
-
-  const firstHalf = text.slice(0, splitOffset).trim();
-  const secondHalf = text.slice(splitOffset).trim();
-
-  section.text = firstHalf;
-  delete section.visual;
-  delete section.narration;
-  delete section.entities;
-  delete section.editPlan;
-
-  insertSection(section.index, newTitle.trim(), secondHalf, currentAssignments[section.index]);
-  return true;
 }
 
 // The visual box (black, top-left of an arranged card - see buildSectionBlock)
@@ -1154,6 +1128,15 @@ function runAssignDraggedNarration(section, mediaItem, statusEl) {
     });
 }
 
+// The draggables that drop into a scene's Scene Notes: documentary techniques,
+// documentary modes, and Source material excerpts (see wireNotesDrop). Used to
+// tell these apart from other drags (media-bank audio, section reordering) so
+// only these highlight/drop into the notes.
+const NOTES_DRAG_TYPES = ['application/x-technique', 'application/x-documentary-mode', 'application/x-source-material-index'];
+function isNotesDrag(dataTransfer) {
+  return !!dataTransfer && NOTES_DRAG_TYPES.some(t => dataTransfer.types.includes(t));
+}
+
 function buildSectionBlock(section, selectable) {
   const block = document.createElement('div');
   block.className = 'paper-section-block';
@@ -1196,7 +1179,7 @@ function buildSectionBlock(section, selectable) {
   makeEditable(body, () => section.text || '(no text captured for this section)', value => {
     section.text = value;
     saveDebugSession();
-  }, { multiline: true });
+  }, { multiline: true, allowEmpty: true });
 
   // Which timeline track this scene is (its role/label) - A-roll, B-roll, or
   // Sound effects. Auto-inferred (see getSceneRole), overridable here;
@@ -1228,36 +1211,45 @@ function buildSectionBlock(section, selectable) {
   roleRow.appendChild(roleLabelEl);
   roleRow.appendChild(roleSelect);
 
-  // Drop target for dragging in either a documentary-technique chip (see
-  // renderMovieEditor) or a Source material excerpt (see
-  // renderSourceMaterialList) - appends rather than replacing, so dropping in
-  // a few things builds up this section's working text. Wired onto whichever
-  // element wraps the field (in the shot card that's the whole Scene Notes
-  // block - label + field - so the entire area is the target; in the flat
-  // feed it's the field itself). stopPropagation on all three so this doesn't
-  // also bubble up into .narrative-act-row's own drop handler (handleChipDrop,
-  // for reordering/reassigning sections between arc rows).
-  const wireNotesDrop = dropEl => {
+  // Drop target for dragging a documentary technique, a documentary mode, or a
+  // Source material excerpt into this scene's notes - appends rather than
+  // replacing, so dropping in a few builds up the working text. Only responds
+  // to those drag types (isNotesDrag), so a media-bank audio drag or a
+  // section-reorder chip drag passes through untouched. `dropEl` is the drop
+  // surface (the whole shot card, so dropping anywhere on the scene lands in
+  // the notes; or the field itself on the flat feed); `highlightEl` is what
+  // gets the drag-over outline (the Scene Notes block). stopPropagation keeps
+  // it out of .narrative-act-row's reorder handler (handleChipDrop).
+  const wireNotesDrop = (dropEl, highlightEl) => {
+    highlightEl = highlightEl || dropEl;
     dropEl.addEventListener('dragover', event => {
+      if (!isNotesDrag(event.dataTransfer)) return;
       event.preventDefault();
       event.stopPropagation();
-      dropEl.classList.add('drag-over');
+      highlightEl.classList.add('drag-over');
     });
     dropEl.addEventListener('dragleave', event => {
-      event.stopPropagation();
-      dropEl.classList.remove('drag-over');
+      // Keep the outline while moving between the drop surface's own children;
+      // only clear when the pointer actually leaves it.
+      if (event.relatedTarget && dropEl.contains(event.relatedTarget)) return;
+      highlightEl.classList.remove('drag-over');
     });
     dropEl.addEventListener('drop', event => {
+      if (!isNotesDrag(event.dataTransfer)) return;
       event.preventDefault();
       event.stopPropagation();
-      dropEl.classList.remove('drag-over');
+      highlightEl.classList.remove('drag-over');
 
       const technique = event.dataTransfer.getData('application/x-technique');
+      const modeKey = event.dataTransfer.getData('application/x-documentary-mode');
       const sourceIndexRaw = event.dataTransfer.getData('application/x-source-material-index');
 
       let addition = '';
       if (technique) {
         addition = technique;
+      } else if (modeKey) {
+        const mode = DOCUMENTARY_MODES.find(m => m.key === modeKey);
+        addition = mode ? mode.label : modeKey;
       } else if (sourceIndexRaw !== '') {
         const source = currentSections.find(s => s.index === parseInt(sourceIndexRaw, 10));
         if (source) addition = source.text || '';
@@ -1526,6 +1518,9 @@ function buildSectionBlock(section, selectable) {
     // not a media-bank one, so it'd just no-op, but there's no reason for
     // both handlers (and both drag-over highlights) to fire at once.
     narrationAudio.addEventListener('dragover', event => {
+      // Only a media-bank audio clip can drop onto narration - a technique/
+      // mode/source drag gets no outline here (it belongs in Scene Notes).
+      if (!event.dataTransfer.types.includes('application/x-media-bank-index')) return;
       event.preventDefault();
       event.stopPropagation();
       narrationAudio.classList.add('drag-over');
@@ -1603,9 +1598,6 @@ function buildSectionBlock(section, selectable) {
     narrationBlock.appendChild(narrationAudio);
     block.appendChild(narrationBlock);
 
-    // The whole Scene Notes area (label + editable field) is one drop target,
-    // so dragging a technique/source excerpt anywhere over it highlights and
-    // drops into the field - not just the narrow editable sliver.
     const notesBlock = document.createElement('div');
     notesBlock.className = 'paper-section-notes-block';
     const sceneNotesLabel = document.createElement('div');
@@ -1613,8 +1605,19 @@ function buildSectionBlock(section, selectable) {
     sceneNotesLabel.textContent = 'Scene Notes';
     notesBlock.appendChild(sceneNotesLabel);
     notesBlock.appendChild(body);
-    wireNotesDrop(notesBlock);
     block.appendChild(notesBlock);
+
+    // The WHOLE scene card is the drop surface for technique/mode/source
+    // drags - dropping anywhere on the scene lands in the Scene Notes, and
+    // the Scene Notes block is what highlights. The narration block is a
+    // dead zone for these drags (see below), so hovering it shows no outline
+    // and nothing drops there - only media-bank audio drags land on narration.
+    wireNotesDrop(block, notesBlock);
+    narrationBlock.addEventListener('dragover', event => {
+      if (!isNotesDrag(event.dataTransfer)) return; // let audio drags reach narrationAudio
+      event.stopPropagation();                       // don't bubble to the block's notes-drop
+      notesBlock.classList.remove('drag-over');       // and don't leave the notes highlighted
+    });
 
     if (section.entities && section.entities.length) {
       const entitiesLine = document.createElement('div');
@@ -1672,7 +1675,7 @@ function buildSectionBlock(section, selectable) {
     updateComposeStoryboardVisibility();
   });
 
-  // Clicking the card (anywhere that isn't the remove/split buttons or an
+  // Clicking the card (anywhere that isn't the remove button or an
   // editable field, all of which already stopPropagation their own clicks)
   // selects it, honoring shift-click for multi-select - see
   // handleSectionClick. Only wired in the arranged view - renderSectionFeed's
@@ -1707,7 +1710,6 @@ function buildInsertSectionDivider(afterIndex) {
 
 function renderSectionFeed(container, label, sections) {
   container.innerHTML = '';
-  hideSplitFloatingBtn(); // avoid a stale reference to a card this re-render just replaced
 
   // The paper's own source material only - never the scaffold scenes added
   // while arranging/storyboarding on storyboard.html (narrativeOnly AND
@@ -1724,7 +1726,7 @@ function renderSectionFeed(container, label, sections) {
 
   const header = document.createElement('div');
   header.className = 'paper-source-label';
-  header.textContent = `${sourceSections.length} section${sourceSections.length === 1 ? '' : 's'} extracted. You can edit section headers and content, click a section to exclude, and split or add new sections. These
+  header.textContent = `${sourceSections.length} section${sourceSections.length === 1 ? '' : 's'} extracted. You can edit section headers and content, click a section to exclude, and add new sections. These
   serve as source material for you to base scenes and narration on in the documentary.`;
   container.appendChild(header);
 
@@ -2668,7 +2670,6 @@ function renderDeletedScenesList() {
 
 function renderMovieEditor(container, label, sections, assignmentsByIndex) {
   container.innerHTML = '';
-  hideSplitFloatingBtn(); // avoid a stale reference to a card this re-render just replaced
 
   // Prune any selected index no longer present (excluded/removed) - no more
   // default "select the first section" fallback, since there's no preview
@@ -4123,87 +4124,6 @@ if (uploadMediaInput) {
     uploadMediaInput.value = '';
   });
 }
-
-// --- Floating "Split into new section" button: appears near the cursor
-// when the presenter highlights text inside a section's body (works whether
-// or not that text is currently in edit mode - see makeEditable) - a
-// quicker, more discoverable way to choose a split point than a dedicated
-// button sitting on every card. Only responds to mouse-drag selections;
-// keyboard-only (shift+arrow) text selection isn't covered.
-const splitFloatingBtn = document.createElement('button');
-splitFloatingBtn.type = 'button';
-splitFloatingBtn.className = 'split-floating-btn';
-splitFloatingBtn.textContent = 'Split into new section';
-splitFloatingBtn.style.display = 'none';
-document.body.appendChild(splitFloatingBtn);
-
-let splitFloatingContext = null; // { section, offset }
-
-function hideSplitFloatingBtn() {
-  splitFloatingBtn.style.display = 'none';
-  splitFloatingContext = null;
-}
-
-// Character offset of a Range boundary (node/nodeOffset) within
-// containerEl's full text content - translates a browser Selection back
-// into a plain-string split point in section.text.
-function textOffsetWithin(containerEl, node, nodeOffset) {
-  const measuring = document.createRange();
-  measuring.selectNodeContents(containerEl);
-  measuring.setEnd(node, nodeOffset);
-  return measuring.toString().length;
-}
-
-document.addEventListener('mouseup', event => {
-  if (event.target === splitFloatingBtn) return; // let its own click handler run instead
-  const selection = window.getSelection();
-  if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
-    hideSplitFloatingBtn();
-    return;
-  }
-
-  const range = selection.getRangeAt(0);
-  const startEl = range.startContainer.nodeType === Node.TEXT_NODE
-    ? range.startContainer.parentElement
-    : range.startContainer;
-  const bodyEl = startEl && startEl.closest && startEl.closest('.paper-section-text');
-  const block = bodyEl && bodyEl.closest('.paper-section-block');
-  const index = block ? parseInt(block.dataset.sectionIndex, 10) : NaN;
-  const section = currentSections.find(s => s.index === index);
-  if (!bodyEl || !section) {
-    hideSplitFloatingBtn();
-    return;
-  }
-
-  const offset = textOffsetWithin(bodyEl, range.startContainer, range.startOffset);
-  const rect = range.getBoundingClientRect();
-  splitFloatingBtn.style.left = `${window.scrollX + rect.left}px`;
-  splitFloatingBtn.style.top = `${window.scrollY + rect.top - 36}px`;
-  splitFloatingBtn.style.display = '';
-  splitFloatingContext = { section, offset };
-});
-
-// Without this, the button losing focus/the selection collapsing on
-// mousedown would fire before our click handler gets to read splitFloatingContext.
-splitFloatingBtn.addEventListener('mousedown', event => event.preventDefault());
-
-splitFloatingBtn.addEventListener('click', () => {
-  if (!splitFloatingContext) return;
-  const { section, offset } = splitFloatingContext;
-  hideSplitFloatingBtn();
-  if (!runSplitSectionAt(section, offset)) return;
-  if (currentAssignments[section.index]) {
-    const remaining = currentSections.filter(s => !s.removed);
-    renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
-  } else {
-    renderSectionFeed(resultsEl, currentLabel, currentSections);
-  }
-  saveDebugSession();
-});
-
-document.addEventListener('mousedown', event => {
-  if (event.target !== splitFloatingBtn) hideSplitFloatingBtn();
-});
 
 function setStatus(message, isError) {
   statusEl.textContent = message || '';
