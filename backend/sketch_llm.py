@@ -19,6 +19,7 @@ SketchLLMCallError if unconfigured.
 """
 import base64
 import os
+from concurrent.futures import ThreadPoolExecutor
 
 import httpx
 
@@ -39,6 +40,13 @@ except ImportError:  # openai isn't installed - client stays unconfigured
 # the catalog 403s). Not LLM_MODEL-configurable on purpose.
 IMAGE_MODELS = ('gemini-3.1-flash-image', 'gemini-2.5-flash-image', 'gpt-image-2')
 MODEL = IMAGE_MODELS[0]  # kept for external reference/logging
+
+# Cheaper/faster models for generating a BATCH of example frames to pick from
+# (see generate_examples / server.py's /paper/generate_shot_examples), where
+# quantity matters more than the polish of a single committed frame.
+# gpt-image-1-mini is the low-cost OpenAI image model; the gemini flash-image
+# ones are the fast fallback (and share the Vertex quota, so gpt-image leads).
+EXAMPLE_IMAGE_MODELS = ('gemini-3.1-flash-image', 'gemini-2.5-flash-image', 'gpt-image-2')
 
 # Rate-limit/overload/quota conditions ("RESOURCE_EXHAUSTED", 429, ...) - the
 # only errors worth moving on to the next model for; a genuine bad-prompt/
@@ -69,10 +77,40 @@ def _image_size(model, style):
 _MODE_SKETCH_STYLE = {
     'expository': 'clear, evenly lit, diagram-like composition',
     'observational': 'candid, naturalistic framing, as if caught in the moment',
-    'participatory': 'framed like an interview shot, subject facing the camera',
-    'poetic': 'moody, atmospheric, soft lighting',
+    'participatory': 'framed like an interview shot, subject facing the camera and the camera crew present',
+    'poetic': 'artistic, moody, atmospheric, soft lighting',
 }
 assert set(_MODE_SKETCH_STYLE) == set(DOCUMENTARY_MODE_KEYS), 'sketch_llm._MODE_SKETCH_STYLE keys must match documentary_modes.DOCUMENTARY_MODE_KEYS'
+
+
+def _build_image_prompt(visual, documentary_mode=None, style='sketch', framing=None):
+    """The image prompt for a shot frame or a rough sketch panel - shared by
+    generate_sketch and generate_examples. For 'shot_frame', a framing clause
+    (shot size / perspective - see shot_plan_llm.framing_directive) LEADS the
+    prompt so the model composes that specific perspective, not a generic mid-shot."""
+    mode_clause = f' {_MODE_SKETCH_STYLE[documentary_mode]}.' if documentary_mode in _MODE_SKETCH_STYLE else ''
+
+    if style == 'shot_frame':
+        framing_clause = f'Shot framing: {framing.strip()}. ' if (framing or '').strip() else ''
+        return (
+            f'{framing_clause}A single cinematic documentary film frame, 16:9 widescreen composition. This image '
+            'IS the shot itself - exactly what the camera captures, the footage the audience sees. Do NOT depict the '
+            'filming equipment or crew (no camera, camera operator, film crew, boom microphone, tripod, or '
+            'clapperboard, and no one holding or pointing a camera) - show only the subject(s) and setting being '
+            'filmed, as seen through the lens. (Screens, monitors, or instruments that are part of the scene itself '
+            'are fine.) Photorealistic documentary cinematography with natural textures, believable '
+            'human features, physically plausible lighting, and a grounded real-world color palette. '
+            'Treat this as a real film frame rather than an illustration or storyboard drawing. No text, '
+            'no captions, no letterbox bars, no panel borders - just the framed scene '
+            f'filling the whole image.{mode_clause} The frame shows: {visual}'
+        )
+    style_clause = f' Style:{mode_clause}' if mode_clause else ''
+    return (
+        'A single storyboard panel, rough black-and-white pencil sketch style - loose hand-drawn '
+        'line art, not a finished illustration. Include a small corner label with a shot number, '
+        'and a brief camera-direction note (framing/movement) below or beside the panel, like a '
+        f'real film storyboard.{style_clause} The panel depicts: {visual}'
+    )
 
 
 class SketchLLMCallError(Exception):
@@ -105,16 +143,16 @@ class SketchLLMClient:
             self._client = OpenAI(**kwargs)
         return self._client
 
-    def generate_sketch(self, visual, documentary_mode=None, style='sketch'):
+    def generate_sketch(self, visual, documentary_mode=None, style='sketch', framing=None):
         """visual: a shot's visual description - a plain-English scene
         description, already free of literal academic jargon (from
-        storyboard_llm's `visual`, or shot_plan_llm's start_frame/end_frame).
+        storyboard_llm's `visual` or shot_plan_llm's `visual_description`).
         documentary_mode: optional key into DOCUMENTARY_MODE_KEYS (see
         documentary_modes.py) - same stylistic axis as storyboard/edit-plan,
         biasing mood/composition.
         style: 'sketch' (default) = the rough B&W storyboard panel used by the
-        Generate-Sketch flow; 'shot_frame' = a clean, semi-flat 16:9
-        documentary film frame in a natural palette (see artboard-example.png),
+        Generate-Sketch flow; 'shot_frame' = a photorealistic 16:9
+        documentary film frame in a natural palette,
         used for the narration-driven start/end frames (shot_plan_llm) that get
         hard-cut into the rendered MP4.
         Returns raw PNG bytes. On a rate-limit/overload/quota error it falls
@@ -123,27 +161,7 @@ class SketchLLMClient:
         if not self.is_configured():
             raise SketchLLMCallError('LLM client is not configured (missing API key or openai package)')
 
-        mode_clause = f' {_MODE_SKETCH_STYLE[documentary_mode]}.' if documentary_mode in _MODE_SKETCH_STYLE else ''
-        if style == 'shot_frame':
-            # A finished-looking documentary frame, 16:9, no text/borders (the
-            # start/end labels + arrow are added by the UI's HTML artboard, and
-            # any on-screen text would get baked into the rendered MP4). Wider
-            # than 1:1 so it fills 1920x1080 without heavy pillarboxing.
-            prompt = (
-                'A single cinematic documentary film frame, 16:9 widescreen composition. Semi-flat '
-                'illustration with clean lines and a natural, understated color palette (soft greens, muted '
-                'blues, warm neutrals) - a polished storyboard frame, not a photograph and not a rough pencil '
-                'sketch. No text, no captions, no letterbox bars, no panel borders - just the framed scene '
-                f'filling the whole image.{mode_clause} The frame shows: {visual}'
-            )
-        else:
-            style_clause = f' Style:{mode_clause}' if mode_clause else ''
-            prompt = (
-                'A single storyboard panel, rough black-and-white pencil sketch style - loose hand-drawn '
-                'line art, not a finished illustration. Include a small corner label with a shot number, '
-                'and a brief camera-direction note (framing/movement) below or beside the panel, like a '
-                f'real film storyboard.{style_clause} The panel depicts: {visual}'
-            )
+        prompt = _build_image_prompt(visual, documentary_mode, style, framing)
 
         # Try each model in turn: a rate-limited/exhausted model is skipped
         # immediately for the next (rather than waiting out a quota that may be
@@ -168,3 +186,94 @@ class SketchLLMClient:
             'All image models are rate-limited or over quota right now (resources exhausted). '
             f'Wait a minute and try again. ({last_error})'
         )
+
+    def generate_sketch_from_image(self, image_bytes, visual, documentary_mode=None, style='shot_frame'):
+        """Image-to-image: re-frame an EXISTING frame (image_bytes, PNG) into a
+        new framing (visual) while keeping the same subject/setting. Used for a
+        shot's END frame so it's guaranteed to show the same people/place as the
+        START frame it's edited from (see server.py's /paper/generate_shot) -
+        text-to-image alone can't guarantee that even from an identical prompt.
+
+        Same PNG-bytes contract as generate_sketch. Tries each model in
+        IMAGE_MODELS via the images.edit endpoint; unlike generate_sketch it
+        keeps trying on ANY error (a model that doesn't support editing just
+        gets skipped for the next), and raises only if none can edit - so the
+        caller can cleanly fall back to text-to-image."""
+        if not self.is_configured():
+            raise SketchLLMCallError('LLM client is not configured (missing API key or openai package)')
+
+        mode_clause = f' {_MODE_SKETCH_STYLE[documentary_mode]}.' if documentary_mode in _MODE_SKETCH_STYLE else ''
+        prompt = (
+            'Re-frame the provided image into a new camera framing WITHOUT changing the scene: keep the exact '
+            'same people (same faces, wardrobe, and number of people), the same objects, the same setting, the '
+            'same lighting, color palette, and photorealistic documentary style as the provided image. Only the '
+            f'framing/composition changes.{mode_clause} New framing: {visual[:800]}. '
+            'No text, no captions, no letterbox bars, no panel borders - just the framed scene filling the image.'
+        )
+
+        client = self._get_client()
+        last_error = None
+        for model in IMAGE_MODELS:
+            try:
+                response = client.images.edit(
+                    model=model,
+                    image=('start.png', image_bytes, 'image/png'),
+                    prompt=prompt,
+                    size=_image_size(model, style),
+                )
+                b64_data = response.data[0].b64_json
+                if not b64_data:
+                    raise ValueError('response had no b64_json image data')
+                return base64.b64decode(b64_data)
+            except Exception as exc:  # incl. "edit not supported" - just try the next model
+                last_error = exc
+
+        raise SketchLLMCallError(f'Image-to-image edit unavailable/failed on all models: {last_error}')
+
+    def generate_examples(self, specs, documentary_mode=None, style='shot_frame', reference_image_bytes=None):
+        """A batch of independently sampled example frames, one per spec, using the
+        cheap/fast EXAMPLE_IMAGE_MODELS (see server.py's
+        /paper/generate_shot_examples). `specs` is a list of
+        {'visual', 'framing'}; callers may repeat the same bold prompt to get
+        multiple model interpretations. The specs are independent, so they're generated
+        CONCURRENTLY (one thread per spec - the image client is blocking I/O)
+        so the batch's wall-clock time is ~one image, not the sum. Returns a
+        list of PNG bytes ALIGNED to specs, with None for any that failed;
+        raises only if every spec failed."""
+        if not self.is_configured():
+            raise SketchLLMCallError('LLM client is not configured (missing API key or openai package)')
+
+        client = self._get_client()
+        specs = list(specs or [])
+
+        errors = []
+
+        def _one(spec):
+            prompt = _build_image_prompt(spec.get('visual', ''), documentary_mode, style, spec.get('framing'))
+
+            for model in EXAMPLE_IMAGE_MODELS:  # one image per spec, model fallback on failure
+                try:
+                    if reference_image_bytes:
+                        resp = client.images.edit(
+                            model=model,
+                            image=('scene-sketch.png', reference_image_bytes, 'image/png'),
+                            prompt=prompt + ' Preserve the concrete subjects, objects, setting, and action shown in the uploaded scene sketch.',
+                            size=_image_size(model, style))
+                    else:
+                        resp = client.images.generate(model=model, prompt=prompt, size=_image_size(model, style), n=1)
+                    if resp.data and resp.data[0].b64_json:
+                        return base64.b64decode(resp.data[0].b64_json)
+                except Exception as exc:
+                    errors.append(exc)
+                    continue
+            return None
+
+        if not specs:
+            return []
+        # map preserves order, so results stay ALIGNED to specs
+        with ThreadPoolExecutor(max_workers=len(specs)) as pool:
+            results = list(pool.map(_one, specs))
+
+        if not any(r is not None for r in results):
+            raise SketchLLMCallError(f'Example generation failed on all models: {errors[-1] if errors else "unknown"}')
+        return results

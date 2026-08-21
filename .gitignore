@@ -4,14 +4,26 @@
 prompts.md
 system-build.ai
 system-build.png
+pub_to_doc.ai
+artboard_example.png
 
 # Local Netlify folder
 .netlify
+
+# Apple ml-sharp 3D reconstruction (see backend/sharp_media.py + backend/setup_sharp.sh):
+# a separate Python 3.13 venv and the vendored upstream clone, both large and
+# third-party - reproduced locally via setup_sharp.sh, never committed.
+backend/.sharp-venv/
+backend/vendor/
 
 # Premiere Pro UXP bridge - uploaded footage + exported rough cuts, can get
 # large and are user-specific per documentary project (see
 # backend/premiere_bridge.py).
 premiere_exports/
 premiere-plugin/
+
+# Quiet user-specific paper/storyboard source snapshots (saved by the local
+# backend, not source-controlled project fixtures).
+paper_snapshots/
 
 other/

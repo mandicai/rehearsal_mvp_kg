@@ -64,6 +64,19 @@ _TECHNIQUE_PROMPTS = {
     'out': 'The camera slowly pulls back, away from the scene.',
 }
 
+# Shot-flow camera moves - keyed by shot_plan_llm.py's _MOVEMENTS vocabulary
+# (kept in sync by convention), used by generate_shot_video below to turn a
+# shot's inferred movement into a camera-move instruction for the video model.
+_SHOT_MOVEMENT_PROMPTS = {
+    'static': 'The camera holds nearly still, with only very subtle drift.',
+    'pan': 'The camera slowly pans across the scene.',
+    'tilt': 'The camera slowly tilts to reveal the scene vertically.',
+    'push_in': 'The camera slowly pushes in toward the main subject.',
+    'pull_out': 'The camera slowly pulls back, revealing more of the scene.',
+    'tracking': 'The camera tracks smoothly alongside the subject.',
+    'handheld': 'Loose, slightly unsteady handheld camera movement, as if caught in the moment.',
+}
+
 # Same stylistic axis as sketch_llm.py's _MODE_SKETCH_STYLE, adapted to
 # movement quality rather than composition/lighting - not asserted against
 # DOCUMENTARY_MODE_KEYS since it's only ever looked up with `.get`, same as
@@ -99,8 +112,9 @@ _POLL_TIMEOUT_SECONDS = 280
 # conditioning here (this proxy's image model wasn't verified to support
 # it) - consistency across frames relies on prompt wording alone (see
 # build_sequence_prompts' own consistency_clause), which is looser than a
-# real interpolation model but consistent with this feature's "very rough,
-# not photorealistic" bar throughout.
+# real interpolation model but intentionally remains a rough, non-photorealistic
+# storyboard/animatic path. The shot-frame and text-to-video paths below allow
+# photorealistic documentary footage.
 _TECHNIQUE_FRAME_CLAUSES = {
     'left_to_right': (
         'Framed toward the right side of the scene, as if the camera has not yet begun moving.',
@@ -212,6 +226,54 @@ class AnimateLLMClient:
         except Exception as exc:  # network errors, malformed response, API errors
             raise AnimateLLMCallError(f'Animated sketch generation failed: {exc}')
 
+    def generate_shot_video(self, image_png_bytes, movement=None, documentary_mode=None, framing=None,
+                            scene_notes='', techniques=None, narrative_operation='', visual_description='',
+                            reference_subject=''):
+        """Image-to-video for the shot flow: animates an already-generated shot
+        FRAME (see sketch_llm.generate_sketch style='shot_frame') into a short
+        cinematic clip that keeps the frame's composition/style, moving the
+        camera per the selected shot's movement and scene-level direction.
+        Shot-frame generation may be photorealistic documentary footage.
+        Returns raw MP4 bytes."""
+        if not self.is_configured():
+            raise AnimateLLMCallError('LLM client is not configured (missing API key or openai package)')
+
+        move_clause = _SHOT_MOVEMENT_PROMPTS.get(movement, 'The camera moves gently and cinematically through the scene.')
+        feel_clause = f' Movement quality: {_MODE_CAMERA_FEEL[documentary_mode]}.' if documentary_mode in _MODE_CAMERA_FEEL else ''
+        framing_clause = f' Shot framing: {framing.strip()}.' if (framing or '').strip() else ''
+        notes_clause = f' Scene direction: {scene_notes.strip()}.' if (scene_notes or '').strip() else ''
+        clean_techniques = [t.strip() for t in (techniques or []) if isinstance(t, str) and t.strip()]
+        techniques_clause = (
+            ' Preserve and animate these selected documentary techniques: ' + ', '.join(clean_techniques) + '.'
+            if clean_techniques else '')
+        operation_clause = (
+            f' Narrative operation: {narrative_operation.strip().replace("_", " ")}; make the motion reinforce what this operation does for the viewer.'
+            if (narrative_operation or '').strip() else '')
+        visual_clause = (
+            f' Intended visual description: {visual_description.strip()}. Preserve the reference image as the visual anchor while making the action and motion clearly express this description.'
+            if (visual_description or '').strip() else '')
+        subject_clause = (
+            f' Uploaded-content subject: {reference_subject.strip()}. Keep this exact subject/content identity as the anchor; '
+            'do not substitute a different subject.'
+            if (reference_subject or '').strip() else '')
+        prompt = (
+            'Animate this documentary storyboard frame into a short photorealistic cinematic documentary '
+            'clip. Keep its exact composition, subjects, setting, lighting, and visual identity; preserve '
+            'the same people and objects, and do not redraw, stylize, or add or remove people.'
+            f'{framing_clause} {move_clause}{feel_clause}'
+            f'{visual_clause}{subject_clause}{operation_clause}{notes_clause}{techniques_clause}'
+        )
+
+        try:
+            client = self._get_client()
+            return self._create_and_wait(
+                client, prompt=prompt, model=MODEL,
+                input_reference=('frame.png', image_png_bytes, 'image/png'),
+                seconds=SECONDS, size=SIZE,
+            )
+        except Exception as exc:  # network errors, malformed response, API errors
+            raise AnimateLLMCallError(f'Shot video generation failed: {exc}')
+
     def generate_text_to_video(self, visual, technique, documentary_mode=None):
         """visual: a shot's storyboard 'visual' text (the same field
         sketch_llm.py's generate_sketch draws from) - no sketch image
@@ -225,18 +287,15 @@ class AnimateLLMClient:
             raise AnimateLLMCallError(f'technique must be one of {TECHNIQUES}')
 
         feel_clause = f' Use {_MODE_CAMERA_FEEL[documentary_mode]}.' if documentary_mode in _MODE_CAMERA_FEEL else ''
-        # A softer "rough pencil sketch style, not photorealistic" phrasing
-        # (matching generate_animated_sketch's own prompt above) was verified
-        # live to NOT be enough here - with no reference image to anchor it,
-        # this model defaults to fully photorealistic, cinematic footage
-        # regardless. The blunter, repeated negatives below (also verified
-        # live) are what actually gets a hand-drawn pencil-sketch result.
+        # This text-to-video action is intended to generate a usable cinematic
+        # shot, so explicitly allow photorealistic live-action documentary
+        # footage rather than inheriting the rough-sketch wording used by the
+        # separate animated-sketch action above.
         prompt = (
-            'A 2D hand-drawn animatic in the style of a rough film storyboard - flat black-and-white '
-            'pencil sketch line art with visible pencil strokes and cross-hatching, like a rough '
-            'animated pencil test. Absolutely NOT photorealistic, NOT live-action, NOT cinematic '
-            'footage, NOT 3D rendered - a loose 2D sketch drawing style throughout, like a hand-drawn '
-            f'flipbook animation. {_TECHNIQUE_PROMPTS[technique]}{feel_clause} The scene: {visual}'
+            'Generate photorealistic live-action documentary footage of the described scene, with '
+            'natural human anatomy, believable materials, physically plausible lighting, and cinematic '
+            'camera motion. Do not turn it into an illustration, storyboard panel, animation, or 3D '
+            f'render. {_TECHNIQUE_PROMPTS[technique]}{feel_clause} The scene: {visual}'
         )
 
         try:

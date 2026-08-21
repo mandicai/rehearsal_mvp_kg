@@ -19,8 +19,31 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Coral+Pixels&family=Parastoo:wght@400..700&family=Rubik+80s+Fade&display=swap"
     rel="stylesheet">
+  <!-- Monospace for the data-journalism (The Markup / Blacklight) styling -
+       headings, kickers, labels, badges (see styles-index.css theme block). -->
+  <link
+    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap"
+    rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap" rel="stylesheet">
   <script>document.write('<link rel="stylesheet" href="/styles-index.css?t=' + window.CACHE_BUST + '">');</script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <!-- three.js (global THREE) + OrbitControls for the inline 3D reconstruction
+       viewer (js/reconstruct-viewer.js). Pinned; guarded by a typeof THREE
+       check so a blocked CDN degrades to a "3D viewer unavailable" message. -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <!-- ES-module map for the SHARP Gaussian-splat viewer (loaded on demand via
+       dynamic import in js/reconstruct-viewer.js). This is a SEPARATE module
+       three instance used only by GaussianSplats3D; the global THREE above still
+       drives the depth/pano viewers. -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "@mkkellogg/gaussian-splats-3d": "https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.4.7/build/gaussian-splats-3d.module.js"
+    }
+  }
+  </script>
 </head>
 
 <body class="pub-to-doc-page">
@@ -36,35 +59,75 @@
        js/paper-extract.js's saveDebugSession/restoreDebugSession, which
        both pages call). -->
 
-      <!-- Documentary intent module -->
+      <!-- Documentary intent module: a moodboard of reference documentaries.
+       The presenter adds references (a documentary name, a YouTube link, or an
+       uploaded clip); each is deep-analyzed in the background and the whole
+       moodboard is later distilled into suggested arcs/mode/techniques (see
+       js/paper-extract.js's moodboard flow + runDistillMoodboard). This
+       replaced the old narration recorder as the entry point. -->
       <div class="module-card" id="documentary-intent-module">
-        <h2>What do you want your documentary to focus on?</h2>
-        <p style="font-size: 12px; opacity: 0.75; margin: 0 0 12px;">
-          Record yourself describing and reflecting what the documentary should convey.
+        <h2>What documentaries capture the feel you're going for?</h2>
+        <p style="font-size: 12px; opacity: 0.75; margin: 0 0 14px;">
+          Build a moodboard of reference documentaries—name one, paste a YouTube link, or upload a clip.
+          We'll study their style and suggest a narrative arc, mode, and techniques for your paper.
         </p>
 
-        <div id="record-intent-row">
-          <button type="button" id="record-intent-btn" class="btn-primary">Record</button>
-          <div id="record-intent-status" class="status-line"></div>
+        <div id="moodboard-add-row" class="moodboard-add-row">
+          <div class="moodboard-add-group">
+            <input type="text" id="moodboard-name-input" placeholder="Name a documentary (e.g. Free Solo)">
+            <button type="button" id="moodboard-add-name-btn" class="btn-secondary">Add</button>
+          </div>
+          <div class="moodboard-add-group">
+            <input type="url" id="moodboard-url-input" placeholder="Paste a YouTube link">
+            <button type="button" id="moodboard-add-url-btn" class="btn-secondary">Add</button>
+          </div>
+          <div class="moodboard-add-group">
+            <label for="moodboard-file-input" class="moodboard-file-label">Upload footage</label>
+            <input type="file" id="moodboard-file-input" accept="video/*">
+          </div>
         </div>
 
-        <canvas id="intent-waveform-canvas" width="800" height="60" style="display: none; width: 100%; height: 60px; margin-top: 8px;"></canvas>
-
-        <!-- #play-intent-btn sits here (not in #record-intent-row above)
-         so it's beside the transcript it plays back, not the Record
-         button - icon-only (▶/⏸, see js/paper-extract.js's
-         onNarrationPlaybackStateChange), same id/behavior on both pages
-         (see html/storyboard.html's own copy). -->
-        <div id="intent-transcript-display" style="display: none; margin-top: 12px;">
-          <div id="intent-transcript-text" class="intent-transcript-text"></div>
-          <button type="button" id="play-intent-btn" class="btn-primary" style="display: none;">▶</button>
-        </div>
-
-        <p style="font-size: 12px; opacity: 0.75; margin: 20px 0 15px 0;">
-          Or choose a suggested focus:
-        </p>
-        <div id="intent-suggested-chips" class="chip-row"></div>
+        <!-- One card per reference (see renderMoodboardList): thumbnail, source
+         badge, analyzing/ready status, optional note, remove. -->
+        <div id="moodboard-list" class="moodboard-list"></div>
+        <div id="moodboard-status" class="status-line"></div>
       </div><!-- /#documentary-intent-module -->
+
+      <!-- 3D reconstruction entry point: upload a photo (flat or panoramic) or
+       footage and explore it as an interactive 3D scene INLINE in the card
+       (see js/paper-extract.js's reconstruct flow + js/reconstruct-viewer.js).
+       v1 is a light monocular-depth 2.5D reconstruction; viewer-only, not tied
+       to the timeline or the render. -->
+      <div class="module-card" id="reconstruct-module">
+        <h2>Turn a photo or clip into a 3D scene</h2>
+        <p style="font-size: 12px; opacity: 0.75; margin: 0 0 14px;">
+          Upload a photo (flat or panoramic) or a short clip. We'll reconstruct it into a scene you can
+          look around, right here in the card.
+        </p>
+
+        <div id="reconstruct-add-row" class="moodboard-add-row">
+          <div class="moodboard-add-group">
+            <label for="reconstruct-file-input" class="moodboard-file-label">Upload photo or footage</label>
+            <input type="file" id="reconstruct-file-input" accept="image/*,video/*">
+          </div>
+          <div class="moodboard-add-group reconstruct-kind-group">
+            <span style="font-size: 12px; opacity: 0.75;">Treat as:</span>
+            <label><input type="radio" name="reconstruct-kind" value="auto" checked> Auto</label>
+            <label><input type="radio" name="reconstruct-kind" value="photo"> Photo</label>
+            <label><input type="radio" name="reconstruct-kind" value="panorama"> Panorama</label>
+          </div>
+          <div class="moodboard-add-group reconstruct-kind-group">
+            <span style="font-size: 12px; opacity: 0.75;">Quality:</span>
+            <label><input type="radio" name="reconstruct-engine" value="sharp" checked> 3D splats (SHARP)</label>
+            <label><input type="radio" name="reconstruct-engine" value="depth"> Fast 2.5D</label>
+          </div>
+        </div>
+
+        <!-- One card per reconstruction; a ready item expands an inline
+         three.js viewer host (see renderReconstructList / openReconstructViewer). -->
+        <div id="reconstruct-list" class="moodboard-list"></div>
+        <div id="reconstruct-status" class="status-line"></div>
+      </div><!-- /#reconstruct-module -->
 
       <!-- Upload panel - the next step after stating intent above. -->
       <aside id="upload-sidebar" class="upload-sidebar upload-sidebar-doc upload-sidebar-inline">
@@ -103,7 +166,7 @@
        html/storyboard.html once clicked - see composeStoryboardBtn's
        handler. -->
       <div id="compose-storyboard-row" style="display: none;">
-        <button type="button" id="compose-storyboard-btn" class="btn-primary">Compose Storyboard</button>
+        <button type="button" id="compose-storyboard-btn" class="btn-primary">NEXT STEP: CHOOSE ARC</button>
         <div id="compose-storyboard-status" class="status-line"></div>
       </div>
 
@@ -113,6 +176,7 @@
 
   <script>
     document.write('<script src="/js/helpers.js?t=' + window.CACHE_BUST + '"><\/script>');
+    document.write('<script src="/js/reconstruct-viewer.js?t=' + window.CACHE_BUST + '"><\/script>');
     document.write('<script src="/js/paper-extract.js?t=' + window.CACHE_BUST + '"><\/script>');
   </script>
 

@@ -127,6 +127,40 @@ def premiere_media_bank_dir(project_id):
     return premiere_project_dir(project_id) / 'media_bank'
 
 
+def premiere_moodboard_dir(project_id):
+    """Reference documentaries the presenter added on the moodboard entry
+    point (see server.py's /moodboard/add_reference and its
+    _analyze_moodboard_reference worker). Holds one subdirectory per
+    reference (see premiere_moodboard_ref_dir) with that reference's sampled
+    frames, extracted audio, downloaded source/thumbnail, and the status.json
+    / profile.json the worker writes - an analysis workspace, not final media
+    Premiere or the render needs."""
+    return premiere_project_dir(project_id) / 'moodboard'
+
+
+def premiere_moodboard_ref_dir(project_id, ref_id):
+    """One moodboard reference's own workspace under premiere_moodboard_dir."""
+    return premiere_moodboard_dir(project_id) / ref_id
+
+
+def premiere_reconstruct_dir(project_id, recon_id):
+    """One 3D-reconstruction job's workspace (see server.py's /reconstruct/add
+    and its _reconstruct_worker). Holds the uploaded source, the prepared
+    color.png / depth.png (or a sampled footage frame), and the status.json /
+    profile.json the worker writes - an analysis workspace for the in-browser
+    3D viewer, not media the render/Premiere export consumes. One subdirectory
+    per job, mirroring premiere_moodboard_ref_dir's shape."""
+    return premiere_project_dir(project_id) / 'reconstruct' / recon_id
+
+
+def premiere_eval_dir(project_id, run_id):
+    """One evaluation run's workspace (see server.py's /eval/run and its
+    _eval_worker). Holds one cell_*.png / cell_*.mp4 per technique×mode×track
+    combination plus the status.json / manifest.json the worker writes - the
+    matrix that evaluation.html renders. Mirrors premiere_reconstruct_dir."""
+    return premiere_project_dir(project_id) / 'eval' / run_id
+
+
 def premiere_stock_media_dir(project_id):
     """Stock-media picks (Pexels/Internet Archive/Library of Congress
     video, Freesound audio - see server.py's /premiere/download_stock_media

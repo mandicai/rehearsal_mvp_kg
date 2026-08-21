@@ -83,11 +83,13 @@ already serves at /premiere_exports/... (no separate route needed for that
 direction - see premiere-plugin/README.md for the full round trip).
 """
 import base64
+import io
 import json
 import os
 import re
 import threading
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -95,6 +97,7 @@ from urllib.parse import urlparse
 
 import requests
 from dotenv import load_dotenv
+from PIL import Image
 
 load_dotenv()  # populate os.environ from backend/.env, if present, before any env var is read
 
@@ -114,23 +117,29 @@ from ingest import ObjectivesLLMClient, ObjectivesLLMCallError
 from ingest import AssessmentLLMClient, AssessmentLLMCallError
 from paper_extraction import extract_sections, PaperExtractionError
 from narrative_arc_llm import NarrativeArcLLMClient, NarrativeArcLLMCallError
-from storyboard_llm import StoryboardLLMClient, StoryboardLLMCallError
+from narration_llm import NarrationLLMClient, NarrationLLMCallError
+from media_query_llm import MediaQueryLLMClient, MediaQueryLLMCallError
 from edit_plan_llm import EditPlanLLMClient, EditPlanLLMCallError
-from sketch_llm import SketchLLMClient, SketchLLMCallError
-from shot_plan_llm import ShotPlanLLMClient, ShotPlanLLMCallError
-from cutaway_llm import CutawayLLMClient, CutawayLLMCallError
+from sketch_llm import SketchLLMClient, SketchLLMCallError, _build_image_prompt
+from shot_plan_llm import ShotPlanLLMClient, ShotPlanLLMCallError, framing_directive, wildness_directive
 from animate_llm import (
     AnimateLLMClient, AnimateLLMCallError, TECHNIQUES as ANIMATE_TECHNIQUES,
     build_sequence_prompts, compose_gif,
 )
-from documentary_modes import DOCUMENTARY_MODE_KEYS
+from documentary_modes import DOCUMENTARY_MODE_KEYS, DOCUMENTARY_MODES
+from documentary_techniques import DOCUMENTARY_TECHNIQUES, DOCUMENTARY_TECHNIQUE_KEYS
 import movie_render
 from stock_media import PexelsClient, InternetArchiveClient, LibraryOfCongressClient, FreesoundClient, StockMediaCallError
 from premiere_bridge import (
     next_premiere_project_id, premiere_project_dir, premiere_footage_dir, premiere_sketch_dir,
     premiere_animated_sketch_dir, premiere_narration_dir, premiere_media_bank_dir, premiere_stock_media_dir,
+    premiere_moodboard_dir, premiere_moodboard_ref_dir, premiere_reconstruct_dir, premiere_eval_dir,
     remux_for_reliable_playback, download_stock_media_to_disk, resolve_static_preview_path, PREMIERE_EXPORTS_DIR,
 )
+import moodboard_media
+import depth_media
+import sharp_media
+from moodboard_llm import MoodboardLLMClient, MoodboardLLMCallError
 
 # Structural parsing + NER run in roughly linear time, but boundary scoring
 # and refinement are O(n^2)-ish over base units, so this caps worst-case
@@ -163,6 +172,11 @@ MAX_PAPER_SIZE_MB = 50
 MAX_STORYBOARD_SECTIONS = 100
 MAX_STORYBOARD_SECTION_CHARS = 1500
 
+# A short per-section body snippet the moodboard distillation gets alongside
+# each section's title, for better arc placement without shipping full bodies
+# (see /moodboard/distill and narrative_arc_llm.distill_from_moodboard).
+MAX_SECTION_SNIPPET_CHARS = 300
+
 # Bounds on index.html's edit-plan request (see /paper/edit_plan below) -
 # this call only needs each shot's already-drafted visual/narration (not
 # its full original section text), so the per-shot cap is tighter still.
@@ -172,7 +186,7 @@ MAX_EDIT_PLAN_TEXT_CHARS = 500
 # Bound on index.html's sketch request (see /paper/generate_sketch below) -
 # same role as MAX_EDIT_PLAN_TEXT_CHARS, just for the one 'visual' string
 # a sketch prompt is built from.
-MAX_SKETCH_VISUAL_CHARS = 500
+MAX_SKETCH_VISUAL_CHARS = 1000
 
 # Bound on the free-text "documentary intent" statement index.html's
 # narrative-arc/storyboard requests can optionally include (see both routes
@@ -211,6 +225,13 @@ MAX_FOCUS_STATEMENT_CHARS = 200
 # Bound on index.html's own-footage upload (see /premiere/upload_footage
 # below) - real video files, so a larger cap than the other uploads here.
 MAX_FOOTAGE_SIZE_MB = 500
+
+# Quiet, file-backed snapshots for the paper/storyboard workspace. These are
+# intentionally separate from Premiere exports and the presentation-ingest
+# projects: they contain only the reusable paper sections and moodboard source
+# links needed to resume a documentary later.
+PAPER_SNAPSHOTS_DIR = Path(__file__).resolve().parent.parent / 'paper_snapshots'
+_PAPER_SNAPSHOT_ID_RE = re.compile(r'^[A-Za-z0-9_-]{8,100}$')
 
 app = Flask(__name__)
 CORS(app)
@@ -260,11 +281,12 @@ transcription_client = TranscriptionClient(model=ingest_config.transcription_mod
 objectives_client = ObjectivesLLMClient()
 assessment_client = AssessmentLLMClient()
 narrative_arc_client = NarrativeArcLLMClient()
-storyboard_client = StoryboardLLMClient()
+narration_client = NarrationLLMClient()
+moodboard_client = MoodboardLLMClient()
+media_query_client = MediaQueryLLMClient()
 edit_plan_client = EditPlanLLMClient()
 sketch_client = SketchLLMClient()
 shot_plan_client = ShotPlanLLMClient()
-cutaway_client = CutawayLLMClient()
 animate_client = AnimateLLMClient()
 carta_entity_client = CartaLLMClient()
 pexels_client = PexelsClient()
@@ -455,39 +477,64 @@ def _parse_documentary_mode(data):
 
 # Cap on how many technique labels we forward to an LLM (a stylistic hint, not
 # a payload) and how long each may be - keeps a malformed/oversized client
-# request from bloating the prompt. Unknown strings are harmless (they're just
-# free-text hints), so we don't validate against a fixed vocabulary.
+# request from bloating the prompt. Only the shared technique catalog is valid:
+# track roles such as Primary/Cutaway must never leak into this stylistic axis.
 MAX_TECHNIQUES = 12
 MAX_TECHNIQUE_CHARS = 80
 
 
 def _parse_techniques(data):
     """Optional list of filming/editing technique labels the presenter has
-    selected (js/paper-extract.js's selectedTechniques). Free-text stylistic
-    hints appended to shot/cutaway/storyboard prompts. Returns a cleaned list
-    (possibly empty); tolerant of a non-list or junk entries."""
+    selected (js/paper-extract.js's selectedTechniques). Closed-vocabulary
+    stylistic hints appended to shot/cutaway/storyboard prompts. Returns a
+    cleaned list (possibly empty); tolerant of a non-list or junk entries."""
     raw = data.get('techniques')
     if not isinstance(raw, list):
         return []
     out = []
     for t in raw:
-        if isinstance(t, str) and t.strip():
-            out.append(t.strip()[:MAX_TECHNIQUE_CHARS])
+        if isinstance(t, str):
+            technique = t.strip()[:MAX_TECHNIQUE_CHARS]
+            if technique in DOCUMENTARY_TECHNIQUE_KEYS and technique not in out:
+                out.append(technique)
         if len(out) >= MAX_TECHNIQUES:
             break
     return out
 
 
+def _parse_moodboard_profiles(data):
+    """Optional list of analyzed moodboard reference profiles the frontend
+    sends to anchor shot generation in the moodboard's visual style (see
+    js/paper-extract.js's moodboardProfilesForGeneration). Cleaned/capped;
+    tolerant of a non-list or junk entries. Only the fields shot_plan_llm's
+    _format_moodboard reads are kept."""
+    raw = data.get('moodboard')
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for ref in raw[:MAX_MOODBOARD_REFERENCES]:
+        if not isinstance(ref, dict):
+            continue
+        out.append({
+            'title': (ref.get('title') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS],
+            'visual_style': (ref.get('visual_style') or '').strip()[:MAX_MOODBOARD_REF_FIELD_CHARS],
+            'tone': (ref.get('tone') or '').strip()[:200],
+            'pacing': (ref.get('pacing') or '').strip()[:200],
+            'observed_techniques': [t for t in (ref.get('observed_techniques') or []) if isinstance(t, str)][:8],
+        })
+    return out
+
+
 @app.route('/paper/suggest_arcs', methods=['POST'])
 def paper_suggest_arcs():
-    # Ranked arc recommendations from a recorded narration (+ optional
-    # suggested-focus chips) - see js/paper-extract.js's Record Your Intent
-    # flow. Once the presenter accepts a recommendation/alternative/custom
-    # arc, its parts become the narrative-act groups shown right away
-    # (js/paper-extract.js's runAcceptArc) - no server call to place paper
-    # sections into them; the presenter does that manually from there.
+    # Ranked arc recommendations from the presenter's chosen focus statements
+    # (suggested chips and/or their own typed-in description), grounded in the
+    # paper's abstract + sections. (The recorded-narration transcript that used
+    # to feed this was removed with the recorder UI.) Once the presenter accepts
+    # a recommendation/alternative/custom arc, its parts become the narrative-act
+    # groups shown right away (js/paper-extract.js's runAcceptArc) - no server
+    # call to place paper sections into them; the presenter does that manually.
     data = request.get_json(silent=True) or {}
-    transcript = (data.get('transcript') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS]
     abstract = (data.get('abstract') or '').strip()[:MAX_ABSTRACT_CHARS]
 
     focus_statements_raw = data.get('focus_statements')
@@ -512,24 +559,48 @@ def paper_suggest_arcs():
             if isinstance(s, dict) and isinstance(s.get('index'), int)
         ]
 
-    # A recording is the usual case, but the presenter can reach this step
-    # via a chosen focus chip alone (see js/paper-extract.js's
-    # updateComposeStoryboardVisibility) - only reject if neither exists.
-    # abstract is pure enrichment on top of either, never required on its
-    # own (see narrative_arc_llm.py's own docstring).
-    if not transcript and not focus_statements:
-        return jsonify({'error': 'transcript or focus_statements is required'}), 400
+    # At least one focus statement is required (abstract/sections are grounding
+    # enrichment, never the sole signal - see narrative_arc_llm.py's docstring).
+    if not focus_statements:
+        return jsonify({'error': 'focus_statements is required'}), 400
 
     if not narrative_arc_client.is_configured():
         return jsonify({'error': _NARRATIVE_ARC_NOT_CONFIGURED_ERROR}), 503
 
     try:
         recommended, alternatives = narrative_arc_client.suggest_arcs_from_intent(
-            transcript, focus_statements, abstract, sections)
+            focus_statements, abstract, sections)
     except NarrativeArcLLMCallError as exc:
         return jsonify({'error': str(exc)}), 500
 
     return jsonify({'recommended': recommended, 'alternatives': alternatives})
+
+
+@app.route('/paper/suggest_narration', methods=['POST'])
+def paper_suggest_narration():
+    """Draft one readable voice-over passage for the current paper section.
+
+    The act title/description tells the writer what this scene should do in
+    the arc; the section text remains the factual source of the narration.
+    This returns text only - the presenter still records the voice track.
+    """
+    data = request.get_json(silent=True) or {}
+    section_title = (data.get('section_title') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
+    section_text = (data.get('section_text') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
+    act_title = (data.get('act_title') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
+    act_description = (data.get('act_description') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
+    abstract = (data.get('abstract') or '').strip()[:MAX_ABSTRACT_CHARS]
+    mode = (data.get('documentary_mode') or '').strip()[:80]
+    if not section_text and not section_title:
+        return jsonify({'error': 'section_title or section_text is required'}), 400
+    if not narration_client.is_configured():
+        return jsonify({'error': _STORYBOARD_NOT_CONFIGURED_ERROR}), 503
+    try:
+        narration = narration_client.suggest(
+            section_title, section_text, act_title, act_description, abstract, mode)
+    except NarrationLLMCallError as exc:
+        return jsonify({'error': str(exc)}), 500
+    return jsonify({'narration': narration})
 
 
 _STORYBOARD_NOT_CONFIGURED_ERROR = (
@@ -537,8 +608,98 @@ _STORYBOARD_NOT_CONFIGURED_ERROR = (
 )
 
 
+@app.route('/paper/snapshots/save', methods=['POST'])
+def save_paper_snapshot():
+    """Persist the reusable paper/storyboard source state.
+
+    This is deliberately a quiet persistence endpoint rather than a visible
+    load workflow. The frontend sends cleaned section text and moodboard
+    metadata after meaningful edits; generated media and large embedded figure
+    images are excluded so the snapshot stays portable and readable.
+    """
+    data = request.get_json(silent=True) or {}
+    snapshot_id = (data.get('snapshot_id') or '').strip()
+    if not _PAPER_SNAPSHOT_ID_RE.fullmatch(snapshot_id):
+        return jsonify({'error': 'snapshot_id is required and must be a safe identifier'}), 400
+
+    raw_sections = data.get('sections') or []
+    if not isinstance(raw_sections, list):
+        return jsonify({'error': 'sections must be a list'}), 400
+    sections = []
+    for raw in raw_sections:
+        if not isinstance(raw, dict):
+            continue
+        index = raw.get('index')
+        if not isinstance(index, int):
+            continue
+        sections.append({
+            'index': index,
+            'title': str(raw.get('title') or '')[:MAX_STORYBOARD_SECTION_CHARS],
+            'text': str(raw.get('text') or '')[:MAX_CHARS],
+            'removed': bool(raw.get('removed')),
+        })
+
+    raw_refs = data.get('youtube_references') or []
+    if not isinstance(raw_refs, list):
+        raw_refs = []
+    youtube_references = [
+        {
+            'title': str(ref.get('title') or '')[:MAX_STORYBOARD_SECTION_CHARS],
+            'url': str(ref.get('url') or '')[:2000],
+        }
+        for ref in raw_refs
+        if isinstance(ref, dict) and str(ref.get('url') or '').strip()
+    ]
+
+    snapshot = {
+        'snapshot_id': snapshot_id,
+        'saved_at': datetime.now(timezone.utc).isoformat(),
+        'label': str(data.get('label') or '')[:MAX_STORYBOARD_SECTION_CHARS],
+        'sections': sections,
+        'youtube_references': youtube_references,
+    }
+    PAPER_SNAPSHOTS_DIR.mkdir(parents=True, exist_ok=True)
+    target = PAPER_SNAPSHOTS_DIR / f'{snapshot_id}.json'
+    temporary = target.with_suffix('.json.tmp')
+    temporary.write_text(json.dumps(snapshot, indent=2, ensure_ascii=False))
+    temporary.replace(target)
+    return jsonify({'snapshot_id': snapshot_id, 'path': str(target.relative_to(PAPER_SNAPSHOTS_DIR.parent))})
+
+
+@app.route('/paper/media_queries', methods=['POST'])
+def paper_media_queries():
+    """Dedicated query planner used by Find Footage and Find Sound."""
+    data = request.get_json(silent=True) or {}
+    title = (data.get('title') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
+    if not title:
+        return jsonify({'error': 'title is required'}), 400
+    documentary_mode, err = _parse_documentary_mode(data)
+    if err:
+        return err
+    scene = {
+        'title': title,
+        'act': (data.get('act') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS],
+        'scene_notes': (data.get('scene_notes') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS],
+        'footage_fragment': (data.get('footage_fragment') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS],
+        'scene_techniques': _parse_techniques(data),
+        'narration': (data.get('narration') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS],
+        'narration_entities': data.get('narration_entities') or [],
+        'reference_footage_description': (data.get('reference_footage_description') or '').strip()[:MAX_SKETCH_VISUAL_CHARS],
+        'reference_footage_entities': data.get('reference_footage_entities') or [],
+        'abstract': (data.get('abstract') or '').strip()[:MAX_ABSTRACT_CHARS],
+        'documentary_mode': documentary_mode or '',
+    }
+    if not media_query_client.is_configured():
+        return jsonify({'error': _STORYBOARD_NOT_CONFIGURED_ERROR}), 503
+    try:
+        return jsonify(media_query_client.generate_queries(scene))
+    except MediaQueryLLMCallError as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
 @app.route('/paper/storyboard', methods=['POST'])
 def paper_storyboard():
+    return jsonify({'error': 'This endpoint was replaced by /paper/media_queries; shot generation now plans its own visual.'}), 410
     data = request.get_json(silent=True) or {}
     sections = data.get('sections')
 
@@ -561,9 +722,14 @@ def paper_storyboard():
             'title': title,
             'act': act.strip(),
             'text': (section.get('text') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS],
+            # Optional content/subject anchors (Find Footage sends these so the
+            # stock query matches the track role + any uploaded footage).
+            'role': (section.get('role') or '').strip(),
+            'reference_subject': (section.get('reference_subject') or '').strip()[:MAX_SKETCH_VISUAL_CHARS],
         })
 
     documentary_goal = (data.get('documentary_goal') or '').strip()[:MAX_DOCUMENTARY_GOAL_CHARS]
+    abstract = (data.get('abstract') or '').strip()[:MAX_ABSTRACT_CHARS]
     arc_sections, err = _parse_arc_sections(data)
     if err:
         return err
@@ -596,7 +762,7 @@ def paper_storyboard():
         section['entities'] = entities_by_index[section['index']]
 
     try:
-        storyboard = storyboard_client.generate_storyboard(cleaned, documentary_goal, arc_sections, documentary_mode, techniques=_parse_techniques(data))
+        storyboard = storyboard_client.generate_storyboard(cleaned, documentary_goal, arc_sections, documentary_mode, techniques=_parse_techniques(data), abstract=abstract)
     except StoryboardLLMCallError as exc:
         return jsonify({'error': str(exc)}), 500
 
@@ -689,6 +855,37 @@ _SKETCH_NOT_CONFIGURED_ERROR = (
 _SHOT_FRAME_GAP_SECONDS = 6
 
 
+def _subject_locked_visual(reference_subject, visual, scene_notes='', techniques=None):
+    """Keep content reference separate from authoritative shot direction.
+
+    Shot planning is an LLM hop of its own, so relying only on its rewritten
+    scene_description can dilute or replace the actual filmed subject. This
+    second constraint reaches the image model directly and preserves it even
+    when the generated staging conflicts.
+    """
+    subject = (reference_subject or '').strip()
+    visual = (visual or '').strip()
+    notes = (scene_notes or '').strip()
+    tech = [t.strip() for t in (techniques or []) if isinstance(t, str) and t.strip()]
+    parts = []
+    if notes or tech:
+        direction = []
+        if notes:
+            direction.append(f'Scene notes: {notes[:300]}')
+        if tech:
+            direction.append('Selected techniques: ' + ', '.join(tech))
+        parts.append(
+            'AUTHORITATIVE SHOT DIRECTION — use this for composition, camera angle/movement, staging, '
+            'and lighting; make it clearly visible in the image:\n' + '\n'.join(direction))
+    if subject:
+        parts.append(
+            'CONTENT REFERENCE ONLY — depict these people/objects/setting, but do not copy framing, camera, '
+            f'movement, staging, lighting, or style from the uploaded footage:\n{subject[:300]}')
+    if visual:
+        parts.append('PLANNED FRAME:\n' + visual)
+    return '\n\n'.join(parts)[:MAX_SKETCH_VISUAL_CHARS]
+
+
 @app.route('/paper/generate_sketch', methods=['POST'])
 def paper_generate_sketch():
     data = request.get_json(silent=True) or {}
@@ -733,10 +930,9 @@ def paper_generate_sketch():
 def paper_generate_shot():
     # Narration-driven shot design (see backend/shot_plan_llm.py and
     # js/paper-extract.js's "Generate shot"): from the scene's title + scene
-    # notes + recorded narration, infer one shot (size/movement/narrative
-    # operation + a start frame and end frame), then render both frames as
-    # images. The two frames are shown as an artboard in the UI and hard-cut
-    # into the MP4 (movie_render.render_shot's two-still branch).
+    # notes + recorded narration, infer one shot and render a single held frame.
+    # The response retains two preview URL fields for frontend/export
+    # compatibility, but both point to that same generated image.
     data = request.get_json(silent=True) or {}
 
     try:
@@ -749,9 +945,9 @@ def paper_generate_shot():
     # the whole paper's abstract, so it gets the larger transcript-style cap.
     title = (data.get('title') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
     scene_notes = (data.get('scene_notes') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
+    reference_subject = (data.get('reference_subject') or '').strip()[:MAX_SKETCH_VISUAL_CHARS]
     narration = (data.get('narration') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS]
     act_title = (data.get('act_title') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
-    abstract = (data.get('abstract') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS]
 
     documentary_mode, err = _parse_documentary_mode(data)
     if err:
@@ -762,45 +958,275 @@ def paper_generate_shot():
     if not shot_plan_client.is_configured() or not sketch_client.is_configured():
         return jsonify({'error': _SKETCH_NOT_CONFIGURED_ERROR}), 503
 
+    abstract = (data.get('abstract') or '').strip()[:MAX_ABSTRACT_CHARS]
+    role = (data.get('role') or '').strip()
+    reference_subject = (data.get('reference_subject') or '').strip()[:MAX_SKETCH_VISUAL_CHARS]
+    scene_techniques = _parse_techniques(data)
+
     try:
         shot_plan = shot_plan_client.generate_shot_plan(
-            title, scene_notes, narration, act_title, abstract, documentary_mode, techniques=_parse_techniques(data))
+            title, scene_notes, narration, act_title, documentary_mode,
+            techniques=scene_techniques, moodboard=_parse_moodboard_profiles(data),
+            abstract=abstract, role=role, reference_subject=reference_subject)
     except ShotPlanLLMCallError as exc:
         return jsonify({'error': str(exc)}), 500
 
+    visual_description = (shot_plan.get('visual_description') or '').strip()
+    frame_prompt = _subject_locked_visual(
+        reference_subject, visual_description, scene_notes, scene_techniques)
+    reference_sketch_path = resolve_static_preview_path(data.get('reference_sketch_url'))
+    # Open-slot footage/video references take precedence; paper figures arrive
+    # as embedded data URLs rather than premiere_exports paths and are the
+    # fallback when no uploaded sketch/video reference is present.
+    if reference_sketch_path is None:
+        reference_sketch_path = _resolve_video_reference_image(data, project_id, section_index)
+    if reference_sketch_path is None and data.get('reference_figure_data_url'):
+        reference_sketch_path = _decode_figure_data_url(
+            data.get('reference_figure_data_url'), premiere_sketch_dir(project_id),
+            f'{section_index}_figure_reference')
+
+    # Framing directive (shot size + perspective/techniques) so the still actually
+    # composes the specified shot rather than a generic mid-frame.
+    framing = framing_directive(shot_plan.get('shot_size'), scene_techniques)
+
+    # A SINGLE frame per shot (a held composition) - one image call. It's reused
+    # as both the start and end preview so the timeline and MP4 render keep their
+    # existing start/end shape without a second generation.
     try:
-        start_png = sketch_client.generate_sketch(
-            shot_plan['start_frame'][:MAX_SKETCH_VISUAL_CHARS], documentary_mode, style='shot_frame')
-        # Space the two frame calls out so the pair doesn't burst the image
-        # model's per-minute limit ("resources have been exhausted") - cheaper
-        # than relying on the retry/backoff in sketch_llm to recover after the
-        # fact. See _SHOT_FRAME_GAP_SECONDS.
-        time.sleep(_SHOT_FRAME_GAP_SECONDS)
-        end_png = sketch_client.generate_sketch(
-            shot_plan['end_frame'][:MAX_SKETCH_VISUAL_CHARS], documentary_mode, style='shot_frame')
+        if reference_sketch_path is not None:
+            sketch_guidance = (
+                ' Uploaded footage remains authoritative for the subject/content; use this visual reference as a secondary guide.'
+                if reference_subject else
+                ' Treat this uploaded sketch or attached paper figure as the authoritative visual reference for the subject, objects, and setting.'
+            )
+            frame_png = sketch_client.generate_sketch_from_image(
+                reference_sketch_path.read_bytes(),
+                f'Shot framing: {framing}. {frame_prompt}{sketch_guidance}',
+                documentary_mode, style='shot_frame')
+        else:
+            frame_png = sketch_client.generate_sketch(
+                frame_prompt, documentary_mode, style='shot_frame', framing=framing)
+    except SketchLLMCallError as exc:
+        return jsonify({'error': str(exc)}), 500
+
+    # An optional shot_index disambiguates the filenames when a scene has a
+    # SEQUENCE of shots (one per dragged technique - see js/paper-extract.js's
+    # runGenerateShot); omitted, it's the legacy single shot at {section}_start.
+    try:
+        shot_index = int(data.get('shot_index'))
+    except (TypeError, ValueError):
+        shot_index = None
+    suffix = f'_{shot_index}' if shot_index is not None else ''
+
+    sketch_dir = premiere_sketch_dir(project_id)
+    sketch_dir.mkdir(parents=True, exist_ok=True)
+    frame_path = sketch_dir / f'{section_index}{suffix}_start.png'
+    frame_path.write_bytes(frame_png)
+
+    url = '/' + frame_path.relative_to(PREMIERE_EXPORTS_DIR.parent).as_posix()
+
+    return jsonify({
+        'project_id': project_id,
+        'shot_plan': shot_plan,
+        'start_preview_url': url,
+        'end_preview_url': url,
+    })
+
+
+@app.route('/paper/generate_shot_video', methods=['POST'])
+def paper_generate_shot_video():
+    # Animate the exact image the presenter selected from the examples gallery.
+    # No new shot-plan or image-generation hop: the selected plan's movement,
+    # narrative operation, notes, and scene-only techniques guide image-to-video.
+    data = request.get_json(silent=True) or {}
+
+    try:
+        section_index = int(data.get('section_index'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'section_index is required and must be an integer'}), 400
+
+    scene_notes = (data.get('scene_notes') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
+    reference_subject = (data.get('reference_subject') or '').strip()[:MAX_SKETCH_VISUAL_CHARS]
+
+    documentary_mode, err = _parse_documentary_mode(data)
+    if err:
+        return err
+
+    project_id = (data.get('project_id') or '').strip() or next_premiere_project_id()
+
+    if not animate_client.is_configured():
+        return jsonify({'error': _ANIMATE_NOT_CONFIGURED_ERROR}), 503
+
+    scene_techniques = _parse_techniques(data)
+    chosen_path = resolve_static_preview_path(data.get('chosen_image_url'))
+    if not _is_readable_image(chosen_path):
+        chosen_path = _resolve_video_reference_image(data, project_id, section_index)
+    if chosen_path is None:
+        return jsonify({'error': 'Choose an image or provide an open-slot video with a readable frame'}), 400
+
+    movement = (data.get('movement') or '').strip()
+    narrative_operation = (data.get('narrative_operation') or '').strip()[:80]
+    shot_size = (data.get('shot_size') or '').strip()
+    purpose = (data.get('purpose') or '').strip()[:500]
+    visual_description = (data.get('visual_description') or '').strip()[:MAX_SKETCH_VISUAL_CHARS]
+    framing = framing_directive(shot_size, scene_techniques)
+    shot_plan = {
+        'shot_size': shot_size,
+        'movement': movement,
+        'narrative_operation': narrative_operation,
+        'purpose': purpose,
+        'visual_description': visual_description,
+    }
+    try:
+        chosen_image_bytes = chosen_path.read_bytes()
+        mp4_bytes = animate_client.generate_shot_video(
+            chosen_image_bytes, movement, documentary_mode, framing=framing,
+            scene_notes=scene_notes, techniques=scene_techniques,
+            narrative_operation=narrative_operation,
+            visual_description=visual_description,
+            reference_subject=reference_subject)
+    except (OSError, AnimateLLMCallError) as exc:
+        return jsonify({'error': str(exc)}), 500
+
+    animated_dir = premiere_animated_sketch_dir(project_id)
+    animated_dir.mkdir(parents=True, exist_ok=True)
+    # Keep every generation as a distinct asset. Reusing `<section>_shot.mp4`
+    # made a second preview overwrite the first file, so previously appended
+    # gallery cards silently played the newest video instead.
+    generation_id = uuid.uuid4().hex
+    saved_path = animated_dir / f'{section_index}_{generation_id}_shot.mp4'
+    poster_path = animated_dir / f'{section_index}_{generation_id}_shot_poster.png'
+    poster_path.write_bytes(chosen_image_bytes)
+    saved_path.write_bytes(mp4_bytes)
+    remux_for_reliable_playback(saved_path)
+
+    return jsonify({
+        'project_id': project_id,
+        'shot_plan': shot_plan,
+        'preview_url': '/' + saved_path.relative_to(PREMIERE_EXPORTS_DIR.parent).as_posix(),
+        'thumbnail_url': '/' + poster_path.relative_to(PREMIERE_EXPORTS_DIR.parent).as_posix(),
+    })
+
+
+# Batch of example options per shot (see js/paper-extract.js's Generate-examples
+# flow): ~N cheap still frames + one Veo clip, all from the same shot plan and
+# framing, for the presenter to pick from.
+MAX_SHOT_EXAMPLES = 6
+
+
+@app.route('/paper/generate_shot_examples', methods=['POST'])
+def paper_generate_shot_examples():
+    data = request.get_json(silent=True) or {}
+
+    try:
+        section_index = int(data.get('section_index'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'section_index is required and must be an integer'}), 400
+
+    title = (data.get('title') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
+    act_title = (data.get('act_title') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
+
+    scene_notes = (data.get('scene_notes') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
+    role = (data.get('role') or '').strip()
+    documentary_mode, err = _parse_documentary_mode(data)
+    if err:
+        return err
+    scene_techniques = _parse_techniques(data)
+
+    narration = (data.get('narration') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS]
+    # Content/subject anchors: the paper abstract, the track role (Primary vs
+    # Cutaway), the uploaded-footage subject, and a visual frame/thumbnail when
+    # the open slot contains video.
+    abstract = (data.get('abstract') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
+    reference_subject = (data.get('reference_subject') or '').strip()[:MAX_SKETCH_VISUAL_CHARS]
+    project_id = (data.get('project_id') or '').strip() or next_premiere_project_id()
+    reference_sketch_path = resolve_static_preview_path(data.get('reference_sketch_url'))
+    if reference_sketch_path is None:
+        reference_sketch_path = _resolve_video_reference_image(data, project_id, section_index)
+    if reference_sketch_path is None and data.get('reference_figure_data_url'):
+        reference_sketch_path = _decode_figure_data_url(
+            data.get('reference_figure_data_url'), premiere_sketch_dir(project_id),
+            f'{section_index}_figure_reference')
+
+    try:
+        count = int(data.get('count') or 4)
+    except (TypeError, ValueError):
+        count = 4
+    count = max(1, min(count, MAX_SHOT_EXAMPLES))
+    want_video = data.get('video') is not False  # default True
+
+    if not (shot_plan_client.is_configured() and sketch_client.is_configured()):
+        return jsonify({'error': _SKETCH_NOT_CONFIGURED_ERROR}), 503
+
+    # Ask the planner for distinct narrative operations and camera pairings in
+    # one call. Narration grounds them when present; without it, the prompt
+    # deliberately samples a varied set of possibilities.
+    example_wildness = 0.7
+    try:
+        shot_plans = shot_plan_client.generate_shot_plan(
+            title, scene_notes, narration, act_title, documentary_mode,
+            techniques=scene_techniques, moodboard=_parse_moodboard_profiles(data),
+            abstract=abstract, role=role, reference_subject=reference_subject,
+            wildness=example_wildness, count=count, return_all=True)
+    except ShotPlanLLMCallError as exc:
+        return jsonify({'error': str(exc)}), 500
+
+    boldness = wildness_directive(example_wildness, reference_subject)
+    specs = []
+    for plan in shot_plans:
+        visual = (plan.get('visual_description') or '').strip() or abstract
+        if boldness:
+            visual = f'{visual}\n\n{boldness}'
+        visual = _subject_locked_visual(
+            reference_subject, visual, scene_notes, scene_techniques)
+        specs.append({
+            'visual': visual,
+            'framing': framing_directive(plan['shot_size'], scene_techniques),
+        })
+
+    try:
+        example_pngs = sketch_client.generate_examples(
+            specs, documentary_mode, style='shot_frame',
+            reference_image_bytes=(reference_sketch_path.read_bytes() if reference_sketch_path else None))
     except SketchLLMCallError as exc:
         return jsonify({'error': str(exc)}), 500
 
     sketch_dir = premiere_sketch_dir(project_id)
     sketch_dir.mkdir(parents=True, exist_ok=True)
-    start_path = sketch_dir / f'{section_index}_start.png'
-    end_path = sketch_dir / f'{section_index}_end.png'
-    start_path.write_bytes(start_png)
-    end_path.write_bytes(end_png)
-
-    def _preview_url(p):
-        return '/' + p.relative_to(PREMIERE_EXPORTS_DIR.parent).as_posix()
+    examples = []
+    generation_id = uuid.uuid4().hex
+    for i, (png, plan) in enumerate(zip(example_pngs, shot_plans)):
+        if png is None:
+            continue  # this variant's generation failed - skip it, keep the rest
+        # Never reuse a scene/example filename. A pinned card keeps its URL;
+        # overwriting a fixed `<section>_ex{i}.png` would silently replace the
+        # pinned image's pixels on the next regeneration even though its card
+        # metadata remained in pinnedExamples.
+        p = sketch_dir / f'{section_index}_{generation_id}_ex{i}.png'
+        p.write_bytes(png)
+        preview_url = '/' + p.relative_to(PREMIERE_EXPORTS_DIR.parent).as_posix()
+        examples.append({
+            'preview_url': preview_url,
+            'thumbnail_url': preview_url,
+            'kind': 'image',
+            'label': plan['narrative_operation'].replace('_', ' ').title(),
+            'shot_size': plan['shot_size'],
+            'movement': plan['movement'],
+            'narrative_operation': plan['narrative_operation'],
+            'purpose': plan['purpose'],
+            'visual_description': plan['visual_description'],
+        })
 
     return jsonify({
         'project_id': project_id,
-        'shot_plan': shot_plan,
-        'start_preview_url': _preview_url(start_path),
-        'end_preview_url': _preview_url(end_path),
+        'shot_plan': shot_plans[0],
+        'examples': examples,
     })
 
 
 @app.route('/paper/generate_cutaways', methods=['POST'])
 def paper_generate_cutaways():
+    return jsonify({'error': 'Expository scenes now use the standard shot-plan, sketch, and animation pipeline.'}), 410
     # B-roll cutaways for an expository scene's voice-of-god narration (see
     # backend/cutaway_llm.py and js/paper-extract.js's Generate-shot flow for
     # an expository scene): infer the narration's important phrases/entities,
@@ -817,7 +1243,10 @@ def paper_generate_cutaways():
     narration = (data.get('narration') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS]
     title = (data.get('title') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
     scene_notes = (data.get('scene_notes') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
+    act_title = (data.get('act_title') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
     abstract = (data.get('abstract') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS]
+    reference_subject = (data.get('reference_subject') or '').strip()[:MAX_SKETCH_VISUAL_CHARS]
+    scene_techniques = _parse_techniques(data)
 
     documentary_mode, err = _parse_documentary_mode(data)
     if err:
@@ -829,14 +1258,22 @@ def paper_generate_cutaways():
         return jsonify({'error': _SKETCH_NOT_CONFIGURED_ERROR}), 503
 
     try:
-        cutaways = cutaway_client.generate_cutaways(narration, title, scene_notes, abstract, documentary_mode, techniques=_parse_techniques(data))
+        cutaways = cutaway_client.generate_cutaways(
+            narration, scene_notes, abstract, documentary_mode, reference_subject,
+            title, act_title)
     except CutawayLLMCallError as exc:
         return jsonify({'error': str(exc)}), 500
+
+    # Techniques steer the cutaway stills' COMPOSITION (framing/lighting) - same
+    # framing directive the regular shots + the eval matrix use - even though
+    # cutaways have no shot_size of their own (motion_type drives the move).
+    cutaway_framing = framing_directive(None, scene_techniques)
 
     sketch_dir = premiere_sketch_dir(project_id)
     sketch_dir.mkdir(parents=True, exist_ok=True)
 
     result = []
+    last_error = None
     for i, cut in enumerate(cutaways):
         if i:
             # Space the per-cutaway image calls so the batch doesn't burst the
@@ -844,9 +1281,16 @@ def paper_generate_cutaways():
             time.sleep(_SHOT_FRAME_GAP_SECONDS)
         try:
             png = sketch_client.generate_sketch(
-                cut['background_visual'][:MAX_SKETCH_VISUAL_CHARS], documentary_mode, style='shot_frame')
+                _subject_locked_visual(
+                    reference_subject, cut['background_visual'], scene_notes, scene_techniques),
+                documentary_mode,
+                style='shot_frame', framing=cutaway_framing)
         except SketchLLMCallError as exc:
-            return jsonify({'error': str(exc)}), 500
+            # A transient empty/failed image response on ONE cutaway shouldn't
+            # sink the whole batch - skip it and keep the rest (same tolerance
+            # as generate_examples). Raise only if EVERY cutaway failed (below).
+            last_error = exc
+            continue
         saved = sketch_dir / f'{section_index}_cutaway_{i}.png'
         saved.write_bytes(png)
         result.append({
@@ -854,6 +1298,9 @@ def paper_generate_cutaways():
             'motion_type': cut['motion_type'],
             'preview_url': '/' + saved.relative_to(PREMIERE_EXPORTS_DIR.parent).as_posix(),
         })
+
+    if not result:
+        return jsonify({'error': f'Cutaway still generation failed: {last_error}'}), 500
 
     return jsonify({'project_id': project_id, 'cutaways': result})
 
@@ -1029,6 +1476,10 @@ def media_search_video():
     # would be as slow as its slowest provider times three.
     data = request.get_json(silent=True) or {}
     query = (data.get('query') or '').strip()
+    try:
+        min_duration_seconds = max(0.0, float(data.get('min_duration_seconds') or 0))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'min_duration_seconds must be a number'}), 400
 
     if not query:
         return jsonify({'error': 'query is required'}), 400
@@ -1050,13 +1501,29 @@ def media_search_video():
             except StockMediaCallError as exc:
                 errors.append(f'{source}: {exc}')
 
+    # A clip shorter than the requested narration/phrase window would loop or
+    # expose a provider's end-of-stream black frame in playback. Providers
+    # that do not publish duration metadata are kept when no minimum was
+    # requested, but are excluded from a duration-constrained search because
+    # their length cannot be validated safely.
+    if min_duration_seconds > 0:
+        filtered_videos = []
+        for video in videos:
+            try:
+                duration = float(video.get('duration'))
+            except (TypeError, ValueError):
+                continue
+            if duration >= min_duration_seconds:
+                filtered_videos.append(video)
+        videos = filtered_videos
+
     # Only a total failure (every provider errored, none returned even a
     # partial result) is worth surfacing as an error - one provider being
     # down/misconfigured shouldn't hide results the others found fine.
     if not videos and errors:
         return jsonify({'error': '; '.join(errors)}), 500
 
-    return jsonify({'videos': videos})
+    return jsonify({'videos': videos, 'min_duration_seconds': min_duration_seconds})
 
 
 @app.route('/media/search_audio', methods=['POST'])
@@ -1102,14 +1569,84 @@ def premiere_upload_footage():
     saved_path.write_bytes(footage_bytes)
     remux_for_reliable_playback(saved_path)
 
+    # A real opening-frame poster gives immediate visual confirmation of what
+    # was uploaded, even before the browser has decoded any video metadata.
+    thumbnail_path = moodboard_media.extract_first_frame(
+        saved_path, footage_dir / f'{section_index}_thumbnail.jpg')
+
+    # Describe the SUBJECT the presenter actually filmed (best-effort: several
+    # sampled frames -> a concise, stable vision read) so future generated shot
+    # examples/videos for this scene can match that subject. Never fatal.
+    footage_subject = ''
+    try:
+        subj_frames = moodboard_media.sample_frames(saved_path, footage_dir / f'{section_index}_subj', count=4)
+        if subj_frames:
+            footage_subject = moodboard_client.describe_subject(
+                moodboard_media.frames_to_data_urls(subj_frames))
+    except Exception:
+        footage_subject = ''
+
     # premiere_exports/ is served statically by the same server serving
     # html/js/css (see premiere-plugin/README.md) - a path relative to the
     # repo root, not footage_path's absolute filesystem path (which is what
     # Premiere itself needs), lets index.html preview the upload in a
     # <video> tag.
     preview_url = '/' + saved_path.relative_to(PREMIERE_EXPORTS_DIR.parent).as_posix()
+    thumbnail_url = (
+        '/' + thumbnail_path.relative_to(PREMIERE_EXPORTS_DIR.parent).as_posix()
+        if thumbnail_path else ''
+    )
 
-    return jsonify({'project_id': project_id, 'footage_path': str(saved_path), 'preview_url': preview_url})
+    return jsonify({'project_id': project_id, 'footage_path': str(saved_path),
+                    'preview_url': preview_url, 'thumbnail_url': thumbnail_url,
+                    'footage_subject': footage_subject})
+
+
+@app.route('/premiere/upload_sketch', methods=['POST'])
+def premiere_upload_sketch():
+    """Store a presenter-supplied scene sketch as a normalized PNG."""
+    uploaded = request.files.get('file')
+    if uploaded is None or not uploaded.filename:
+        return jsonify({'error': 'file is required'}), 400
+    try:
+        section_index = int(request.form.get('section_index'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'section_index is required and must be an integer'}), 400
+    raw = uploaded.read()
+    if not raw or len(raw) > 25 * 1024 * 1024:
+        return jsonify({'error': 'sketch must be a non-empty image under 25MB'}), 400
+    try:
+        image = Image.open(io.BytesIO(raw))
+        image.load()
+        image = image.convert('RGBA')
+    except Exception:
+        return jsonify({'error': 'sketch must be a valid PNG, JPEG, or WebP image'}), 400
+
+    project_id = (request.form.get('project_id') or '').strip() or next_premiere_project_id()
+    sketch_dir = premiere_sketch_dir(project_id)
+    sketch_dir.mkdir(parents=True, exist_ok=True)
+    saved_path = sketch_dir / f'{section_index}_uploaded.png'
+    image.save(saved_path, format='PNG', optimize=True)
+    # Use the same best-effort vision subject read as uploaded video. The
+    # returned description pre-populates the editable subject field, so the
+    # presenter can correct it before regenerating examples.
+    sketch_subject = ''
+    try:
+        if moodboard_client.is_configured():
+            subject_image = image.convert('RGB').copy()
+            resampling = getattr(Image, 'Resampling', Image)
+            subject_image.thumbnail((1280, 1280), resampling.LANCZOS)
+            subject_buffer = io.BytesIO()
+            subject_image.save(subject_buffer, format='JPEG', quality=86, optimize=True)
+            subject_data_url = 'data:image/jpeg;base64,' + base64.b64encode(subject_buffer.getvalue()).decode('ascii')
+            sketch_subject = moodboard_client.describe_subject([subject_data_url], content_type='sketch')
+    except Exception:
+        sketch_subject = ''
+    preview_url = '/' + saved_path.relative_to(PREMIERE_EXPORTS_DIR.parent).as_posix()
+    return jsonify({'project_id': project_id, 'sketch_path': str(saved_path),
+                    'preview_url': preview_url, 'sketch_subject': sketch_subject,
+                    # Keep the shared upload response field for older clients.
+                    'footage_subject': sketch_subject})
 
 
 _STOCK_MEDIA_EXTENSION_RE = re.compile(r'^[a-z0-9]{1,5}$')
@@ -1141,6 +1678,15 @@ def premiere_download_stock_media():
         return jsonify({'error': 'url is required'}), 400
 
     project_id = (data.get('project_id') or '').strip() or next_premiere_project_id()
+    try:
+        min_duration_seconds = max(0.0, float(data.get('min_duration_seconds') or 0))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'min_duration_seconds must be a number'}), 400
+    # Act-board footage is selected per node, so section_index alone is not a
+    # unique filename. A stable, sanitized asset id prevents one Pexels pick
+    # from overwriting another and lets the browser reuse the same local file
+    # on subsequent playback/export passes.
+    asset_id = re.sub(r'[^A-Za-z0-9_-]+', '_', str(data.get('asset_id') or '')).strip('_')[:80]
 
     # Extension from the URL's own path if it looks like a real one,
     # otherwise a sane default per kind - a Freesound/Pexels/archive.org
@@ -1150,7 +1696,8 @@ def premiere_download_stock_media():
 
     stock_dir = premiere_stock_media_dir(project_id)
     stock_dir.mkdir(parents=True, exist_ok=True)
-    saved_path = stock_dir / f'{section_index}_{kind}.{extension}'
+    stem = f'{section_index}_{kind}' + (f'_{asset_id}' if asset_id else '')
+    saved_path = stock_dir / f'{stem}.{extension}'
 
     try:
         download_stock_media_to_disk(url, saved_path)
@@ -1158,9 +1705,33 @@ def premiere_download_stock_media():
         return jsonify({'error': f'Could not download media: {exc}'}), 502
     remux_for_reliable_playback(saved_path)
 
-    preview_url = '/' + saved_path.relative_to(PREMIERE_EXPORTS_DIR.parent).as_posix()
+    actual_duration = movie_render.probe_duration(saved_path)
+    if (kind == 'video' and min_duration_seconds > 0
+            and (actual_duration is None or actual_duration + 0.05 < min_duration_seconds)):
+        try:
+            saved_path.unlink()
+        except OSError:
+            pass
+        return jsonify({
+            'error': f'The selected footage is only {actual_duration or 0:.1f}s; '
+                     f'a minimum of {min_duration_seconds:.1f}s is required.'
+        }), 422
 
-    return jsonify({'project_id': project_id, 'preview_url': preview_url})
+    preview_url = '/' + saved_path.relative_to(PREMIERE_EXPORTS_DIR.parent).as_posix()
+    thumbnail_url = ''
+    if kind == 'video':
+        thumbnail_path = moodboard_media.extract_first_frame(
+            saved_path, stock_dir / f'{stem}_thumbnail.jpg')
+        if thumbnail_path:
+            thumbnail_url = '/' + thumbnail_path.relative_to(PREMIERE_EXPORTS_DIR.parent).as_posix()
+
+    return jsonify({
+        'project_id': project_id,
+        'preview_url': preview_url,
+        'file_path': str(saved_path),
+        'duration_seconds': actual_duration,
+        'thumbnail_url': thumbnail_url,
+    })
 
 
 @app.route('/premiere/upload_narration', methods=['POST'])
@@ -1229,18 +1800,27 @@ def premiere_upload_media_bank_item():
     # http.server hosting html/js/css, not the Flask backend itself.
     preview_url = '/' + saved_path.relative_to(PREMIERE_EXPORTS_DIR.parent).as_posix()
 
-    return jsonify({'project_id': project_id, 'preview_url': preview_url})
+    return jsonify({
+        'project_id': project_id, 'preview_url': preview_url,
+        'file_path': str(saved_path),
+        'duration_seconds': movie_render.probe_duration(saved_path),
+    })
 
 
 @app.route('/premiere/export', methods=['POST'])
 def premiere_export():
     data = request.get_json(silent=True) or {}
     sections = data.get('sections')
+    sound_effect_specs = data.get('sound_effects') or []
+    narration_specs = data.get('narrations') or []
 
     if not isinstance(sections, list) or not sections:
         return jsonify({'error': 'sections is required and must be a non-empty list'}), 400
 
     project_id = (data.get('project_id') or '').strip() or next_premiere_project_id()
+    project_dir_path = premiere_project_dir(project_id)
+    project_dir_path.mkdir(parents=True, exist_ok=True)
+    figures_dir = project_dir_path / 'premiere_figures'
 
     shots = []
     for i, section in enumerate(sections):
@@ -1255,31 +1835,99 @@ def premiere_export():
 
         selected_video = section.get('selected_video') or {}
         selected_audio = section.get('selected_audio') or {}
+        uploaded_path = section.get('uploaded_footage_path') or None
+        footage_path = uploaded_path if uploaded_path and Path(uploaded_path).is_file() else None
+        if footage_path is None:
+            visual = resolve_static_preview_path(section.get('visual_preview_url'))
+            if visual is None:
+                visual = resolve_static_preview_path(
+                    selected_video.get('localPreviewUrl') or selected_video.get('local_preview_url'))
+            if visual is not None:
+                footage_path = str(visual)
+        if footage_path is None and section.get('figure_image_data_url'):
+            figure = _decode_figure_data_url(
+                section.get('figure_image_data_url'), figures_dir, f'{index}_{i}')
+            if figure is not None:
+                footage_path = str(figure)
+
+        narration = resolve_static_preview_path(section.get('narration_audio_path'))
+        start_seconds = section.get('start_seconds')
         shots.append({
             'index': index,
+            'cutaway_index': section.get('cutaway_index'),
             'title': title,
             'act': act,
+            'role': section.get('role') if section.get('role') in ('aRoll', 'bRoll') else 'aRoll',
+            'start_seconds': float(start_seconds) if isinstance(start_seconds, (int, float)) and start_seconds >= 0 else None,
             'narration': (section.get('narration') or '').strip(),
-            # Real local path to the recorded/dragged narration audio (see
-            # js/paper-extract.js's runExportForPremiere) - written here too,
-            # even though the plugin itself has no audio support yet, so
-            # this file doesn't silently drop the one piece of audio every
-            # other pipeline (the ffmpeg render in particular) depends on.
-            'narration_audio_path': section.get('narration_audio_path') or None,
+            # Real local path to the recorded/dragged narration audio. The
+            # independently-timed SFX clips live in top-level sound_effects;
+            # narration remains shot-scoped for backward compatibility.
+            'narration_audio_path': str(narration) if narration else None,
+            'narration_duration_seconds': section.get('narration_duration_seconds'),
             # Uploaded footage (a real local path this machine's Premiere can
             # import directly) takes priority; otherwise this just notes
             # which Pexels clip was picked - the file itself isn't
             # downloaded/mirrored here, per Pexels' terms and simplicity.
-            'footage_path': section.get('uploaded_footage_path') or None,
+            'footage_path': footage_path,
             'stock_video_source_url': selected_video.get('source_url'),
             'stock_audio_preview_url': selected_audio.get('preview_url'),
             'edit_plan': section.get('edit_plan') or None,
         })
 
-    project_dir_path = premiere_project_dir(project_id)
-    project_dir_path.mkdir(parents=True, exist_ok=True)
+    sound_effects = []
+    if not isinstance(sound_effect_specs, list):
+        return jsonify({'error': 'sound_effects must be a list'}), 400
+    for i, effect in enumerate(sound_effect_specs):
+        if not isinstance(effect, dict):
+            return jsonify({'error': f'sound_effect {i} must be an object'}), 400
+        resolved = resolve_static_preview_path(effect.get('preview_url'))
+        start = effect.get('start_seconds')
+        source_start = effect.get('source_start_seconds', 0)
+        duration = effect.get('duration_seconds')
+        lane = effect.get('lane')
+        if resolved is None or not isinstance(start, (int, float)) or start < 0:
+            return jsonify({'error': f'sound_effect {i} has an invalid preview_url or start_seconds'}), 400
+        if (not isinstance(source_start, (int, float)) or source_start < 0
+                or not isinstance(duration, (int, float)) or duration <= 0
+                or not isinstance(lane, int) or lane < 0):
+            return jsonify({'error': f'sound_effect {i} has an invalid source_start_seconds, duration_seconds, or lane'}), 400
+        sound_effects.append({
+            'section_index': effect.get('section_index'),
+            'name': (effect.get('name') or resolved.name).strip(),
+            'file_path': str(resolved),
+            'start_seconds': float(start),
+            'source_start_seconds': float(source_start),
+            'duration_seconds': float(duration),
+            'lane': lane,
+        })
+
+    narrations = []
+    if not isinstance(narration_specs, list):
+        return jsonify({'error': 'narrations must be a list'}), 400
+    for i, narration in enumerate(narration_specs):
+        if not isinstance(narration, dict):
+            return jsonify({'error': f'narration {i} must be an object'}), 400
+        resolved = resolve_static_preview_path(narration.get('preview_url'))
+        start = narration.get('start_seconds')
+        source_start = narration.get('source_start_seconds', 0)
+        duration = narration.get('duration_seconds')
+        lane = narration.get('lane')
+        if (resolved is None or not isinstance(start, (int, float)) or start < 0
+                or not isinstance(source_start, (int, float)) or source_start < 0
+                or not isinstance(duration, (int, float)) or duration <= 0
+                or not isinstance(lane, int) or lane < 0):
+            return jsonify({'error': f'narration {i} has invalid timing, lane, or preview_url'}), 400
+        narrations.append({
+            'section_index': narration.get('section_index'),
+            'name': (narration.get('name') or resolved.name).strip(),
+            'file_path': str(resolved), 'start_seconds': float(start),
+            'source_start_seconds': float(source_start),
+            'duration_seconds': float(duration), 'lane': lane,
+        })
+
     edit_plan_path = project_dir_path / 'edit_plan.json'
-    edit_plan_path.write_text(json.dumps({'shots': shots}, indent=2))
+    edit_plan_path.write_text(json.dumps({'shots': shots, 'narrations': narrations, 'sound_effects': sound_effects}, indent=2))
 
     return jsonify({
         'project_id': project_id,
@@ -1322,13 +1970,79 @@ def _decode_figure_data_url(data_url, dest_dir, index):
     return dest_path
 
 
+def _is_readable_image(path):
+    """Return whether *path* is a decodable still image, without trusting its
+    filename extension (a dragged/generated video may carry a thumbnail URL,
+    while older sessions sometimes stored the video URL in that field)."""
+    if not path or not path.is_file():
+        return False
+    try:
+        with Image.open(path) as image:
+            image.verify()
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def _resolve_video_reference_image(data, project_id, section_index):
+    """Resolve an open-slot video's thumbnail, or extract its first frame.
+
+    Uploads normally provide ``reference_video_thumbnail_url`` immediately.
+    A generated video dragged into the slot may only have its MP4 URL, so the
+    fallback samples a real frame under the current Premiere project and
+    returns that still for the image model.
+    """
+    thumbnail_path = resolve_static_preview_path(data.get('reference_video_thumbnail_url'))
+    if _is_readable_image(thumbnail_path):
+        return thumbnail_path
+
+    video_path = resolve_static_preview_path(data.get('reference_video_url'))
+    if not video_path:
+        return None
+    frame_path = premiere_sketch_dir(project_id) / f'{section_index}_video_reference.jpg'
+    return moodboard_media.extract_first_frame(video_path, frame_path)
+
+
+def _resolve_board_media(media_url, project_id, sequence_index, footage_index):
+    """Resolve a linked act-board visual to a local renderable file.
+
+    Board footage suggestions may still be remote search results, while
+    generated/uploaded visuals are already served from the local Premiere
+    export tree. Resolve local files first; download a remote suggestion only
+    when the board sequence is actually rendered.
+    """
+    local = resolve_static_preview_path(media_url)
+    if local is not None:
+        return local
+    url = (media_url or '').strip()
+    if not url.startswith(('http://', 'https://')):
+        return None
+    path = urlparse(url).path
+    extension = Path(path).suffix.lstrip('.').lower()
+    if not _STOCK_MEDIA_EXTENSION_RE.match(extension):
+        extension = 'mp4'
+    target_dir = premiere_stock_media_dir(project_id) / 'act_board'
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / f'{sequence_index}_{footage_index}.{extension}'
+    try:
+        download_stock_media_to_disk(url, target)
+        if extension not in ('jpg', 'jpeg', 'png', 'webp', 'bmp'):
+            remux_for_reliable_playback(target)
+    except (requests.RequestException, ValueError, OSError):
+        return None
+    return target if target.is_file() and target.stat().st_size > 0 else None
+
+
 @app.route('/render/start', methods=['POST'])
 def render_start():
     # Kicks off a server-side ffmpeg assembly of a real documentary.mp4 (see
     # backend/movie_render.py) - the automated counterpart to /premiere/export
-    # above, which only writes a plan for a human to finish in Premiere. Same
-    # per-section payload shape /premiere/export accepts, plus the resolved
-    # local preview_urls for the chosen visual/narration/sound-effect (all
+    # above, which only writes a plan for a human to finish in Premiere. It
+    # also accepts an optional board_sequences graph: linked act-board footage
+    # nodes become the ordered shots, while narration events are mixed over
+    # their complete sequence. Same per-section payload shape /premiere/export
+    # accepts, plus the resolved local preview_urls for the chosen visual/
+    # narration/sound-effect (all
     # already downloaded to disk by the time a render is possible - see
     # /premiere/download_stock_media and the upload routes). Resolves + fully
     # validates every path synchronously (so a bad shot fails the request,
@@ -1336,8 +2050,15 @@ def render_start():
     # returns immediately; the frontend polls /render/status.
     data = request.get_json(silent=True) or {}
     sections = data.get('sections')
-    if not isinstance(sections, list) or not sections:
-        return jsonify({'error': 'sections is required and must be a non-empty list'}), 400
+    board_sequences = data.get('board_sequences') or []
+    sound_effect_specs = data.get('sound_effects') or []
+    narration_specs = data.get('narrations') or []
+    if not isinstance(sections, list):
+        sections = []
+    if not isinstance(board_sequences, list):
+        return jsonify({'error': 'board_sequences must be a list'}), 400
+    if not sections and not board_sequences:
+        return jsonify({'error': 'sections or board_sequences is required and must be non-empty'}), 400
 
     project_id = (data.get('project_id') or '').strip() or next_premiere_project_id()
     project_dir_path = premiere_project_dir(project_id)
@@ -1345,7 +2066,90 @@ def render_start():
     figures_dir = project_dir_path / 'render_figures'
 
     shots = []
-    for i, section in enumerate(sections):
+    if board_sequences:
+        for sequence_index, sequence in enumerate(board_sequences):
+            if not isinstance(sequence, dict):
+                return jsonify({'error': f'board_sequence {sequence_index} must be an object'}), 400
+            footage_items = sequence.get('footage') or []
+            if not isinstance(footage_items, list) or not footage_items:
+                return jsonify({'error': f'board_sequence {sequence_index} has no footage nodes'}), 400
+            sequence_start_seconds = sequence.get('start_seconds', 0)
+            if not isinstance(sequence_start_seconds, (int, float)) or sequence_start_seconds < 0:
+                return jsonify({'error': f'board_sequence {sequence_index} has invalid start_seconds'}), 400
+            sequence_duration = sequence.get('duration_seconds')
+            if sequence_duration is not None and (
+                    not isinstance(sequence_duration, (int, float)) or sequence_duration <= 0):
+                return jsonify({'error': f'board_sequence {sequence_index} has invalid duration_seconds'}), 400
+            for footage_index, footage in enumerate(footage_items):
+                if not isinstance(footage, dict):
+                    return jsonify({'error': f'board_sequence {sequence_index} footage {footage_index} must be an object'}), 400
+                duration = footage.get('duration_seconds')
+                if not isinstance(duration, (int, float)) or duration <= 0:
+                    return jsonify({'error': f'board_sequence {sequence_index} footage {footage_index} has invalid duration_seconds'}), 400
+                start_seconds = footage.get('start_seconds', 0)
+                if not isinstance(start_seconds, (int, float)) or start_seconds < 0:
+                    return jsonify({'error': f'board_sequence {sequence_index} footage {footage_index} has invalid start_seconds'}), 400
+                # If the recorded umbrella narration runs a little longer
+                # than its last referenced phrase, hold the final visual
+                # through the end of that narration rather than cutting the
+                # voice off at the last footage duration.
+                render_duration = float(duration)
+                if sequence_duration is not None and footage_index == len(footage_items) - 1:
+                    render_duration = max(
+                        render_duration,
+                        float(sequence_duration) - float(start_seconds),
+                    )
+                visual = _resolve_board_media(
+                    footage.get('media_url'), project_id, sequence_index, footage_index)
+                if visual is None:
+                    return jsonify({'error': f'board_sequence {sequence_index} footage {footage_index} has no usable media'}), 400
+                shots.append({
+                    'visual_path': str(visual),
+                    'start_visual_path': None,
+                    'end_visual_path': None,
+                    'cutaway_paths': [],
+                    'duck_source_audio': bool(narration_specs),
+                    'narration_audio_path': None,
+                    'sfx_audio_path': None,
+                    'duration_seconds': render_duration,
+                    # Board footage timings are relative to the complete
+                    # narration-led sequence. The renderer uses this to
+                    # preserve any gap between spoken fragments instead of
+                    # collapsing every linked shot into a purely sequential
+                    # concat.
+                    'timeline_start_seconds': (
+                        float(sequence_start_seconds)
+                        + float(start_seconds)
+                    ),
+                    'ken_burns': {'enabled': False, 'pan': None},
+                    'text_overlay': None,
+                    'transition_in': footage.get('transition_in') or 'hard_cut',
+                    # Board playback holds the active shot through transcript
+                    # pauses; the renderer uses this to avoid black filler
+                    # between linked footage nodes.
+                    'hold_for_timeline_gaps': True,
+                })
+        # Normalize the board's visual timeline before handing it to the
+        # renderer. Each shot absorbs the pause before the next spoken phrase,
+        # so even an older/restarted worker cannot synthesize a black gap clip
+        # from sparse transcript timestamps. The narration event still keeps
+        # its original absolute timing; only the visual hold is made explicit.
+        board_cursor = 0.0
+        board_shots = [shot for shot in shots if shot.get('hold_for_timeline_gaps')]
+        for board_index, shot in enumerate(board_shots):
+            original_start = float(shot.get('timeline_start_seconds') or 0)
+            duration = max(0.1, float(shot.get('duration_seconds') or 0.1))
+            next_start = None
+            if board_index + 1 < len(board_shots):
+                next_start = float(board_shots[board_index + 1].get('timeline_start_seconds') or 0)
+            if next_start is not None and next_start > original_start:
+                duration = max(duration, next_start - original_start)
+            if original_start > board_cursor:
+                duration += original_start - board_cursor
+            shot['timeline_start_seconds'] = board_cursor
+            shot['duration_seconds'] = duration
+            board_cursor += duration
+    for i, section in enumerate(sections if not board_sequences else []):
         if not isinstance(section, dict):
             return jsonify({'error': f'section {i} must be an object'}), 400
         title = (section.get('title') or '').strip() or f'section {i}'
@@ -1376,7 +2180,19 @@ def render_start():
                 return jsonify({'error': f'section "{title}" has no usable visual - generate or pick one, then try again'}), 400
 
         narration_resolved = resolve_static_preview_path(section.get('narration_audio_path'))
+        # Backward compatibility for saved/older clients that still attach an
+        # effect directly to a shot instead of sending the global event list.
         sfx_resolved = resolve_static_preview_path(section.get('stock_audio_preview_url'))
+
+        # Expository cutaway scenes render every cutaway still in sequence under
+        # the narration (see movie_render.render_shot). Resolve them all; the
+        # renderer only uses this when there are 2+ (a single one falls through
+        # to the plain visual_path still).
+        cutaway_paths = []
+        for cu_url in (section.get('cutaway_preview_urls') or []):
+            resolved_cu = resolve_static_preview_path(cu_url)
+            if resolved_cu is not None:
+                cutaway_paths.append(str(resolved_cu))
 
         edit_plan = section.get('edit_plan') or {}
         ken_burns = edit_plan.get('ken_burns') or {}
@@ -1384,12 +2200,60 @@ def render_start():
             'visual_path': visual_path,
             'start_visual_path': str(start_frame_resolved) if two_frame else None,
             'end_visual_path': str(end_frame_resolved) if two_frame else None,
+            'cutaway_paths': cutaway_paths,
+            # Narration is mixed as an independently timed global event after
+            # the shots are joined. Lower any embedded footage audio whenever
+            # that voice track exists so it remains intelligible in the MP4.
+            'duck_source_audio': bool(narration_specs),
             'narration_audio_path': str(narration_resolved) if narration_resolved else None,
             'sfx_audio_path': str(sfx_resolved) if sfx_resolved else None,
             'duration_seconds': edit_plan.get('duration_seconds'),
             'ken_burns': {'enabled': bool(ken_burns.get('enabled')), 'pan': ken_burns.get('pan')},
             'text_overlay': edit_plan.get('text_overlay') or None,
             'transition_in': edit_plan.get('transition_in') or 'hard_cut',
+        })
+
+    if not isinstance(sound_effect_specs, list):
+        return jsonify({'error': 'sound_effects must be a list'}), 400
+    sound_effects = []
+    for i, effect in enumerate(sound_effect_specs):
+        if not isinstance(effect, dict):
+            return jsonify({'error': f'sound_effect {i} must be an object'}), 400
+        resolved = resolve_static_preview_path(effect.get('preview_url'))
+        start = effect.get('start_seconds')
+        source_start = effect.get('source_start_seconds', 0)
+        duration = effect.get('duration_seconds')
+        if resolved is None or not isinstance(start, (int, float)) or start < 0:
+            return jsonify({'error': f'sound_effect {i} has an invalid preview_url or start_seconds'}), 400
+        if (not isinstance(source_start, (int, float)) or source_start < 0
+                or not isinstance(duration, (int, float)) or duration <= 0):
+            return jsonify({'error': f'sound_effect {i} has an invalid source_start_seconds or duration_seconds'}), 400
+        sound_effects.append({
+            'file_path': str(resolved),
+            'start_seconds': float(start),
+            'source_start_seconds': float(source_start),
+            'duration_seconds': float(duration),
+            'kind': 'sfx',
+        })
+
+    if not isinstance(narration_specs, list):
+        return jsonify({'error': 'narrations must be a list'}), 400
+    narrations = []
+    for i, narration in enumerate(narration_specs):
+        if not isinstance(narration, dict):
+            return jsonify({'error': f'narration {i} must be an object'}), 400
+        resolved = resolve_static_preview_path(narration.get('preview_url'))
+        start = narration.get('start_seconds')
+        source_start = narration.get('source_start_seconds', 0)
+        duration = narration.get('duration_seconds')
+        if (resolved is None or not isinstance(start, (int, float)) or start < 0
+                or not isinstance(source_start, (int, float)) or source_start < 0
+                or not isinstance(duration, (int, float)) or duration <= 0):
+            return jsonify({'error': f'narration {i} has invalid timing or preview_url'}), 400
+        narrations.append({
+            'file_path': str(resolved), 'start_seconds': float(start),
+            'source_start_seconds': float(source_start), 'duration_seconds': float(duration),
+            'gain': 1.0, 'kind': 'narration',
         })
 
     output_path = project_dir_path / 'documentary.mp4'
@@ -1400,7 +2264,7 @@ def render_start():
 
     thread = threading.Thread(
         target=movie_render.render_documentary,
-        args=(project_id, shots, output_path, status_path),
+        args=(project_id, shots, sound_effects + narrations, output_path, status_path),
         daemon=True,
     )
     thread.start()
@@ -1430,6 +2294,671 @@ def render_status():
         return jsonify(json.loads(status_path.read_text()))
     except (OSError, ValueError):
         return jsonify({'state': 'unknown', 'step': '', 'message': 'Could not read render status.'})
+
+
+# --- Moodboard entry point (see js/paper-extract.js's moodboard flow) ---
+# The presenter assembles reference documentaries (a typed name, a YouTube
+# link, or an uploaded clip); each is analyzed in the background (frames +
+# audio + a vision style read - see moodboard_media.py/moodboard_llm.py) and
+# the results are distilled into suggested arcs/mode/techniques
+# (narrative_arc_llm.distill_from_moodboard). Analysis mirrors the
+# /render/start + /render/status daemon-thread + status.json pattern above, at
+# per-reference granularity so a slow/blocked YouTube ref never stalls the
+# others.
+MAX_MOODBOARD_REFERENCES = 10
+MAX_MOODBOARD_NOTE_CHARS = 500
+MAX_MOODBOARD_REF_FIELD_CHARS = 2_000
+
+
+def _write_moodboard_status(status_path, state, step='', message='', profile=None):
+    payload = {'state': state, 'step': step, 'message': message}
+    if profile is not None:
+        payload['profile'] = profile
+    try:
+        status_path.write_text(json.dumps(payload))
+    except OSError:
+        pass
+
+
+def _preview_url_for(path):
+    """Repo-root-relative static URL for a file under premiere_exports/ -
+    same convention as the upload routes' preview_url."""
+    return '/' + Path(path).relative_to(PREMIERE_EXPORTS_DIR.parent).as_posix()
+
+
+def _transcribe_if_possible(audio_path):
+    """Best-effort transcription of an extracted audio file - returns '' if
+    transcription isn't configured or fails (a reference without a usable
+    transcript still contributes its frames/title)."""
+    if audio_path is None or not transcription_client.is_configured():
+        return ''
+    try:
+        return (transcription_client.transcribe(audio_path.read_bytes(), audio_path.name).get('text') or '').strip()
+    except Exception:
+        return ''
+
+
+def _analyze_moodboard_reference(project_id, ref_id, source_kind, source, note, status_path, profile_path):
+    """Daemon-thread worker: runs the fallback ladder (download -> frames +
+    audio -> vision style read; degrading to an oEmbed thumbnail or title-only
+    reasoning) for one reference, writing coarse progress to status_path and
+    the final profile to profile_path. Best-effort - records an 'error' state
+    rather than raising, since no request is waiting on it."""
+    ref_dir = premiere_moodboard_ref_dir(project_id, ref_id)
+    try:
+        ref_dir.mkdir(parents=True, exist_ok=True)
+        title = ''
+        source_url = ''
+        transcript = ''
+        thumbnail_url = None
+        frames_data_urls = []
+        frame_urls = []  # disk-served preview URLs for the sampled frames (the card's strip)
+
+        if source_kind == 'named':
+            title = source
+        elif source_kind == 'youtube':
+            source_url = source
+            _write_moodboard_status(status_path, 'analyzing', 'fetching', 'Fetching reference details ...')
+            oembed = moodboard_media.youtube_oembed(source)
+            if oembed:
+                title = oembed.get('title') or ''
+                if oembed.get('thumbnail_url'):
+                    thumb_path = moodboard_media.download_thumbnail(oembed['thumbnail_url'], ref_dir / 'thumbnail.jpg')
+                    if thumb_path:
+                        thumbnail_url = _preview_url_for(thumb_path)
+            _write_moodboard_status(status_path, 'analyzing', 'downloading', 'Downloading video ...')
+            video_path = moodboard_media.download_youtube(source, ref_dir)
+            if video_path:
+                _write_moodboard_status(status_path, 'analyzing', 'sampling', 'Sampling frames ...')
+                frames = moodboard_media.sample_frames(video_path, ref_dir / 'frames')
+                frames_data_urls = moodboard_media.frames_to_data_urls(frames)
+                frame_urls = [_preview_url_for(f) for f in frames]
+                if frames and not thumbnail_url:
+                    thumbnail_url = _preview_url_for(frames[0])
+                _write_moodboard_status(status_path, 'analyzing', 'transcribing', 'Transcribing audio ...')
+                transcript = _transcribe_if_possible(moodboard_media.extract_audio(video_path, ref_dir))
+            elif (ref_dir / 'thumbnail.jpg').is_file():
+                # Download failed - fall back to reading the single oEmbed thumbnail.
+                frames_data_urls = moodboard_media.frames_to_data_urls([ref_dir / 'thumbnail.jpg'])
+        elif source_kind == 'upload':
+            video_path = Path(source)
+            title = video_path.stem
+            _write_moodboard_status(status_path, 'analyzing', 'sampling', 'Sampling frames ...')
+            frames = moodboard_media.sample_frames(video_path, ref_dir / 'frames')
+            frames_data_urls = moodboard_media.frames_to_data_urls(frames)
+            frame_urls = [_preview_url_for(f) for f in frames]
+            if frames:
+                thumbnail_url = _preview_url_for(frames[0])
+            _write_moodboard_status(status_path, 'analyzing', 'transcribing', 'Transcribing audio ...')
+            transcript = _transcribe_if_possible(moodboard_media.extract_audio(video_path, ref_dir))
+
+        style = {}
+        if moodboard_client.is_configured():
+            _write_moodboard_status(status_path, 'analyzing', 'reading', 'Reading style ...')
+            try:
+                style = moodboard_client.read_style(
+                    frames_data_urls, transcript=transcript, title=title, source_kind=source_kind)
+            except MoodboardLLMCallError:
+                style = {}
+
+        profile = {
+            'ref_id': ref_id,
+            'source_kind': source_kind,
+            'title': (title or (source if source_kind == 'named' else 'Untitled reference')).strip(),
+            'source_url': source_url,
+            'transcript': transcript,
+            'visual_style': style.get('visual_style', ''),
+            'observed_techniques': style.get('observed_techniques', []),
+            'tone': style.get('tone', ''),
+            'pacing': style.get('pacing', ''),
+            'suggested_mode': style.get('suggested_mode'),
+            'transcript_summary': style.get('transcript_summary', ''),
+            'thumbnail_url': thumbnail_url,
+            'frame_urls': frame_urls,
+            'note': (note or '').strip(),
+        }
+        try:
+            profile_path.write_text(json.dumps(profile, indent=2))
+        except OSError:
+            pass
+        _write_moodboard_status(status_path, 'ready', 'done', 'Ready', profile=profile)
+    except Exception as exc:  # best-effort worker - never let the thread die silently
+        _write_moodboard_status(status_path, 'error', '', f'Analysis failed: {exc}')
+
+
+def _allocate_moodboard_ref_id(project_id):
+    moodboard_dir = premiere_moodboard_dir(project_id)
+    existing = []
+    if moodboard_dir.exists():
+        for p in moodboard_dir.iterdir():
+            if p.is_dir() and p.name.startswith('ref-'):
+                try:
+                    existing.append(int(p.name[len('ref-'):]))
+                except ValueError:
+                    pass
+    return f'ref-{max(existing, default=0) + 1}'
+
+
+@app.route('/moodboard/add_reference', methods=['POST'])
+def moodboard_add_reference():
+    # multipart (an uploaded footage file) OR JSON (a YouTube link / a named
+    # documentary). Allocates a ref_id, seeds status.json BEFORE the thread
+    # starts (so an immediate poll sees 'analyzing', not a missing file - same
+    # race-avoidance as /render/start), then analyzes on a daemon thread.
+    is_multipart = request.files.get('file') is not None
+    if is_multipart:
+        kind = 'upload'
+        project_id = (request.form.get('project_id') or '').strip() or next_premiere_project_id()
+        note = (request.form.get('note') or '').strip()[:MAX_MOODBOARD_NOTE_CHARS]
+    else:
+        data = request.get_json(silent=True) or {}
+        kind = (data.get('kind') or '').strip()
+        project_id = (data.get('project_id') or '').strip() or next_premiere_project_id()
+        note = (data.get('note') or '').strip()[:MAX_MOODBOARD_NOTE_CHARS]
+
+    ref_id = _allocate_moodboard_ref_id(project_id)
+    ref_dir = premiere_moodboard_ref_dir(project_id, ref_id)
+    ref_dir.mkdir(parents=True, exist_ok=True)
+
+    if kind == 'upload':
+        uploaded = request.files.get('file')
+        media_bytes = uploaded.read()
+        if len(media_bytes) > MAX_FOOTAGE_SIZE_MB * 1024 * 1024:
+            return jsonify({'error': f'file exceeds max size of {MAX_FOOTAGE_SIZE_MB}MB'}), 400
+        filename = secure_filename(uploaded.filename) or 'reference'
+        source_path = ref_dir / f'source_{filename}'
+        source_path.write_bytes(media_bytes)
+        remux_for_reliable_playback(source_path)
+        source = str(source_path)
+    elif kind == 'youtube':
+        source = (data.get('url') or '').strip()
+        if not source:
+            return jsonify({'error': 'url is required for a youtube reference'}), 400
+    elif kind == 'named':
+        source = (data.get('name') or '').strip()
+        if not source:
+            return jsonify({'error': 'name is required for a named reference'}), 400
+    else:
+        return jsonify({'error': "kind must be 'upload', 'youtube', or 'named'"}), 400
+
+    status_path = ref_dir / 'status.json'
+    profile_path = ref_dir / 'profile.json'
+    status_path.write_text(json.dumps({'state': 'analyzing', 'step': 'starting', 'message': 'Analyzing reference ...'}))
+    threading.Thread(
+        target=_analyze_moodboard_reference,
+        args=(project_id, ref_id, kind, source, note, status_path, profile_path),
+        daemon=True,
+    ).start()
+
+    return jsonify({'project_id': project_id, 'ref_id': ref_id, 'state': 'analyzing'})
+
+
+@app.route('/moodboard/reference_status', methods=['GET'])
+def moodboard_reference_status():
+    # Polled by the frontend after add_reference - reads back the status.json
+    # the worker keeps updating (same shape as /render/status).
+    project_id = (request.args.get('project_id') or '').strip()
+    ref_id = (request.args.get('ref_id') or '').strip()
+    if not project_id or not ref_id:
+        return jsonify({'error': 'project_id and ref_id are required'}), 400
+    status_path = premiere_moodboard_ref_dir(project_id, ref_id) / 'status.json'
+    if not status_path.is_file():
+        return jsonify({'state': 'unknown', 'step': '', 'message': 'No such reference.'})
+    try:
+        return jsonify(json.loads(status_path.read_text()))
+    except (OSError, ValueError):
+        return jsonify({'state': 'unknown', 'step': '', 'message': 'Could not read reference status.'})
+
+
+# --- 3D reconstruction entry point: upload a photo (flat or panoramic) or
+# footage, reconstruct it into a scene the in-browser three.js viewer can
+# explore. Mirrors the moodboard worker+poll pattern exactly (background daemon
+# thread, status.json seeded synchronously, profile.json on 'ready'). v1 is a
+# light monocular-depth 2.5D reconstruction; the profile's engine/viewer_mode
+# fields leave room for a future Gaussian-splat engine without reshaping this.
+
+_RECONSTRUCT_VIDEO_EXTS = ('.mp4', '.mov', '.m4v', '.webm', '.avi', '.mkv')
+
+
+def _allocate_reconstruct_id(project_id):
+    recon_root = premiere_project_dir(project_id) / 'reconstruct'
+    existing = []
+    if recon_root.exists():
+        for p in recon_root.iterdir():
+            if p.is_dir() and p.name.startswith('recon-'):
+                try:
+                    existing.append(int(p.name[len('recon-'):]))
+                except ValueError:
+                    pass
+    return f'recon-{max(existing, default=0) + 1}'
+
+
+def _reconstruct_worker(project_id, recon_id, kind_hint, engine_pref, source_path, status_path, profile_path):
+    """Daemon-thread worker: turn one uploaded still/footage into a viewer
+    profile. Best-effort - records an 'error' state rather than raising. Reuses
+    moodboard_media's frame sampling for footage and _write_moodboard_status for
+    progress (both generic).
+
+    engine_pref ('sharp'|'depth'): 'sharp' runs Apple ml-sharp -> a 3D Gaussian
+    Splat .ply (viewer_mode='splat'), falling back to monocular depth if SHARP
+    isn't available or fails; 'depth' forces the light 2.5D path. Panoramas
+    always use the 360 sphere viewer regardless (SHARP is single-view frontal).
+    """
+    recon_dir = premiere_reconstruct_dir(project_id, recon_id)
+    try:
+        recon_dir.mkdir(parents=True, exist_ok=True)
+        source_path = Path(source_path)
+
+        # Footage -> reconstruct a single representative frame.
+        if source_path.suffix.lower() in _RECONSTRUCT_VIDEO_EXTS:
+            _write_moodboard_status(status_path, 'reconstructing', 'sampling', 'Sampling a frame ...')
+            frames = moodboard_media.sample_frames(source_path, recon_dir / 'frames', count=1)
+            if not frames:
+                _write_moodboard_status(status_path, 'error', '', 'Could not read a frame from the footage.')
+                return
+            working_image = frames[0]
+            base_kind = 'footage'
+        else:
+            working_image = source_path
+            base_kind = None  # a photo - detect flat vs panorama below
+
+        # Kind: an explicit UI hint (auto/photo/panorama radio) wins; otherwise
+        # detect equirectangular. base_kind is 'footage' for a sampled clip
+        # frame, None for a photo. A panorama (hinted or detected) always wins
+        # since it drives a different viewer.
+        if kind_hint == 'panorama':
+            input_kind = 'panorama'
+        elif kind_hint in ('photo', 'footage'):
+            input_kind = base_kind or 'flat'
+        else:
+            detected = depth_media.detect_input_kind(working_image)
+            input_kind = 'panorama' if detected == 'panorama' else (base_kind or 'flat')
+
+        is_panorama = (input_kind == 'panorama')
+        _write_moodboard_status(status_path, 'reconstructing', 'coloring', 'Preparing color ...')
+        color_path, (width, height) = depth_media.prepare_color(working_image, recon_dir, is_panorama=is_panorama)
+
+        depth_path = None
+        gaussians_path = None
+        scene = None
+        engine = 'none'
+        viewer_mode = None
+
+        if is_panorama:
+            viewer_mode = 'pano'  # single-view SHARP/depth don't apply to a 360 pano
+        elif engine_pref == 'sharp' and sharp_media.is_available():
+            _write_moodboard_status(status_path, 'reconstructing', 'splatting',
+                                    'Reconstructing 3D Gaussian splats (first run downloads the model) ...')
+            gaussians_path = sharp_media.run_sharp_predict(color_path, recon_dir)
+            if gaussians_path is not None:
+                viewer_mode = 'splat'
+                engine = 'ml-sharp'
+                scene = sharp_media.scene_bounds(gaussians_path)
+
+        if viewer_mode is None:
+            # 'depth' engine, or a SHARP miss/failure -> monocular-depth fallback.
+            _write_moodboard_status(status_path, 'reconstructing', 'depth', 'Estimating depth ...')
+            depth_path = depth_media.estimate_depth(color_path, recon_dir)
+            if depth_path is not None:
+                viewer_mode = 'depth-displace'
+                engine = 'depth-anything-v2-small'
+            else:
+                viewer_mode = 'flat'  # depth model unavailable/failed - graceful
+
+        profile = {
+            'recon_id': recon_id,
+            'input_kind': input_kind,
+            'viewer_mode': viewer_mode,
+            'engine': engine,
+            'color_url': _preview_url_for(color_path),
+            'depth_url': _preview_url_for(depth_path) if depth_path is not None else None,
+            'gaussians_url': _preview_url_for(gaussians_path) if gaussians_path is not None else None,
+            'source_url': _preview_url_for(source_path) if source_path.is_file() else None,
+            'scene_center': scene['center'] if scene else None,
+            'camera_position': scene['camera'] if scene else None,
+            'scene_radius': scene['radius'] if scene else None,
+            'width': width,
+            'height': height,
+        }
+        try:
+            profile_path.write_text(json.dumps(profile, indent=2))
+        except OSError:
+            pass
+        _write_moodboard_status(status_path, 'ready', 'done', 'Ready', profile=profile)
+    except Exception as exc:  # best-effort worker - never let the thread die silently
+        _write_moodboard_status(status_path, 'error', '', f'Reconstruction failed: {exc}')
+
+
+@app.route('/reconstruct/add', methods=['POST'])
+def reconstruct_add():
+    # multipart upload (a photo/panorama/footage file). Allocates a recon_id,
+    # seeds status.json BEFORE the thread starts (so an immediate poll sees
+    # 'reconstructing', not a missing file - same race-avoidance as
+    # /moodboard/add_reference), then reconstructs on a daemon thread.
+    uploaded = request.files.get('file')
+    if uploaded is None:
+        return jsonify({'error': 'a file is required'}), 400
+    project_id = (request.form.get('project_id') or '').strip() or next_premiere_project_id()
+    kind_hint = (request.form.get('kind') or '').strip().lower() or None
+    # 'sharp' (Gaussian splats, default) or 'depth' (light 2.5D). SHARP falls
+    # back to depth automatically when it isn't installed/available.
+    engine_pref = (request.form.get('engine') or 'sharp').strip().lower()
+    if engine_pref not in ('sharp', 'depth'):
+        engine_pref = 'sharp'
+
+    media_bytes = uploaded.read()
+    if len(media_bytes) > MAX_FOOTAGE_SIZE_MB * 1024 * 1024:
+        return jsonify({'error': f'file exceeds max size of {MAX_FOOTAGE_SIZE_MB}MB'}), 400
+
+    recon_id = _allocate_reconstruct_id(project_id)
+    recon_dir = premiere_reconstruct_dir(project_id, recon_id)
+    recon_dir.mkdir(parents=True, exist_ok=True)
+    filename = secure_filename(uploaded.filename) or 'source'
+    source_path = recon_dir / f'source_{filename}'
+    source_path.write_bytes(media_bytes)
+    if source_path.suffix.lower() in _RECONSTRUCT_VIDEO_EXTS:
+        remux_for_reliable_playback(source_path)
+
+    status_path = recon_dir / 'status.json'
+    profile_path = recon_dir / 'profile.json'
+    status_path.write_text(json.dumps({'state': 'reconstructing', 'step': 'starting', 'message': 'Reconstructing ...'}))
+    threading.Thread(
+        target=_reconstruct_worker,
+        args=(project_id, recon_id, kind_hint, engine_pref, str(source_path), status_path, profile_path),
+        daemon=True,
+    ).start()
+
+    return jsonify({'project_id': project_id, 'recon_id': recon_id, 'state': 'reconstructing'})
+
+
+@app.route('/reconstruct/status', methods=['GET'])
+def reconstruct_status():
+    # Polled by the frontend after /reconstruct/add - reads back status.json
+    # (same shape as /moodboard/reference_status and /render/status).
+    project_id = (request.args.get('project_id') or '').strip()
+    recon_id = (request.args.get('recon_id') or '').strip()
+    if not project_id or not recon_id:
+        return jsonify({'error': 'project_id and recon_id are required'}), 400
+    status_path = premiere_reconstruct_dir(project_id, recon_id) / 'status.json'
+    if not status_path.is_file():
+        return jsonify({'state': 'unknown', 'step': '', 'message': 'No such reconstruction.'})
+    try:
+        return jsonify(json.loads(status_path.read_text()))
+    except (OSError, ValueError):
+        return jsonify({'state': 'unknown', 'step': '', 'message': 'Could not read reconstruction status.'})
+
+
+# --- Evaluation harness (evaluation.html): generate a MATRIX of shot examples
+# for ONE fixed scene across combinations of documentary technique × mode ×
+# track (Primary/Cutaway), using the exact same prompt construction the
+# storyboard uses (generate_shot_plan -> framing_directive -> generate_sketch /
+# generate_shot_video). Mirrors the moodboard/reconstruct worker+poll pattern.
+
+MAX_EVAL_CELLS = 24  # bound the batch (each cell is an LLM call + image [+ ~1min video])
+_EVAL_ROLE_MAP = {'primary': 'Primary', 'cutaway': 'Cutaway', 'aroll': 'Primary', 'broll': 'Cutaway',
+                  'a-roll': 'Primary', 'b-roll': 'Cutaway'}
+
+
+@app.route('/catalogs', methods=['GET'])
+def catalogs():
+    # The full mode/technique/track vocabularies so evaluation.html can build its
+    # axis selectors without duplicating ~55 technique keys.
+    return jsonify({
+        'modes': [{'key': m['key'], 'label': m['label']} for m in DOCUMENTARY_MODES],
+        'techniques': [{'key': t['key'], 'label': t['label']} for t in DOCUMENTARY_TECHNIQUES],
+        'roles': [{'key': 'Primary', 'label': 'Primary'}, {'key': 'Cutaway', 'label': 'Cutaway'}],
+    })
+
+
+def _allocate_eval_run_id(project_id):
+    root = premiere_project_dir(project_id) / 'eval'
+    existing = []
+    if root.exists():
+        for p in root.iterdir():
+            if p.is_dir() and p.name.startswith('run-'):
+                try:
+                    existing.append(int(p.name[len('run-'):]))
+                except ValueError:
+                    pass
+    return f'run-{max(existing, default=0) + 1}'
+
+
+def _eval_worker(project_id, run_id, scene, moodboard, cells, want_video, wildness, status_path, manifest_path):
+    """Daemon-thread worker: one image (+ optional video) per technique×mode×track
+    cell. Best-effort per cell (a failure is recorded and the rest continue).
+    Two phases so the grid is usable quickly: all images concurrently, then the
+    heavier Veo videos at low concurrency. Writes the growing cell list to
+    status.json after each step so the page can render partial results live."""
+    eval_dir = premiere_eval_dir(project_id, run_id)
+    total = len(cells)
+    results = [None] * total  # aligned to cells
+
+    def _clean(entry):
+        return {k: v for k, v in entry.items() if not k.startswith('_')}
+
+    def _write(state, done, message):
+        payload = {'state': state, 'step': message, 'message': message, 'done': done,
+                   'total': total, 'cells': [_clean(r) for r in results if r is not None]}
+        # Atomic write (temp + os.replace) so a concurrent /eval/status poll never
+        # reads a half-written file - this status.json is rewritten frequently as
+        # cells complete across the worker's threads.
+        try:
+            tmp = status_path.parent / (status_path.name + '.tmp')
+            tmp.write_text(json.dumps(payload))
+            os.replace(tmp, status_path)
+        except OSError:
+            pass
+
+    try:
+        eval_dir.mkdir(parents=True, exist_ok=True)
+        title = scene.get('title', '')
+        scene_notes = scene.get('scene_notes', '')
+        narration = scene.get('narration', '')
+        act_title = scene.get('act_title', '')
+        abstract = scene.get('abstract', '')
+
+        # Phase 1 - one image per cell (each with its own shot_plan so the SUBJECT
+        # reflects that mode/role/technique, exactly like the storyboard).
+        def _image_cell(i_cell):
+            i, cell = i_cell
+            technique, mode, role = cell['technique'], cell['mode'], cell['role']
+            entry = {'index': i, 'technique': technique, 'mode': mode, 'role': role,
+                     'image_url': None, 'video_url': None}
+            try:
+                shot_plan = shot_plan_client.generate_shot_plan(
+                    title, scene_notes, narration, act_title, mode,
+                    techniques=[technique], moodboard=moodboard, abstract=abstract, role=role,
+                    wildness=wildness)
+                visual = (shot_plan.get('visual_description') or '').strip()[:MAX_SKETCH_VISUAL_CHARS]
+                framing = framing_directive(shot_plan.get('shot_size'), [technique])
+                entry['prompt'] = _build_image_prompt(visual, mode, 'shot_frame', framing)
+                entry['shot_size'] = shot_plan.get('shot_size')
+                entry['movement'] = shot_plan.get('movement')
+                entry['visual_description'] = visual
+                entry['framing'] = framing
+                png = sketch_client.generate_sketch(visual, mode, style='shot_frame', framing=framing)
+                p = eval_dir / f'cell_{i}.png'
+                p.write_bytes(png)
+                entry['image_url'] = _preview_url_for(p)
+                entry['_png_path'] = str(p)
+            except Exception as exc:
+                entry['error'] = f'image failed: {exc}'
+            results[i] = entry
+            return entry
+
+        _write('running', 0, 'Generating images ...')
+        done = 0
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            for _ in pool.map(_image_cell, list(enumerate(cells))):
+                done += 1
+                _write('running', done, f'Generated {done}/{total} images ...')
+
+        # Phase 2 - one Veo clip per cell (batched, low concurrency).
+        if want_video and animate_client.is_configured():
+            targets = [e for e in results if e and e.get('_png_path')]
+            vdone = 0
+
+            def _video_cell(entry):
+                try:
+                    png = Path(entry['_png_path']).read_bytes()
+                    mp4 = animate_client.generate_shot_video(
+                        png, entry.get('movement'), entry['mode'], framing=entry.get('framing'))
+                    vp = eval_dir / f"cell_{entry['index']}.mp4"
+                    vp.write_bytes(mp4)
+                    remux_for_reliable_playback(vp)
+                    entry['video_url'] = _preview_url_for(vp)
+                except Exception as exc:
+                    entry['video_error'] = f'video failed: {exc}'
+                return entry
+
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                for _ in pool.map(_video_cell, targets):
+                    vdone += 1
+                    _write('running', total, f'Rendering videos {vdone}/{len(targets)} ...')
+
+        manifest = {'run_id': run_id, 'total': total, 'cells': [_clean(e) for e in results if e]}
+        try:
+            manifest_path.write_text(json.dumps(manifest, indent=2))
+        except OSError:
+            pass
+        _write('ready', total, 'Done')
+    except Exception as exc:  # best-effort worker
+        _write('error', 0, f'Evaluation failed: {exc}')
+
+
+@app.route('/eval/run', methods=['POST'])
+def eval_run():
+    data = request.get_json(silent=True) or {}
+    scene_in = data.get('scene')
+    if not isinstance(scene_in, dict):
+        return jsonify({'error': 'scene must be an object'}), 400
+    scene = {
+        'title': (scene_in.get('title') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS],
+        'scene_notes': (scene_in.get('scene_notes') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS],
+        'narration': (scene_in.get('narration') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS],
+        'act_title': (scene_in.get('act_title') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS],
+        'abstract': (scene_in.get('abstract') or '').strip()[:MAX_ABSTRACT_CHARS],
+    }
+
+    techniques = list(dict.fromkeys(
+        t for t in (data.get('techniques') or []) if isinstance(t, str) and t in DOCUMENTARY_TECHNIQUE_KEYS))
+    modes = list(dict.fromkeys(
+        m for m in (data.get('modes') or []) if isinstance(m, str) and m in DOCUMENTARY_MODE_KEYS))
+    roles = []
+    for r in (data.get('roles') or []):
+        if isinstance(r, str):
+            rr = _EVAL_ROLE_MAP.get(r.strip().lower(), r.strip())
+            if rr in ('Primary', 'Cutaway') and rr not in roles:
+                roles.append(rr)
+    if not techniques or not modes or not roles:
+        return jsonify({'error': 'select at least one technique, one mode, and one track'}), 400
+
+    # Grouped by mode, then technique, then role - matches evaluation.html's grid.
+    cells = [{'technique': t, 'mode': m, 'role': r} for m in modes for t in techniques for r in roles]
+    if len(cells) > MAX_EVAL_CELLS:
+        return jsonify({'error': f'matrix too large ({len(cells)} cells > max {MAX_EVAL_CELLS}); pick fewer options'}), 400
+
+    want_video = bool(data.get('video'))
+    try:
+        wildness = max(0.0, min(1.0, float(data.get('wildness') or 0)))
+    except (TypeError, ValueError):
+        wildness = 0.0
+    moodboard = _parse_moodboard_profiles(data)
+    project_id = (data.get('project_id') or '').strip() or next_premiere_project_id()
+
+    if not (shot_plan_client.is_configured() and sketch_client.is_configured()):
+        return jsonify({'error': _SKETCH_NOT_CONFIGURED_ERROR}), 503
+
+    run_id = _allocate_eval_run_id(project_id)
+    eval_dir = premiere_eval_dir(project_id, run_id)
+    eval_dir.mkdir(parents=True, exist_ok=True)
+    status_path = eval_dir / 'status.json'
+    manifest_path = eval_dir / 'manifest.json'
+    status_path.write_text(json.dumps(
+        {'state': 'running', 'step': 'starting', 'message': 'Starting ...', 'done': 0, 'total': len(cells), 'cells': []}))
+    threading.Thread(
+        target=_eval_worker,
+        args=(project_id, run_id, scene, moodboard, cells, want_video, wildness, status_path, manifest_path),
+        daemon=True,
+    ).start()
+    return jsonify({'project_id': project_id, 'run_id': run_id, 'state': 'running', 'total': len(cells)})
+
+
+@app.route('/eval/status', methods=['GET'])
+def eval_status():
+    project_id = (request.args.get('project_id') or '').strip()
+    run_id = (request.args.get('run_id') or '').strip()
+    if not project_id or not run_id:
+        return jsonify({'error': 'project_id and run_id are required'}), 400
+    status_path = premiere_eval_dir(project_id, run_id) / 'status.json'
+    if not status_path.is_file():
+        return jsonify({'state': 'unknown', 'message': 'No such evaluation run.'})
+    try:
+        return jsonify(json.loads(status_path.read_text()))
+    except (OSError, ValueError):
+        return jsonify({'state': 'unknown', 'message': 'Could not read evaluation status.'})
+
+
+@app.route('/moodboard/distill', methods=['POST'])
+def moodboard_distill():
+    # Distills the analyzed reference profiles into suggested arcs (with the
+    # paper's sections mapped in, like /paper/suggest_arcs) plus a suggested
+    # documentary mode + techniques. Replaces the narration-driven
+    # /paper/suggest_arcs as the entry point's distillation step.
+    data = request.get_json(silent=True) or {}
+    references_raw = data.get('references')
+    if not isinstance(references_raw, list) or not references_raw:
+        return jsonify({'error': 'references is required and must be a non-empty list'}), 400
+
+    references = []
+    for ref in references_raw[:MAX_MOODBOARD_REFERENCES]:
+        if not isinstance(ref, dict):
+            continue
+        references.append({
+            'title': (ref.get('title') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS],
+            'source_kind': (ref.get('source_kind') or '').strip()[:40],
+            'visual_style': (ref.get('visual_style') or '').strip()[:MAX_MOODBOARD_REF_FIELD_CHARS],
+            'observed_techniques': [t for t in (ref.get('observed_techniques') or []) if isinstance(t, str)][:8],
+            'tone': (ref.get('tone') or '').strip()[:200],
+            'pacing': (ref.get('pacing') or '').strip()[:200],
+            'transcript_summary': (ref.get('transcript_summary') or '').strip()[:MAX_MOODBOARD_REF_FIELD_CHARS],
+            'transcript': (ref.get('transcript') or '').strip()[:MAX_MOODBOARD_REF_FIELD_CHARS],
+            'note': (ref.get('note') or '').strip()[:MAX_MOODBOARD_NOTE_CHARS],
+        })
+    if not references:
+        return jsonify({'error': 'no valid references'}), 400
+
+    abstract = (data.get('abstract') or '').strip()[:MAX_ABSTRACT_CHARS]
+
+    sections = None
+    sections_raw = data.get('sections')
+    if isinstance(sections_raw, list):
+        sections = [
+            {
+                'index': s['index'],
+                'title': (s.get('title') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS],
+                'snippet': (s.get('snippet') or '').strip()[:MAX_SECTION_SNIPPET_CHARS],
+            }
+            for s in sections_raw[:MAX_STORYBOARD_SECTIONS]
+            if isinstance(s, dict) and isinstance(s.get('index'), int)
+        ]
+
+    if not narrative_arc_client.is_configured():
+        return jsonify({'error': _NARRATIVE_ARC_NOT_CONFIGURED_ERROR}), 503
+
+    try:
+        recommended, alternatives, mode, techniques, rationale = narrative_arc_client.distill_from_moodboard(
+            references, abstract, sections)
+    except NarrativeArcLLMCallError as exc:
+        return jsonify({'error': str(exc)}), 500
+
+    return jsonify({
+        'recommended': recommended,
+        'alternatives': alternatives,
+        'suggested_mode': mode,
+        'suggested_techniques': techniques,
+        'style_rationale': rationale,
+    })
 
 
 @app.route('/ingest/pptx', methods=['POST'])

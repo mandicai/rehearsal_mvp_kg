@@ -48,12 +48,11 @@ const API_BASE_URL = window.API_BASE_URL || _detectApiBaseUrl();
 
 const SUGGEST_ARCS_API_URL = `${API_BASE_URL}/paper/suggest_arcs`;
 
-function fetchSuggestArcs(transcript, focusStatements, abstract, sections) {
+function fetchSuggestArcs(focusStatements, abstract, sections) {
   return fetch(SUGGEST_ARCS_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      transcript,
       ...(focusStatements && focusStatements.length ? { focus_statements: focusStatements } : {}),
       ...(abstract ? { abstract } : {}),
       // Paper sections (index + title) so each arc can map them into its parts
@@ -66,6 +65,201 @@ function fetchSuggestArcs(transcript, focusStatements, abstract, sections) {
       if (err.isServerError) throw err;
       throw new Error(
         `Could not reach the arc-suggestion server at ${SUGGEST_ARCS_API_URL} (${err.message}). Check that the backend is running and reachable.`
+      );
+    });
+}
+
+// --- arranged-scene narration drafting (backend/narration_llm.py) ---
+// Returns a short, factual voice-over suggestion for the current paper
+// section, shaped by the narrative act it was placed in. The browser still
+// requires the presenter to record the actual voice track.
+const SUGGEST_NARRATION_API_URL = `${API_BASE_URL}/paper/suggest_narration`;
+
+function fetchSuggestNarration({ sectionTitle, sectionText, actTitle, actDescription, abstract, documentaryMode, signal }) {
+  return fetch(SUGGEST_NARRATION_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    ...(signal ? { signal } : {}),
+    body: JSON.stringify({
+      section_title: sectionTitle || '',
+      section_text: sectionText || '',
+      act_title: actTitle || '',
+      act_description: actDescription || '',
+      abstract: abstract || '',
+      documentary_mode: documentaryMode || '',
+    }),
+  })
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(
+        `Could not reach the narration-suggestion server at ${SUGGEST_NARRATION_API_URL} (${err.message}). Check that the backend is running and reachable.`
+      );
+    });
+}
+
+// --- index.html moodboard entry point (backend/moodboard_media.py +
+// moodboard_llm.py, /moodboard/* routes) ---
+// The presenter adds reference documentaries (a typed name, a YouTube link, or
+// an uploaded clip); each is analyzed in the background (frames + audio + a
+// vision style read) and then distilled (fetchDistillMoodboard) into suggested
+// arcs/mode/techniques. Same optional-projectId-in/out convention as the other
+// premiere_exports uploads.
+
+const MOODBOARD_ADD_REFERENCE_API_URL = `${API_BASE_URL}/moodboard/add_reference`;
+const MOODBOARD_REFERENCE_STATUS_API_URL = `${API_BASE_URL}/moodboard/reference_status`;
+const MOODBOARD_DISTILL_API_URL = `${API_BASE_URL}/moodboard/distill`;
+
+// kind: 'named' (name), 'youtube' (url), or 'upload' (file). A file uses
+// multipart FormData; the other two use a JSON body. Returns
+// {project_id, ref_id, state:'analyzing'} - poll fetchMoodboardReferenceStatus.
+function fetchAddMoodboardReference({ kind, name, url, file, note, projectId }) {
+  let options;
+  if (file) {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('kind', 'upload');
+    if (note) form.append('note', note);
+    if (projectId) form.append('project_id', projectId);
+    options = { method: 'POST', body: form };
+  } else {
+    options = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kind,
+        ...(name ? { name } : {}),
+        ...(url ? { url } : {}),
+        ...(note ? { note } : {}),
+        ...(projectId ? { project_id: projectId } : {}),
+      }),
+    };
+  }
+  return fetch(MOODBOARD_ADD_REFERENCE_API_URL, options)
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(
+        `Could not reach the moodboard server at ${MOODBOARD_ADD_REFERENCE_API_URL} (${err.message}). Check that the backend is running and reachable.`
+      );
+    });
+}
+
+// Polled after fetchAddMoodboardReference - returns {state, step, message,
+// profile?} (profile present once state === 'ready'). Same shape/spirit as
+// fetchRenderStatus.
+function fetchMoodboardReferenceStatus(projectId, refId) {
+  const params = new URLSearchParams({ project_id: projectId, ref_id: refId });
+  return fetch(`${MOODBOARD_REFERENCE_STATUS_API_URL}?${params.toString()}`)
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(
+        `Could not reach the moodboard server at ${MOODBOARD_REFERENCE_STATUS_API_URL} (${err.message}). Check that the backend is running and reachable.`
+      );
+    });
+}
+
+const RECONSTRUCT_ADD_API_URL = `${API_BASE_URL}/reconstruct/add`;
+const RECONSTRUCT_STATUS_API_URL = `${API_BASE_URL}/reconstruct/status`;
+
+// Uploads a photo/panorama/footage file for 3D reconstruction. Always
+// multipart. `kind` is an optional hint ('auto' omitted, or 'photo'/'panorama').
+// Returns {project_id, recon_id, state:'reconstructing'} - poll
+// fetchReconstructStatus.
+function fetchAddReconstruct({ file, kind, engine, projectId }) {
+  const form = new FormData();
+  form.append('file', file);
+  if (kind && kind !== 'auto') form.append('kind', kind);
+  if (engine) form.append('engine', engine);
+  if (projectId) form.append('project_id', projectId);
+  return fetch(RECONSTRUCT_ADD_API_URL, { method: 'POST', body: form })
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(
+        `Could not reach the reconstruction server at ${RECONSTRUCT_ADD_API_URL} (${err.message}). Check that the backend is running and reachable.`
+      );
+    });
+}
+
+// Polled after fetchAddReconstruct - returns {state, step, message, profile?}
+// (profile present once state === 'ready'). Same shape as the moodboard/render
+// status endpoints.
+function fetchReconstructStatus(projectId, reconId) {
+  const params = new URLSearchParams({ project_id: projectId, recon_id: reconId });
+  return fetch(`${RECONSTRUCT_STATUS_API_URL}?${params.toString()}`)
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(
+        `Could not reach the reconstruction server at ${RECONSTRUCT_STATUS_API_URL} (${err.message}). Check that the backend is running and reachable.`
+      );
+    });
+}
+
+// --- evaluation.html: the technique×mode×track shot-example matrix ---
+const CATALOGS_API_URL = `${API_BASE_URL}/catalogs`;
+const EVAL_RUN_API_URL = `${API_BASE_URL}/eval/run`;
+const EVAL_STATUS_API_URL = `${API_BASE_URL}/eval/status`;
+
+// The full mode/technique/track vocabularies for the axis selectors.
+function fetchCatalogs() {
+  return fetch(CATALOGS_API_URL)
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(`Could not reach ${CATALOGS_API_URL} (${err.message}). Check that the backend is running.`);
+    });
+}
+
+// Kicks off a matrix run. payload: {project_id?, scene, moodboard, techniques,
+// modes, roles, video}. Returns {project_id, run_id, state, total} - poll
+// fetchEvalStatus.
+function fetchEvalRun(payload) {
+  return fetch(EVAL_RUN_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload || {}),
+  })
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(`Could not reach ${EVAL_RUN_API_URL} (${err.message}). Check that the backend is running.`);
+    });
+}
+
+// Polled after fetchEvalRun - {state, done, total, cells:[...]} (cells grow as
+// the worker finishes them; state 'ready' when complete).
+function fetchEvalStatus(projectId, runId) {
+  const params = new URLSearchParams({ project_id: projectId, run_id: runId });
+  return fetch(`${EVAL_STATUS_API_URL}?${params.toString()}`)
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(`Could not reach ${EVAL_STATUS_API_URL} (${err.message}). Check that the backend is running.`);
+    });
+}
+
+// Distills the analyzed reference profiles into suggested arcs (with the
+// paper's sections mapped in) + a suggested mode + techniques + a rationale.
+// references is an array of the per-reference profile objects; abstract and
+// sections are shaped exactly like fetchSuggestArcs's.
+function fetchDistillMoodboard(references, abstract, sections) {
+  return fetch(MOODBOARD_DISTILL_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      references,
+      ...(abstract ? { abstract } : {}),
+      ...(sections && sections.length ? { sections } : {}),
+    })
+  })
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(
+        `Could not reach the moodboard-distill server at ${MOODBOARD_DISTILL_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }
@@ -1397,6 +1591,7 @@ const INGEST_PPTX_API_URL = `${API_BASE_URL}/ingest/pptx`;
 const TRANSCRIBE_API_URL = `${API_BASE_URL}/transcribe`;
 const ALIGN_API_URL = `${API_BASE_URL}/align`;
 const SAVE_PROJECT_API_URL = `${API_BASE_URL}/projects/save`;
+const SAVE_PAPER_SNAPSHOT_API_URL = `${API_BASE_URL}/paper/snapshots/save`;
 const SUGGEST_OBJECTIVES_API_URL = `${API_BASE_URL}/learning_objectives/suggest`;
 
 function handleJsonResponse(res) {
@@ -1470,6 +1665,18 @@ function fetchSaveProject(payload) {
     });
 }
 
+// Quiet persistence for the paper/storyboard source state. Unlike the
+// presentation-ingest project save above, this stores only cleaned paper
+// sections and moodboard source links for later retrieval by the prototype
+// owner; it intentionally has no visible load UI.
+function fetchSavePaperSnapshot(payload) {
+  return fetch(SAVE_PAPER_SNAPSHOT_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }).then(handleJsonResponse);
+}
+
 function fetchSuggestObjectives(audience, scopeLabel, slidesForScope) {
   return fetch(SUGGEST_OBJECTIVES_API_URL, {
     method: 'POST',
@@ -1516,14 +1723,27 @@ function fetchPaperExtraction(file) {
 // reasoning. Requires an LLM API key server-side.
 
 const STORYBOARD_API_URL = `${API_BASE_URL}/paper/storyboard`;
+const MEDIA_QUERIES_API_URL = `${API_BASE_URL}/paper/media_queries`;
 
-function fetchStoryboard(sections, documentaryGoal, arcSections, documentaryMode, techniques) {
+function fetchMediaQueries(scene) {
+  return fetch(MEDIA_QUERIES_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(scene),
+  }).then(handleJsonResponse).catch(err => {
+    if (err.isServerError) throw err;
+    throw new Error(`Could not reach the media-query server at ${MEDIA_QUERIES_API_URL} (${err.message}).`);
+  });
+}
+
+function fetchStoryboard(sections, documentaryGoal, arcSections, documentaryMode, techniques, abstract) {
   return fetch(STORYBOARD_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       sections,
       documentary_goal: documentaryGoal || '',
+      ...(abstract ? { abstract } : {}),
       ...(arcSections ? { arc_sections: arcSections } : {}),
       ...(documentaryMode ? { documentary_mode: documentaryMode } : {}),
       ...(techniques && techniques.length ? { techniques } : {}),
@@ -1595,6 +1815,19 @@ function fetchUploadFootage(file, sectionIndex, projectId) {
     });
 }
 
+function fetchUploadSketch(file, sectionIndex, projectId) {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('section_index', String(sectionIndex));
+  if (projectId) form.append('project_id', projectId);
+  return fetch(`${API_BASE_URL}/premiere/upload_sketch`, { method: 'POST', body: form })
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(`Could not reach the sketch-upload server (${err.message}).`);
+    });
+}
+
 // Same optional-projectId-in/out convention as fetchUploadFootage above,
 // minus sectionIndex - see js/paper-extract.js's runTranscribeIntent. Saves
 // the recorded documentary-intent narration to disk; playback within the
@@ -1651,7 +1884,7 @@ const GENERATE_CUTAWAYS_API_URL = `${API_BASE_URL}/paper/generate_cutaways`;
 // see js/paper-extract.js's runGenerateCutaways) - infers cutaways from the
 // narration and returns each with a caption, camera motion, and a generated
 // background still. Same projectId in/out convention as fetchGenerateShot.
-function fetchGenerateCutaways({ sectionIndex, narration, title, sceneNotes, actTitle, abstract, documentaryMode, techniques, projectId }) {
+function fetchGenerateCutaways({ sectionIndex, narration, title, sceneNotes, actTitle, abstract, referenceSubject, documentaryMode, techniques, projectId }) {
   return fetch(GENERATE_CUTAWAYS_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1662,8 +1895,11 @@ function fetchGenerateCutaways({ sectionIndex, narration, title, sceneNotes, act
       scene_notes: sceneNotes || '',
       act_title: actTitle || '',
       abstract: abstract || '',
+      reference_subject: referenceSubject || '',
       ...(projectId ? { project_id: projectId } : {}),
       ...(documentaryMode ? { documentary_mode: documentaryMode } : {}),
+      // Techniques steer the cutaway stills' COMPOSITION/framing (not which
+      // cutaways are chosen - see /paper/generate_cutaways).
       ...(techniques && techniques.length ? { techniques } : {}),
     })
   })
@@ -1678,20 +1914,64 @@ function fetchGenerateCutaways({ sectionIndex, narration, title, sceneNotes, act
 
 // Narration-driven shot design (backend/shot_plan_llm.py + /paper/generate_shot,
 // see js/paper-extract.js's runGenerateShot) - infers one shot and generates
-// its start + end frames from whatever's available (narration, scene notes,
-// scene title, the arc part the scene sits in, and the paper abstract). Same
-// projectId in/out convention as fetchGenerateSketch.
-function fetchGenerateShot({ sectionIndex, title, sceneNotes, narration, actTitle, abstract, documentaryMode, techniques, projectId }) {
+// its start + end frames. The LOOK is driven by the documentary mode + the
+// moodboard reference profiles; the CONTENT is anchored in the scene's
+// narration, title, act title, and scene notes (the paper abstract is not
+// used). Same projectId in/out convention as fetchGenerateSketch.
+function fetchGenerateShot({ sectionIndex, title, sceneNotes, narration, actTitle, documentaryMode, techniques, moodboard, shotIndex, projectId, abstract, role, referenceSubject, referenceSketchUrl, referenceFigureDataUrl, referenceVideoUrl, referenceVideoThumbnailUrl, signal }) {
   return fetch(GENERATE_SHOT_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    ...(signal ? { signal } : {}),
     body: JSON.stringify({
       section_index: sectionIndex,
       title: title || '',
+      act_title: actTitle || '',
       scene_notes: sceneNotes || '',
       narration: narration || '',
-      act_title: actTitle || '',
-      abstract: abstract || '',
+      ...(abstract ? { abstract } : {}),
+      ...(role ? { role } : {}),
+      ...(referenceSubject ? { reference_subject: referenceSubject } : {}),
+      ...(referenceSketchUrl ? { reference_sketch_url: referenceSketchUrl } : {}),
+      ...(referenceFigureDataUrl ? { reference_figure_data_url: referenceFigureDataUrl } : {}),
+      ...(referenceVideoUrl ? { reference_video_url: referenceVideoUrl } : {}),
+      ...(referenceVideoThumbnailUrl ? { reference_video_thumbnail_url: referenceVideoThumbnailUrl } : {}),
+      ...(projectId ? { project_id: projectId } : {}),
+      ...(documentaryMode ? { documentary_mode: documentaryMode } : {}),
+      ...(techniques && techniques.length ? { techniques } : {}),
+      ...(moodboard && moodboard.length ? { moodboard } : {}),
+      ...(typeof shotIndex === 'number' ? { shot_index: shotIndex } : {}),
+    })
+  })
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(
+        `Could not reach the shot server at ${GENERATE_SHOT_API_URL} (${err.message}). Check that the backend is running and reachable.`
+      );
+    });
+}
+
+// Animates the exact image selected in the examples gallery. The selected
+// plan's direction is forwarded; the backend does not regenerate a seed frame.
+const GENERATE_SHOT_VIDEO_API_URL = `${API_BASE_URL}/paper/generate_shot_video`;
+function fetchGenerateShotVideo({ sectionIndex, chosenImageUrl, sceneNotes, documentaryMode, techniques, projectId, shotPlan, referenceSubject, referenceVideoUrl, referenceVideoThumbnailUrl, signal }) {
+  return fetch(GENERATE_SHOT_VIDEO_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    ...(signal ? { signal } : {}),
+    body: JSON.stringify({
+      section_index: sectionIndex,
+      chosen_image_url: chosenImageUrl || '',
+      scene_notes: sceneNotes || '',
+      ...(referenceSubject ? { reference_subject: referenceSubject } : {}),
+      ...(referenceVideoUrl ? { reference_video_url: referenceVideoUrl } : {}),
+      ...(referenceVideoThumbnailUrl ? { reference_video_thumbnail_url: referenceVideoThumbnailUrl } : {}),
+      movement: (shotPlan && shotPlan.movement) || '',
+      narrative_operation: (shotPlan && shotPlan.narrative_operation) || '',
+      shot_size: (shotPlan && shotPlan.shot_size) || '',
+      purpose: (shotPlan && shotPlan.purpose) || '',
+      visual_description: (shotPlan && shotPlan.visual_description) || '',
       ...(projectId ? { project_id: projectId } : {}),
       ...(documentaryMode ? { documentary_mode: documentaryMode } : {}),
       ...(techniques && techniques.length ? { techniques } : {}),
@@ -1701,7 +1981,46 @@ function fetchGenerateShot({ sectionIndex, title, sceneNotes, narration, actTitl
     .catch(err => {
       if (err.isServerError) throw err;
       throw new Error(
-        `Could not reach the shot server at ${GENERATE_SHOT_API_URL} (${err.message}). Check that the backend is running and reachable.`
+        `Could not reach the shot-video server at ${GENERATE_SHOT_VIDEO_API_URL} (${err.message}). Check that the backend is running and reachable.`
+      );
+    });
+}
+
+// A BATCH of example options per shot (backend /paper/generate_shot_examples):
+// ~count cheap still frames + one Veo clip, all from the same shot plan/framing,
+// for the presenter to pick from. Same inputs as fetchGenerateShot.
+const GENERATE_SHOT_EXAMPLES_API_URL = `${API_BASE_URL}/paper/generate_shot_examples`;
+function fetchGenerateShotExamples({ sectionIndex, title, sceneNotes, narration, actTitle, documentaryMode, techniques, moodboard, count, video, projectId, abstract, role, referenceSubject, referenceSketchUrl, referenceFigureDataUrl, referenceVideoUrl, referenceVideoThumbnailUrl, signal }) {
+  return fetch(GENERATE_SHOT_EXAMPLES_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    ...(signal ? { signal } : {}),
+    body: JSON.stringify({
+      section_index: sectionIndex,
+      title: title || '',
+      act_title: actTitle || '',
+      scene_notes: sceneNotes || '',
+      narration: narration || '',
+      ...(abstract ? { abstract } : {}),
+      ...(role ? { role } : {}),
+      ...(referenceSubject ? { reference_subject: referenceSubject } : {}),
+      ...(referenceSketchUrl ? { reference_sketch_url: referenceSketchUrl } : {}),
+      ...(referenceFigureDataUrl ? { reference_figure_data_url: referenceFigureDataUrl } : {}),
+      ...(referenceVideoUrl ? { reference_video_url: referenceVideoUrl } : {}),
+      ...(referenceVideoThumbnailUrl ? { reference_video_thumbnail_url: referenceVideoThumbnailUrl } : {}),
+      ...(projectId ? { project_id: projectId } : {}),
+      ...(documentaryMode ? { documentary_mode: documentaryMode } : {}),
+      ...(techniques && techniques.length ? { techniques } : {}),
+      ...(moodboard && moodboard.length ? { moodboard } : {}),
+      ...(typeof count === 'number' ? { count } : {}),
+      ...(video === false ? { video: false } : {}),
+    })
+  })
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(
+        `Could not reach the examples server at ${GENERATE_SHOT_EXAMPLES_API_URL} (${err.message}). Check that the backend is running and reachable.`
       );
     });
 }
@@ -1805,11 +2124,11 @@ function fetchGenerateSketchSequence(sectionIndex, visual, technique, projectId,
     });
 }
 
-function fetchPremiereExport(sections, projectId) {
+function fetchPremiereExport(sections, projectId, soundEffects, narrations) {
   return fetch(PREMIERE_EXPORT_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sections, project_id: projectId || '' })
+    body: JSON.stringify({ sections, sound_effects: soundEffects || [], narrations: narrations || [], project_id: projectId || '' })
   })
     .then(handleJsonResponse)
     .catch(err => {
@@ -1822,13 +2141,20 @@ function fetchPremiereExport(sections, projectId) {
 
 // The automated MP4-assembly counterpart to fetchPremiereExport (see
 // backend/movie_render.py and js/paper-extract.js's runRenderMovie). Kicks
-// off a background render; the caller then polls fetchRenderStatus. Same
-// projectId in/out convention as the other premiere_exports/ routes.
-function fetchRenderStart(sections, projectId) {
+// off a background render; the caller then polls fetchRenderStatus. An
+// optional boardSequences graph lets linked act-board footage nodes become
+// the ordered visual shots under their narration umbrella.
+function fetchRenderStart(sections, projectId, soundEffects, narrations, boardSequences) {
   return fetch(RENDER_START_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sections, project_id: projectId || '' })
+    body: JSON.stringify({
+      sections,
+      sound_effects: soundEffects || [],
+      narrations: narrations || [],
+      board_sequences: boardSequences || [],
+      project_id: projectId || '',
+    })
   })
     .then(handleJsonResponse)
     .catch(err => {
@@ -1855,11 +2181,18 @@ function fetchRenderStatus(projectId) {
 // export path (the Premiere plugin or the ffmpeg render) can use a URL
 // directly, so this downloads it to a real local file at pick-time.
 // Mirrors fetchUploadFootage's projectId in/out convention above.
-function fetchDownloadStockMedia(sectionIndex, kind, url, projectId) {
+function fetchDownloadStockMedia(sectionIndex, kind, url, projectId, minDurationSeconds = 0, assetId = '') {
   return fetch(DOWNLOAD_STOCK_MEDIA_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ section_index: sectionIndex, kind, url, project_id: projectId || '' })
+    body: JSON.stringify({
+      section_index: sectionIndex,
+      kind,
+      url,
+      project_id: projectId || '',
+      min_duration_seconds: Number(minDurationSeconds) > 0 ? Number(minDurationSeconds) : 0,
+      asset_id: assetId || '',
+    })
   })
     .then(handleJsonResponse)
     .catch(err => {
@@ -1879,11 +2212,14 @@ function fetchDownloadStockMedia(sectionIndex, kind, url, projectId) {
 const SEARCH_VIDEO_API_URL = `${API_BASE_URL}/media/search_video`;
 const SEARCH_AUDIO_API_URL = `${API_BASE_URL}/media/search_audio`;
 
-function fetchVideoOptions(query) {
+function fetchVideoOptions(query, minDurationSeconds = 0) {
   return fetch(SEARCH_VIDEO_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query })
+    body: JSON.stringify({
+      query,
+      min_duration_seconds: Number(minDurationSeconds) > 0 ? Number(minDurationSeconds) : 0,
+    })
   })
     .then(handleJsonResponse)
     .catch(err => {

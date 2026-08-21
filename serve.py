@@ -18,7 +18,7 @@ replaces, since paths are root-absolute - e.g. /js/helpers.js).
 """
 import os
 import sys
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 
 
 class _BoundedReader:
@@ -129,7 +129,11 @@ class RangeRequestHandler(SimpleHTTPRequestHandler):
 
 if __name__ == '__main__':
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 5500
-    server = HTTPServer(('', port), RangeRequestHandler)
+    # Threaded so concurrent requests don't serialize: a large binary (e.g. a
+    # 66MB Gaussian-splat .ply fetched by js/reconstruct-viewer.js while the
+    # page is still loading its other assets) would otherwise block every other
+    # request on the single connection and the browser reports a load error.
+    server = ThreadingHTTPServer(('', port), RangeRequestHandler)
     print(f'Serving {os.getcwd()} on http://localhost:{port} (HTTP Range requests supported)')
     try:
         server.serve_forever()

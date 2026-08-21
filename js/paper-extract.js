@@ -83,13 +83,38 @@ const DOCUMENTARY_MODE_PROMPTS = {
 // scene needs some length even before an edit plan fills in a real one.
 const DEFAULT_SCENE_SECONDS = 5;
 
-// The three timeline tracks a scene can belong to - a scene IS one of these
+const sceneGenerationControllers = new Map();
+function beginSceneGeneration(section) {
+  const key = section.index;
+  const previous = sceneGenerationControllers.get(key);
+  if (previous) previous.abort();
+  const controller = new AbortController();
+  sceneGenerationControllers.set(key, controller);
+  return controller;
+}
+function finishSceneGeneration(section, controller) {
+  if (sceneGenerationControllers.get(section.index) === controller) {
+    sceneGenerationControllers.delete(section.index);
+  }
+}
+function cancelSceneGeneration(section) {
+  const controller = sceneGenerationControllers.get(section.index);
+  if (controller) {
+    controller.abort();
+    sceneGenerationControllers.delete(section.index);
+  }
+}
+function isGenerationAbort(error) {
+  return error && error.name === 'AbortError';
+}
+
+// The two visual timeline tracks a scene can belong to - sound effects are
+// independent clips attached to a scene, not a visual scene role.
 // (its role/label, shown per-scene in buildSectionBlock and used as the track
 // it lands in on the timeline). Keys match buildNarrativeTimeline's TRACK_DEFS.
 const SCENE_ROLES = [
-  { key: 'aRoll', label: 'A-roll' },
-  { key: 'bRoll', label: 'B-roll' },
-  { key: 'soundEffects', label: 'Sound effects' },
+  { key: 'aRoll', label: 'Primary' },
+  { key: 'bRoll', label: 'Cutaway' },
 ];
 const SCENE_ROLE_LABELS = Object.fromEntries(SCENE_ROLES.map(r => [r.key, r.label]));
 
@@ -103,25 +128,23 @@ const SCENE_ROLE_LABELS = Object.fromEntries(SCENE_ROLES.map(r => [r.key, r.labe
 // sparse spine under a dense montage. Each mode's A-roll and B-roll second
 // totals are kept roughly equal so the two tracks line up across the act.
 const MODE_SCENE_TEMPLATES = {
-  // Expository is a SINGLE voice-of-god narration scene; its B-roll cutaways
-  // live inside that one scene's visual box (see the cutaways renderer /
-  // runGenerateShot's expository branch), not as separate scenes. shotKind
-  // flags it so Generate shot produces cutaways rather than start/end frames.
   expository: [
-    { role: 'aRoll', title: 'Voice-of-god narration', durationSeconds: 24, shotKind: 'expositoryNarration' },
+    { role: 'bRoll', title: 'Expository footage', durationSeconds: 8 },
+    { role: 'bRoll', title: 'Expository footage', durationSeconds: 8 },
+    { role: 'bRoll', title: 'Expository footage', durationSeconds: 8 },
   ],
   // Observational & participatory are A-roll only - no B-roll cutaways (fly-
   // on-the-wall takes / interview segments carry the whole act themselves).
   observational: [
-    { role: 'aRoll', title: 'Continuous take', durationSeconds: 12 },
-    { role: 'aRoll', title: 'Continuous take', durationSeconds: 12 },
+    { role: 'bRoll', title: 'Continuous take', durationSeconds: 12 },
+    { role: 'bRoll', title: 'Continuous take', durationSeconds: 12 },
   ],
   participatory: [
-    { role: 'aRoll', title: 'Interview', durationSeconds: 12 },
-    { role: 'aRoll', title: 'Interview', durationSeconds: 12 },
+    { role: 'bRoll', title: 'Interview', durationSeconds: 12 },
+    { role: 'bRoll', title: 'Interview', durationSeconds: 12 },
   ],
   poetic: [
-    { role: 'aRoll', title: 'Narration fragment', durationSeconds: 24 },
+    { role: 'bRoll', title: 'Poetic image', durationSeconds: 8 },
     { role: 'bRoll', title: 'Montage image', durationSeconds: 4 },
     { role: 'bRoll', title: 'Montage image', durationSeconds: 4 },
     { role: 'bRoll', title: 'Montage image', durationSeconds: 4 },
@@ -146,6 +169,294 @@ const DOCUMENTARY_TECHNIQUES = [
   'Split-screen juxtaposition',
   'Time-lapse',
 ];
+
+// Categories used to group the technique chips in the Documentary techniques
+// module (see renderMovieEditor). Order = display order of the subheadings.
+const TECHNIQUE_CATEGORY_ORDER = [
+  { key: 'composition', label: 'Shot composition' },
+  { key: 'movement', label: 'Camera movement' },
+  { key: 'lighting', label: 'Lighting' },
+  { key: 'metaphor_dataviz', label: 'Visual metaphor & data-vis' },
+];
+
+// Every technique in the (backend) catalog -> its category. Anything not listed
+// falls into an "Other" group. Kept in sync by convention with
+// backend/documentary_techniques.py's keys.
+const TECHNIQUE_CATEGORY = {
+  // Shot composition / framing / shot type
+  'Interview/direct address': 'composition',
+  'Split-screen juxtaposition': 'composition',
+  'Observational sequence': 'composition',
+  'Point-of-view shot': 'composition',
+  'Reveal': 'composition',
+  'Wide-to-detail sequence': 'composition',
+  'Detail-to-context reveal': 'composition',
+  'Reaction shot': 'composition',
+  'Object close-up': 'composition',
+  'Static tableau': 'composition',
+  'Rack focus': 'composition',
+  'Long take': 'composition',
+  'B-roll illustration': 'composition',
+  'Reenactment': 'composition',
+  'Demonstration': 'composition',
+  'Screen recording': 'composition',
+  'Archival footage': 'composition',
+  'Archival document': 'composition',
+  // Camera movement (+ temporal camera treatments)
+  'Follow shot': 'movement',
+  'Pan': 'movement',
+  'Tilt': 'movement',
+  'Push-in': 'movement',
+  'Pull-back': 'movement',
+  'Whip pan': 'movement',
+  'Slow motion': 'movement',
+  'Time-lapse': 'movement',
+  // Lighting
+  'Three-point lighting': 'lighting',
+  'High-key lighting': 'lighting',
+  'Low-key lighting': 'lighting',
+  'Natural light': 'lighting',
+  'Silhouette / backlight': 'lighting',
+  'Practical lighting': 'lighting',
+  // Visual metaphor / data-vis / meaning-through-juxtaposition
+  'Montage': 'metaphor_dataviz',
+  'Process sequence': 'metaphor_dataviz',
+  'Before-and-after comparison': 'metaphor_dataviz',
+  'Parallel editing': 'metaphor_dataviz',
+  'Match cut': 'metaphor_dataviz',
+  'Graphic match': 'metaphor_dataviz',
+  'Contrast cut': 'metaphor_dataviz',
+  'Data visualization': 'metaphor_dataviz',
+  'Animated diagram': 'metaphor_dataviz',
+  'Map progression': 'metaphor_dataviz',
+  'Visual motif': 'metaphor_dataviz',
+  'Visual metaphor': 'metaphor_dataviz',
+  'Juxtaposition': 'metaphor_dataviz',
+  'On-screen text': 'metaphor_dataviz',
+};
+
+// A compact baseline toolkit shown to every presenter, regardless of what a
+// moodboard distillation happens to notice. These are intentionally familiar,
+// practical choices for framing, camera movement, and lighting; they remain
+// draggable onto scenes but are kept visually separate from moodboard output.
+const STANDARD_TECHNIQUE_GROUPS = [
+  {
+    label: 'Shot composition',
+    techniques: [
+      'Interview/direct address', 'Wide-to-detail sequence',
+      'Point-of-view shot', 'Reaction shot', 'Object close-up', 'Static tableau',
+    ],
+  },
+  {
+    label: 'Camera movement',
+    techniques: ['Pan', 'Tilt', 'Push-in', 'Pull-back', 'Follow shot', 'Rack focus'],
+  },
+  {
+    label: 'Lighting',
+    techniques: ['Three-point lighting', 'Natural light', 'High-key lighting', 'Low-key lighting', 'Silhouette / backlight', 'Practical lighting'],
+  },
+];
+const STANDARD_TECHNIQUE_SET = new Set(STANDARD_TECHNIQUE_GROUPS.flatMap(group => group.techniques));
+
+// The backend catalog is the closed technique vocabulary. In particular,
+// Primary/Cutaway belong to SCENE_ROLES and must never become technique chips,
+// even when restoring stale state or handling a malformed model response.
+function isDocumentaryTechnique(value) {
+  return typeof value === 'string'
+    && Object.prototype.hasOwnProperty.call(TECHNIQUE_CATEGORY, value);
+}
+function sanitizeDocumentaryTechniques(values) {
+  return Array.from(new Set((Array.isArray(values) ? values : []).filter(isDocumentaryTechnique)));
+}
+
+// Animated directorial-motion diagrams shown on hover over a technique chip
+// (ported from directional_motion_sketches_2.html - see the .technique-motion-*
+// CSS). Hand-authored entries use the richest technique-specific diagrams;
+// getTechniqueMotionSketch supplies an animated semantic diagram for every
+// other key in backend/documentary_techniques.py.
+const TECHNIQUE_MOTION_SKETCH = {
+  'Follow shot': { cls: 'follow', title: 'Follow shot', html: '<div class="ground"></div><div class="trees"><div class="tree t1"></div><div class="tree t2"></div><div class="tree t3"></div></div><div class="person"></div><div class="camera"></div><div class="arrow"></div>' },
+  'Point-of-view shot': { cls: 'pov', title: 'Point-of-view shot', html: '<div class="person"></div><div class="eye"></div><div class="cone"></div><div class="tree a"></div><div class="tree b"></div><div class="sensor"></div><div class="focusBox"></div>' },
+  'Wide-to-detail sequence': { cls: 'wide', title: 'Wide-to-detail', html: '<div class="tree w1"></div><div class="tree w2"></div><div class="tree w3"></div><div class="person"></div><div class="sensor"></div><div class="camera"></div>' },
+  'Observational sequence': { cls: 'obs', title: 'Observational', html: '<div class="camera"></div><div class="tree"></div><div class="sensor"></div><div class="note"></div><div class="person"></div>' },
+  'Data visualization': { cls: 'data', title: 'Data visualization', html: '<div class="tree d1"></div><div class="tree d2"></div><div class="tree d3"></div><div class="tree d4"></div><div class="tree d5"></div><div class="measure">measurement ↓</div><div class="chart"></div><div class="pt p1"></div><div class="pt p2"></div><div class="pt p3"></div><div class="pt p4"></div><div class="pt p5"></div>' },
+  'Object close-up': { cls: 'close', title: 'Object close-up', html: '<div class="person"></div><div class="tree"></div><div class="sensor"></div><div class="sensorCopy"></div><div class="camera"></div>' },
+  'Visual metaphor': {
+    cls: 'metaphor',
+    title: 'Visual metaphor',
+    html: '<div class="metaphor-abstract-label">ABSTRACT IDEA</div>'
+      + '<div class="metaphor-abstract"><i class="node n1"></i><i class="node n2"></i><i class="node n3"></i><i class="node n4"></i><i class="link l1"></i><i class="link l2"></i><i class="link l3"></i></div>'
+      + '<div class="metaphor-means">BECOMES RELATABLE</div><div class="metaphor-direction"></div>'
+      + '<div class="metaphor-world"><div class="bank left"></div><div class="bank right"></div><div class="bridge"><i></i><i></i><i></i><i></i><i></i></div><div class="traveler"></div></div>'
+      + '<div class="metaphor-relatable-label">“A BRIDGE”</div>',
+  },
+};
+
+// Preview families for the rest of the catalog. Every backend catalog key is
+// already represented in TECHNIQUE_CATEGORY; category is the final fallback,
+// while these groups make the motion communicate the technique more precisely.
+const TECHNIQUE_PREVIEW_FAMILIES = [
+  { kind: 'edit', keys: ['Montage', 'Split-screen juxtaposition', 'Before-and-after comparison', 'Parallel editing', 'Match cut', 'Graphic match', 'Contrast cut', 'Juxtaposition'] },
+  { kind: 'evidence', keys: ['B-roll illustration', 'Archival footage', 'Archival document', 'Reenactment', 'Demonstration', 'Screen recording', 'Reaction shot'] },
+  { kind: 'graphic', keys: ['Animated diagram', 'Map progression', 'Visual motif', 'Visual metaphor', 'On-screen text'] },
+  { kind: 'time', keys: ['Time-lapse', 'Slow motion', 'Long take', 'Process sequence'] },
+  { kind: 'camera', keys: ['Reveal', 'Detail-to-context reveal', 'Pan', 'Tilt', 'Push-in', 'Pull-back', 'Whip pan', 'Rack focus'] },
+  { kind: 'light', keys: ['Three-point lighting', 'High-key lighting', 'Low-key lighting', 'Natural light', 'Silhouette / backlight', 'Practical lighting'] },
+  { kind: 'subject', keys: ['Interview/direct address', 'Static tableau'] },
+];
+const TECHNIQUE_PREVIEW_KIND = {};
+TECHNIQUE_PREVIEW_FAMILIES.forEach(({ kind, keys }) => keys.forEach(key => { TECHNIQUE_PREVIEW_KIND[key] = kind; }));
+
+// Family animations share a common stage, but each catalog technique gets a
+// semantic variant class so related techniques do not collapse into the same
+// generic animation (for example Pan, Tilt, Push-in, and Pull-back all used to
+// look identical, as did Interview and Static tableau).
+const TECHNIQUE_PREVIEW_VARIANT = {
+  'Interview/direct address': 'interview',
+  'Montage': 'montage',
+  'Split-screen juxtaposition': 'split-screen',
+  'Time-lapse': 'time-lapse',
+  'Observational sequence': 'observational',
+  'Follow shot': 'follow-shot',
+  'Point-of-view shot': 'point-of-view',
+  'Reveal': 'reveal',
+  'Wide-to-detail sequence': 'wide-detail',
+  'Detail-to-context reveal': 'detail-context',
+  'Process sequence': 'process',
+  'Before-and-after comparison': 'before-after',
+  'Parallel editing': 'parallel',
+  'Match cut': 'match-cut',
+  'Graphic match': 'graphic-match',
+  'Contrast cut': 'contrast-cut',
+  'Reaction shot': 'reaction',
+  'B-roll illustration': 'b-roll',
+  'Archival footage': 'archival-footage',
+  'Archival document': 'archival-document',
+  'Data visualization': 'data-visualization',
+  'Animated diagram': 'animated-diagram',
+  'Map progression': 'map-progression',
+  'Reenactment': 'reenactment',
+  'Demonstration': 'demonstration',
+  'Screen recording': 'screen-recording',
+  'Object close-up': 'object-close-up',
+  'Slow motion': 'slow-motion',
+  'Long take': 'long-take',
+  'Static tableau': 'static-tableau',
+  'Rack focus': 'rack-focus',
+  'Pan': 'pan',
+  'Tilt': 'tilt',
+  'Push-in': 'push-in',
+  'Pull-back': 'pull-back',
+  'Whip pan': 'whip-pan',
+  'Visual motif': 'visual-motif',
+  'Visual metaphor': 'visual-metaphor',
+  'Juxtaposition': 'juxtaposition',
+  'On-screen text': 'on-screen-text',
+  'Three-point lighting': 'three-point',
+  'High-key lighting': 'high-key',
+  'Low-key lighting': 'low-key',
+  'Natural light': 'natural-light',
+  'Silhouette / backlight': 'silhouette',
+  'Practical lighting': 'practical-light',
+};
+
+function genericTechniquePreviewHtml(technique) {
+  const shortLabel = technique.length > 24 ? `${technique.slice(0, 22)}…` : technique;
+  return '<div class="generic-scene">'
+    + '<div class="generic-frame frame-a"><i class="generic-subject"></i><i class="generic-object"></i></div>'
+    + '<div class="generic-frame frame-b"><i class="generic-subject"></i><i class="generic-object"></i></div>'
+    + '<div class="generic-light light-a"></div><div class="generic-light light-b"></div>'
+    + '<div class="generic-wave">' + '<i></i>'.repeat(18) + '</div>'
+    + '<div class="generic-playhead"></div><div class="generic-arrow"></div>'
+    + `<div class="generic-caption">${shortLabel}</div></div>`;
+}
+
+function getTechniqueMotionSketch(technique) {
+  if (TECHNIQUE_MOTION_SKETCH[technique]) return TECHNIQUE_MOTION_SKETCH[technique];
+  const category = TECHNIQUE_CATEGORY[technique];
+  if (!category) return null;
+  const categoryDefaults = {
+    composition: 'subject', movement: 'camera', lighting: 'light',
+    metaphor_dataviz: 'graphic', other: 'edit',
+  };
+  const kind = TECHNIQUE_PREVIEW_KIND[technique] || categoryDefaults[category] || 'edit';
+  const variant = TECHNIQUE_PREVIEW_VARIANT[technique] || 'default';
+  return {
+    cls: `generic ${kind} ${variant}`,
+    title: technique,
+    html: genericTechniquePreviewHtml(technique),
+  };
+}
+
+let techniqueMotionPopoverEl = null;
+function showTechniqueMotionPreview(technique, chipEl) {
+  const sketch = getTechniqueMotionSketch(technique);
+  if (!sketch) return;
+  if (!techniqueMotionPopoverEl) {
+    techniqueMotionPopoverEl = document.createElement('div');
+    techniqueMotionPopoverEl.className = 'technique-motion-popover';
+    document.body.appendChild(techniqueMotionPopoverEl);
+  }
+  const pop = techniqueMotionPopoverEl;
+  pop.innerHTML = `<div class="technique-motion-popover-title">${sketch.title}</div>`
+    + `<div class="technique-motion-scale"><div class="technique-motion-preview ${sketch.cls}"><div class="stage">${sketch.html}</div></div></div>`;
+  pop.style.display = 'block';
+  // Position below the chip, clamped to the viewport (flip above if needed).
+  const r = chipEl.getBoundingClientRect();
+  const pw = pop.offsetWidth;
+  const ph = pop.offsetHeight;
+  let left = Math.min(r.left, window.innerWidth - pw - 8);
+  let top = r.bottom + 6;
+  if (top + ph > window.innerHeight - 8) top = r.top - ph - 6;
+  pop.style.left = `${Math.max(8, left)}px`;
+  pop.style.top = `${Math.max(8, top)}px`;
+}
+function hideTechniqueMotionPreview() {
+  if (techniqueMotionPopoverEl) techniqueMotionPopoverEl.style.display = 'none';
+}
+
+// One toggleable, draggable technique chip (shared by the grouped render in
+// renderMovieEditor). Clicking toggles it in selectedTechniques; dragging it
+// carries application/x-technique onto a paper-section block.
+function buildTechniqueChip(technique, options) {
+  options = options || {};
+  const selectable = options.selectable !== false;
+  const chip = document.createElement('button');
+  chip.type = 'button';
+  chip.className = 'chip suggested chip-draggable';
+  if (options.standard) chip.classList.add('standard-technique-chip');
+  if (options.moodboardDerived) chip.classList.add('moodboard-derived');
+  const selectionSet = options.selectionSet || selectedTechniques;
+  chip.classList.toggle('selected', selectable && selectionSet.has(technique));
+  chip.textContent = technique;
+  if (selectable) {
+    chip.addEventListener('click', () => {
+      if (selectionSet.has(technique)) selectionSet.delete(technique);
+      else selectionSet.add(technique);
+      chip.classList.toggle('selected', selectionSet.has(technique));
+      saveDebugSession();
+    });
+  }
+  if (options.standard) {
+    chip.title = options.moodboardDerived
+      ? 'Standard technique · also highlighted by the moodboard distillation'
+      : 'Standard filmmaking technique · drag onto a scene to apply';
+  }
+  chip.draggable = true;
+  chip.addEventListener('dragstart', event => {
+    event.dataTransfer.setData('application/x-technique', technique);
+    event.dataTransfer.effectAllowed = 'copy';
+  });
+  // Every catalog technique has an animated preview. Hand-authored diagrams
+  // are used when available; the rest use a semantic family animation.
+  if (getTechniqueMotionSketch(technique)) {
+    chip.classList.add('has-motion-preview');
+    chip.addEventListener('mouseenter', () => showTechniqueMotionPreview(technique, chip));
+    chip.addEventListener('mouseleave', hideTechniqueMotionPreview);
+    chip.addEventListener('dragstart', hideTechniqueMotionPreview);
+  }
+  return chip;
+}
 
 // Kept in sync by convention with backend/animate_llm.py's TECHNIQUES (same
 // convention as DOCUMENTARY_MODES above) - the 4 camera moves a sketch can
@@ -175,9 +486,25 @@ const MEDIA_BANK_ASSET_DEFAULTS = [
 ].map(filename => ({ kind: 'video', label: filename, previewUrl: `/assets/${filename}` }));
 
 let selectedTechniques = new Set();
+// The techniques panel opens on the moodboard-distilled view; keep the
+// toggle selection while the panel is re-rendered during the current session.
+let techniquePanelView = 'moodboard';
 
 const documentaryIntentInput = document.getElementById('documentary-intent-input');
 const intentSuggestedChipsEl = document.getElementById('intent-suggested-chips');
+
+// Moodboard entry-point elements (index.html only - null on storyboard.html).
+const moodboardNameInput = document.getElementById('moodboard-name-input');
+const moodboardAddNameBtn = document.getElementById('moodboard-add-name-btn');
+const moodboardUrlInput = document.getElementById('moodboard-url-input');
+const moodboardAddUrlBtn = document.getElementById('moodboard-add-url-btn');
+const moodboardFileInput = document.getElementById('moodboard-file-input');
+const moodboardListEl = document.getElementById('moodboard-list');
+const moodboardStatusEl = document.getElementById('moodboard-status');
+// 3D reconstruction entry-point elements (index.html only).
+const reconstructFileInput = document.getElementById('reconstruct-file-input');
+const reconstructListEl = document.getElementById('reconstruct-list');
+const reconstructStatusEl = document.getElementById('reconstruct-status');
 //#endregion
 
 //#region --- KEEP TRACK OF STATE
@@ -189,6 +516,12 @@ const intentSuggestedChipsEl = document.getElementById('intent-suggested-chips')
 
 let currentLabel = '';
 let currentSections = [];
+
+// Stable id for the quiet server-side source snapshot. It is separate from
+// Premiere's project id because this snapshot contains only reusable paper
+// sections and moodboard links, not generated/export media.
+let paperSnapshotId = null;
+let paperSnapshotSaveTimer = null;
 
 // index -> arc-part name string (one of currentArcSections' keys below) -
 // starts empty on every accepted arc (see runAcceptArc); populated
@@ -219,6 +552,158 @@ let editPlanBarStatus = { message: '', isError: false };
 // response. Drives
 // how many columns/timeline segments renderMovieEditor draws.
 let currentArcSections = [];
+
+// The existing timeline/scene-card layout remains the default. The optional
+// act board is a separate presentation of the same scene objects, so toggling
+// it never replaces or rewrites any of the established storyboard UI.
+let storyboardView = 'timeline';
+
+// Act-board nodes are deliberately separate from scene objects. A presenter
+// can iterate on a narration/footage idea without changing the timeline,
+// attached source material, or recorded narration. Each narration node owns
+// an ordered `footageNodeIds` chain with per-node timing; the graph is
+// persisted with the normal storyboard session so refreshes do not re-run
+// suggestions.
+let actBoardNodes = Object.create(null);
+let actBoardPlaybackState = null;
+let actBoardNativeAudioElement = null;
+let activeActBoardResizeHandler = null;
+
+function stopActBoardNativeAudio() {
+  const audio = actBoardNativeAudioElement;
+  if (!audio) return;
+  try { audio.pause(); } catch (err) { /* already detached */ }
+  try { audio.currentTime = 0; } catch (err) { /* optional */ }
+  actBoardNativeAudioElement = null;
+}
+
+function wireActBoardAudioExclusivity(audio) {
+  if (!audio) return;
+  audio.addEventListener('play', () => {
+    if (actBoardNativeAudioElement && actBoardNativeAudioElement !== audio) {
+      try { actBoardNativeAudioElement.pause(); } catch (err) { /* detached */ }
+      try { actBoardNativeAudioElement.currentTime = 0; } catch (err) { /* optional */ }
+    }
+    actBoardNativeAudioElement = audio;
+  });
+  const clear = () => {
+    if (actBoardNativeAudioElement === audio) actBoardNativeAudioElement = null;
+  };
+  audio.addEventListener('ended', clear);
+  audio.addEventListener('emptied', clear);
+}
+
+// A suggested passage is useful direction for shot/media generation, but it
+// is not an actual recorded voice track. Prefer the real transcript whenever
+// one exists; otherwise let the draft guide previews and searches without
+// making the timeline think audio has been recorded.
+function effectiveSectionNarration(section) {
+  return (section && (section.narration || section.narrationSuggestion) || '').trim();
+}
+
+// The arc suggestion is the source of truth for a freshly accepted scene's
+// draft. This lookup also repairs older sessions that persisted the arc part
+// but not the scene-side copy, preventing the card and scene from drifting.
+function acceptedArcNarrationForSection(section) {
+  if (!section || !selectedNarrationArc || !Array.isArray(selectedNarrationArc.sections)) return '';
+  const actKey = currentAssignments[section.index];
+  const part = selectedNarrationArc.sections.find(candidate =>
+    candidate && (candidate.name || candidate.key) === actKey);
+  return (part && part.suggested_narration || '').trim();
+}
+
+function syncAcceptedArcNarrationDrafts() {
+  currentSections.forEach(section => {
+    const draft = acceptedArcNarrationForSection(section);
+    if (!draft) return;
+    section.arcSuggestedNarration = draft;
+    section.narrationSuggestion = draft;
+  });
+}
+
+// Source deletion and storyboard deletion are separate operations. A paper
+// section can remain available as source material after its arranged scene is
+// cleared from the timeline. Older sessions have no sceneRemoved field, which
+// is equivalent to false.
+function isSceneActive(section) {
+  return !!section && !section.removed && !section.sceneRemoved;
+}
+
+// Scene composition notes are deliberately separate from the attached paper
+// passage. Older sessions have no sceneNotes field, so their paper text remains
+// the fallback input for generation until the presenter adds explicit notes.
+function sectionCompositionNotes(section) {
+  return ((section && section.sceneNotes) || '').trim()
+    || ((section && section.text) || '').trim();
+}
+
+let narrationAutofillPromise = null;
+let narrationAutofillGeneration = 0;
+
+// Draft narration for every arranged scene that does not already have a real
+// transcript or saved draft. The requests run in a small worker pool so
+// opening a long paper (or preparing Preview All) does not flood the LLM
+// provider; each result is saved and appears after the batch finishes.
+function autoSuggestNarrationForStoryboard(options) {
+  options = options || {};
+  // A second caller while the first batch is in flight should join it. Once a
+  // batch finishes, a later call may still pick up newly-added scenes; saved
+  // suggestions mean refreshes never regenerate completed narration, and
+  // sceneRemoved keeps cleared scenes out of this target list.
+  if (narrationAutofillPromise && !options.force) return narrationAutofillPromise;
+  const generation = ++narrationAutofillGeneration;
+  const targets = options.targets || currentSections.filter(section =>
+    isSceneActive(section) && currentAssignments[section.index]
+      && !section.narration && !section.narrationSuggestion);
+  if (!targets.length) {
+    if (options.force) narrationAutofillPromise = null;
+    return Promise.resolve();
+  }
+  setStoryboardStatus(`Drafting narration for ${targets.length} scene${targets.length === 1 ? '' : 's'}...`);
+  const concurrency = Math.min(3, targets.length);
+  let next = 0;
+  let completed = 0;
+  const worker = async () => {
+    while (next < targets.length) {
+      const section = targets[next++];
+      const act = currentArcSections.find(a => a.key === currentAssignments[section.index]);
+      try {
+        const result = await fetchSuggestNarration({
+          sectionTitle: section.title,
+          sectionText: section.text,
+          actTitle: act ? act.label : '',
+          actDescription: act ? act.description : '',
+          abstract: findAbstractText(),
+          documentaryMode: selectedDocumentaryMode,
+        });
+        // Do not overwrite a recording or an explicit draft created while the
+        // background request was in flight.
+        if (generation === narrationAutofillGeneration && isSceneActive(section)
+            && currentAssignments[section.index]) {
+          section.narrationSuggestion = (result.narration || '').trim();
+          if (section.narrationSuggestion) completed += 1;
+        }
+      } catch (err) {
+        // Autocomplete is an enhancement; a missing key/network must not make
+        // the storyboard unusable. The per-scene button remains available.
+      }
+    }
+  };
+  const batch = Promise.all(Array.from({ length: concurrency }, worker)).then(() => {
+    if (generation !== narrationAutofillGeneration) return;
+    const remaining = currentSections.filter(section => !section.removed);
+    renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+    saveDebugSession();
+    setStoryboardStatus(completed
+      ? `Added suggested narration to ${completed} scene${completed === 1 ? '' : 's'}. Record the voice track when ready.`
+      : 'No narration drafts were added; use Suggest narration on a scene to retry.', completed === 0);
+  });
+  const tracked = batch.finally(() => {
+    if (generation === narrationAutofillGeneration) narrationAutofillPromise = null;
+  });
+  narrationAutofillPromise = tracked;
+  return tracked;
+}
 
 // Set on an arc-template chip click, cleared the moment the presenter types
 // in the textarea afterward (see the ARC_TEMPLATES wiring below) - tracks
@@ -276,6 +761,35 @@ let overallEditNotes = '';
 // returns one, so every subsequent call in this session lands in the same
 // premiere_exports/<project_id>/ folder instead of minting a new one each time.
 let premiereProjectId = null;
+
+// The moodboard entry point (index.html) - reference documentaries the
+// presenter added, each analyzed in the background and later distilled into
+// suggested arcs/mode/techniques (see runDistillMoodboard). Each entry:
+// {refId, sourceKind:'named'|'youtube'|'upload', title, sourceUrl, note,
+//  state:'analyzing'|'ready'|'error', profile:<distill-ready profile>|null,
+//  thumbnailUrl}. Persisted across the index->storyboard navigation.
+let moodboardReferences = [];
+// 3D reconstruction jobs (index.html #reconstruct-module). Each entry:
+// {reconId, name, kindHint:'auto'|'photo'|'panorama', state:'reconstructing'
+//  |'ready'|'error', profile:<viewer profile>|null, expanded, teardown}.
+let reconstructItems = [];
+// The 1-3 sentence rationale the distillation returned for its suggested
+// mode/techniques (see runDistillMoodboard) - surfaced in renderMovieEditor.
+let distilledStyleRationale = '';
+
+// The last moodboard distillation result ({recommended, alternatives,
+// suggested_mode, suggested_techniques, style_rationale}) - cached + persisted
+// so a storyboard.html reload re-renders the suggestion from it instead of
+// firing a fresh (slow, non-deterministic) LLM call every refresh.
+let lastDistillResult = null;
+
+// Runtime-only state for narration drafts shown in the pre-accept arc
+// suggestion. The generated text itself is stored on each arc part (and is
+// therefore persisted with lastDistillResult); loading/error state stays out
+// of the saved session so a refresh never restores a stale spinner.
+const arcNarrationPendingParts = new WeakSet();
+const arcNarrationFailedParts = new WeakSet();
+let arcNarrationGeneration = 0;
 //#endregion
 
 //#region --- RECORD YOUR INTENT
@@ -323,7 +837,7 @@ const waveformCtx = waveformCanvasEl ? waveformCanvasEl.getContext('2d') : null;
 const intentTranscriptDisplayEl = document.getElementById('intent-transcript-display');
 const intentTranscriptTextEl = document.getElementById('intent-transcript-text');
 const suggestArcsRowEl = document.getElementById('suggest-arcs-row');
-const suggestArcsBtn = document.getElementById('suggest-arcs-btn');
+// const suggestArcsBtn = document.getElementById('suggest-arcs-btn');
 const suggestArcsStatusEl = document.getElementById('suggest-arcs-status');
 const arcSuggestionPanelEl = document.getElementById('arc-suggestion-panel');
 
@@ -392,17 +906,18 @@ function stopNarrationPlayback() {
 }
 
 // Plays [startSeconds, endSeconds) of audioBuffer (or the whole thing,
-// both omitted) through Web Audio - deliberately not a plain
+// both omitted) through Web Audio for the intent-recording player. Per-scene
+// narration uses its native <audio> element instead. This remains deliberately
+// not a plain
 // <audio src> - see decodeRecordedNarration's own comment on why: Safari
 // can't reliably play a MediaRecorder-produced clip back that way, even
 // from a real disk-served file, but decodeAudioData/an
 // AudioBufferSourceNode does. owner is whatever UI element the caller
 // wants to identify as currently holding playback (see currentPlaybackOwner
 // above); onStop() is called once playback stops or ends, for the caller
-// to reset its own button's label. See playNarrationRange (the intent
-// recording, below) and buildSectionBlock's own narration player for the
-// two current callers.
+// to reset its own button's label. See playNarrationRange below.
 function playAudioBuffer(audioBuffer, owner, onStop, startSeconds, endSeconds) {
+  stopSfxPreview(true);
   stopNarrationPlayback();
   if (!audioBuffer) return;
   const ctx = ensurePlaybackAudioCtx();
@@ -784,12 +1299,10 @@ function nextSectionIndex() {
 // insert "after" in arc terms). `act`, when given, is one of
 // currentArcSections' keys, so the new section immediately appears in that
 // row; omitted when there's no arrangement yet to place it into.
-// `narrativeOnly`, when true, marks this as a blank placeholder created
-// for the arc's structure rather than derived from the paper (a manual
-// "+ Add Section" click, or an empty act row auto-populating itself with
-// one - see renderMovieEditor) - excluded from storyboard.html's "Source
-// material" sidebar list (see renderSourceMaterialList) so that list stays
-// a true reflection of the paper's own extracted sections.
+// `narrativeOnly`, when true, marks this as a blank placeholder created for
+// the arc's structure rather than derived from the paper (an empty act row,
+// an accepted arc, or a mode scaffold - see renderMovieEditor). These scene
+// placeholders never belong in the index.html source-material feed.
 function insertSection(afterIndex, title, text, act, narrativeOnly) {
   const section = { index: nextSectionIndex(), title, text, image: null, removed: false };
   if (narrativeOnly) section.narrativeOnly = true;
@@ -822,6 +1335,16 @@ const SHOT_MOVEMENT_LABELS = {
   pull_out: 'PULL OUT', tracking: 'TRACKING', handheld: 'HANDHELD',
 };
 
+// Maps a shot's inferred camera movement (shot_plan_llm.py's 7-value
+// vocabulary) onto one of the cutaway motion types, so a narration-driven
+// shot's frames animate with the SAME orange camera-frame overlay the
+// expository cutaways use (see the cutaways renderer + .cutaway-stage.motion-*
+// CSS). 'static' still gets a gentle move so every generated shot animates.
+const SHOT_MOVEMENT_TO_MOTION = {
+  static: 'approach', pan: 'reveal', tilt: 'ascend', push_in: 'approach',
+  pull_out: 'retreat', tracking: 'orbit', handheld: 'countermotion',
+};
+
 // Display labels for a cutaway's camera motion (see the cutaways renderer /
 // cutaway_llm.py's _MOTION_TYPES / directional_motion_sketches.html).
 const CUTAWAY_MOTION_LABELS = {
@@ -830,7 +1353,56 @@ const CUTAWAY_MOTION_LABELS = {
   countermotion: 'Countermotion', enterexit: 'Enter / Exit',
 };
 
+function configureUploadedFootagePreview(player, section) {
+  if (section.uploadedFootageThumbnailUrl) {
+    player.poster = section.uploadedFootageThumbnailUrl;
+    player.preload = 'metadata';
+    return;
+  }
+  // Migration fallback for uploads saved before thumbnail_url existed: make
+  // the browser decode an early frame instead of leaving a black rectangle.
+  player.preload = 'auto';
+  player.addEventListener('loadedmetadata', () => {
+    if (Number.isFinite(player.duration) && player.duration > 0) {
+      player.currentTime = Math.min(0.05, player.duration / 2);
+    }
+  }, { once: true });
+}
+
+function configureGeneratedVideoPreview(player, section) {
+  // Prefer the exact frame used to seed the video. Older responses/sessions
+  // may not have animatedSketchThumbnailUrl, so fall back through the selected
+  // example, generated shot frame, and first example instead of showing black.
+  const firstExample = section.exampleShots && section.exampleShots[0];
+  const posterUrl = section.animatedSketchThumbnailUrl
+    || (section.selectedExample && section.selectedExample.url)
+    || section.startFramePreviewUrl
+    || (firstExample && (firstExample.thumbnail_url || firstExample.url));
+  if (posterUrl) {
+    const separator = posterUrl.includes('?') ? '&' : '?';
+    const version = section.animatedSketchGeneratedAt || section.examplesGeneratedAt || Date.now();
+    player.poster = `${posterUrl}${separator}t=${version}`;
+    player.preload = 'metadata';
+    return;
+  }
+  // Last-resort migration path when no generated still was persisted.
+  player.preload = 'auto';
+  player.addEventListener('loadedmetadata', () => {
+    if (Number.isFinite(player.duration) && player.duration > 0) {
+      player.currentTime = Math.min(0.05, player.duration / 2);
+    }
+  }, { once: true });
+}
+
 const VISUAL_BOX_RENDERERS = {
+  uploadedSketch(section) {
+    if (!section.uploadedSketchPreviewUrl) return null;
+    const img = document.createElement('img');
+    img.className = 'paper-section-visual-media user-sketch-preview';
+    img.src = `${section.uploadedSketchPreviewUrl}?t=${section.uploadedSketchUploadedAt || ''}`;
+    img.alt = 'Uploaded scene sketch';
+    return img;
+  },
   // Expository B-roll cutaways (see runGenerateCutaways / /paper/generate_cutaways):
   // a horizontal scroll of cards, each an AI background still with an animated
   // orange camera-frame overlay (motion-<type>, ported from
@@ -866,56 +1438,282 @@ const VISUAL_BOX_RENDERERS = {
     });
     return row;
   },
-  // The narration-driven shot: a start frame → end frame artboard (see
-  // /paper/generate_shot and artboard-example.png) - solid-bordered start
-  // frame, an arrow, dashed-bordered end frame, with a shot-size/movement
-  // label and the shot's purpose. Both frames hard-cut together in the
-  // rendered MP4 (movie_render.render_shot's two-still branch).
+  // The narration-driven shot(s): a start frame → end frame artboard per shot
+  // (see /paper/generate_shot). A scene has one shot per dragged technique (see
+  // runGenerateShot), so this renders section.shots as a vertical sequence of
+  // boards, each labeled with its technique + shot-size/movement + purpose.
+  // Falls back to the legacy single start/end pair for older sessions.
   shotFrames(section) {
-    if (!section.startFramePreviewUrl || !section.endFramePreviewUrl) return null;
-    const plan = section.shotPlan || {};
+    const shots = (section.shots && section.shots.length)
+      ? section.shots
+      : ((section.startFramePreviewUrl && section.endFramePreviewUrl)
+        ? [{ technique: null, shotPlan: section.shotPlan || {}, startFramePreviewUrl: section.startFramePreviewUrl, endFramePreviewUrl: section.endFramePreviewUrl }]
+        : null);
+    if (!shots) return null;
     const bust = section.shotFramesGeneratedAt ? `?t=${section.shotFramesGeneratedAt}` : '';
 
-    const board = document.createElement('div');
-    board.className = 'shot-frames';
+    const sequence = document.createElement('div');
+    sequence.className = 'shot-sequence';
 
-    const move = SHOT_MOVEMENT_LABELS[plan.movement] || (plan.movement || '').toUpperCase();
-    const header = document.createElement('div');
-    header.className = 'shot-frames-header';
-    header.textContent = [move, plan.shot_size].filter(Boolean).join(' · ');
-    board.appendChild(header);
+    shots.forEach((shot, idx) => {
+      const plan = shot.shotPlan || {};
+      const board = document.createElement('div');
+      board.className = 'shot-frames';
 
-    const row = document.createElement('div');
-    row.className = 'shot-frames-row';
-    const makeFrame = (cls, url, caption) => {
-      const wrap = document.createElement('div');
-      wrap.className = `shot-frame ${cls}`;
-      const img = document.createElement('img');
-      img.className = 'shot-frame-img';
-      img.src = `${url}${bust}`;
-      img.alt = caption;
-      wrap.appendChild(img);
+      const move = SHOT_MOVEMENT_LABELS[plan.movement] || (plan.movement || '').toUpperCase();
+      const header = document.createElement('div');
+      header.className = 'shot-frames-header';
+      const headerBits = [];
+      if (shots.length > 1) headerBits.push(`SHOT ${idx + 1}`);
+      if (shot.technique) headerBits.push(shot.technique);
+      if (move) headerBits.push(move);
+      if (plan.shot_size) headerBits.push(plan.shot_size);
+      header.textContent = headerBits.join(' · ');
+      board.appendChild(header);
+
+      // ONE box that cycles between the start and end frame (a hard-cut loop),
+      // rather than two side-by-side frames - both stacked in the same
+      // .cutaway-stage (with the animated camera overlay), cross-cut via CSS
+      // (.shot-cycle-start / .shot-cycle-end). The camera move is mapped onto a
+      // cutaway motion so it animates like the expository cutaways do.
+      const motion = SHOT_MOVEMENT_TO_MOTION[plan.movement] || 'approach';
+      const stage = document.createElement('div');
+      stage.className = `cutaway-stage motion-${motion} shot-frame-stage shot-cycle-stage`;
+      const startImg = document.createElement('img');
+      startImg.className = 'cutaway-bg shot-cycle-frame shot-cycle-start';
+      startImg.src = `${shot.startFramePreviewUrl}${bust}`;
+      startImg.alt = 'start frame';
+      const endImg = document.createElement('img');
+      endImg.className = 'cutaway-bg shot-cycle-frame shot-cycle-end';
+      endImg.src = `${shot.endFramePreviewUrl}${bust}`;
+      endImg.alt = 'end frame';
+      stage.appendChild(startImg);
+      stage.appendChild(endImg);
+      const cam = document.createElement('div');
+      cam.className = 'cutaway-camera';
+      stage.appendChild(cam);
+      board.appendChild(stage);
+
       const cap = document.createElement('div');
       cap.className = 'shot-frame-caption';
-      cap.textContent = caption;
-      wrap.appendChild(cap);
-      return wrap;
-    };
-    row.appendChild(makeFrame('shot-frame-start', section.startFramePreviewUrl, 'START FRAME'));
-    const arrow = document.createElement('div');
-    arrow.className = 'shot-frames-arrow';
-    arrow.textContent = '→';
-    row.appendChild(arrow);
-    row.appendChild(makeFrame('shot-frame-end', section.endFramePreviewUrl, 'END FRAME'));
-    board.appendChild(row);
+      cap.textContent = 'START ⇄ END';
+      board.appendChild(cap);
 
-    if (plan.purpose) {
-      const purpose = document.createElement('div');
-      purpose.className = 'shot-frames-purpose';
-      purpose.textContent = `Purpose: ${plan.purpose}`;
-      board.appendChild(purpose);
+      if (plan.purpose) {
+        const purpose = document.createElement('div');
+        purpose.className = 'shot-frames-purpose';
+        purpose.textContent = `Purpose: ${plan.purpose}`;
+        board.appendChild(purpose);
+      }
+      sequence.appendChild(board);
+    });
+    return sequence;
+  },
+  // A batch of generated options (see runGenerateShotExamples) - a horizontal
+  // rail of cheap still frames + videos, each clickable to COMMIT it as the
+  // shot's visual (image -> modern example; video -> animated preview).
+  examples(section) {
+    // exampleShots: [{url, label, shot_size, movement}] - deliberately
+    // contrasting camera treatments of the same scene. Pinned cards are
+    // merged first so a later examples/video generation cannot discard them.
+    const generatedShots = (section.exampleShots && section.exampleShots.length)
+      ? section.exampleShots
+      : (section.exampleImages || []).map(url => ({ url, label: '', shot_size: '', movement: '' }));
+    const pinnedShots = Array.isArray(section.pinnedExamples) ? section.pinnedExamples : [];
+    const shotByUrl = new Map();
+    pinnedShots.forEach(shot => {
+      if (shot && shot.url) shotByUrl.set(shot.url, { ...shot, pinned: true });
+    });
+    generatedShots.forEach(shot => {
+      if (shot && shot.url && !shotByUrl.has(shot.url)) shotByUrl.set(shot.url, shot);
+    });
+    const shots = Array.from(shotByUrl.values());
+    if (!shots.length) return null;
+    const bust = section.examplesGeneratedAt ? `?t=${section.examplesGeneratedAt}` : '';
+
+    const wrap = document.createElement('div');
+    wrap.className = 'shot-examples';
+
+    const hint = document.createElement('div');
+    hint.className = 'shot-examples-hint';
+    hint.textContent = 'Drag an image to your footage or sketch  · double-click to pin for future generation';
+    wrap.appendChild(hint);
+
+    const grid = document.createElement('div');
+    // Kept under the historical class name for CSS compatibility; visually
+    // this is a horizontal scroll rail, not a multi-row grid.
+    grid.className = 'shot-examples-grid';
+    grid.setAttribute('role', 'list');
+    grid.setAttribute('aria-label', 'Generated shot examples');
+
+    const rerender = () => {
+      saveDebugSession();
+      const remaining = currentSections.filter(s => !s.removed);
+      renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+      // Rendering rebuilds the rail DOM. Restore the selected card's
+      // horizontal position without scrolling the whole page vertically.
+      const selectedUrl = section.selectedExample && section.selectedExample.url;
+      if (!selectedUrl) return;
+      requestAnimationFrame(() => {
+        const block = resultsEl.querySelector(
+          `.paper-section-block[data-section-index="${section.index}"]`);
+        const rail = block && block.querySelector('.shot-examples-grid');
+        const selected = rail && Array.from(rail.querySelectorAll('.shot-example-option'))
+          .find(option => option.dataset.exampleUrl === selectedUrl);
+        if (!rail || !selected) return;
+        const target = selected.offsetLeft - (rail.clientWidth - selected.offsetWidth) / 2;
+        rail.scrollLeft = Math.max(0, target);
+      });
+    };
+
+    const commitExampleSelection = shot => {
+      if (shot.kind === 'video') {
+        clearLegacyShotFrames(section);
+        section.animatedSketchPreviewUrl = shot.url;
+        section.animatedSketchThumbnailUrl = shot.thumbnail_url || null;
+        section.selectedExample = {
+          url: shot.url, label: shot.label,
+          kind: 'video', shot_size: shot.shot_size, movement: shot.movement,
+        };
+        section.visualSource = 'examples';
+        rerender();
+        return;
+      }
+      // Do not copy this modern example into startFrame/endFrame or
+      // section.shots: those are the legacy shotFrames() data model and
+      // would make the old START ⇄ END artboard reappear after a click.
+      clearLegacyShotFrames(section);
+      const pickedPlan = Object.assign({}, section.shotPlan || {},
+        shot.shot_size ? { shot_size: shot.shot_size } : {},
+        shot.movement ? { movement: shot.movement } : {},
+        shot.narrative_operation ? { narrative_operation: shot.narrative_operation } : {},
+        shot.purpose ? { purpose: shot.purpose } : {},
+        shot.visual_description ? { visual_description: shot.visual_description } : {});
+      section.shotPlan = pickedPlan;
+      section.animatedSketchPreviewUrl = null;
+      section.selectedExample = {
+        url: shot.url, label: shot.label,
+        kind: 'image', shot_size: shot.shot_size, movement: shot.movement,
+      };
+      section.visualSource = 'examples';
+      rerender();
+    };
+
+    const togglePinnedExample = shot => {
+      if (!shot || !shot.url) return;
+      if (!Array.isArray(section.pinnedExamples)) section.pinnedExamples = [];
+      const index = section.pinnedExamples.findIndex(item => item && item.url === shot.url);
+      if (index >= 0) {
+        section.pinnedExamples.splice(index, 1);
+      } else {
+        section.pinnedExamples.push({ ...shot, pinned: true, pinnedAt: Date.now() });
+      }
+      // A double-click both pins and selects the card, so it remains the
+      // featured preview while new results are generated around it.
+      commitExampleSelection(shot);
+    };
+
+    // Which option is currently in use (picking one commits it for the render
+    // but KEEPS the gallery visible so the others can still be compared/picked).
+    const sel = section.selectedExample || null;
+
+    // A large, immediate still above the option grid—matching the uploaded-
+    // footage poster treatment. Before anything is selected, the first result
+    // is the representative preview; selecting another promotes that one.
+    const featuredShot = (sel && shots.find(shot => shot.url === sel.url)) || shots[0];
+    const featured = document.createElement('div');
+    featured.className = 'shot-examples-featured';
+    const featuredLabel = document.createElement('div');
+    featuredLabel.className = 'shot-examples-featured-label';
+    featuredLabel.textContent = sel ? 'Selected generated example' : 'Generated example preview';
+    featured.appendChild(featuredLabel);
+    if (featuredShot.kind === 'video') {
+      const featuredVideo = document.createElement('video');
+      featuredVideo.className = 'shot-examples-featured-video';
+      featuredVideo.src = `${featuredShot.url}${bust}`;
+      featuredVideo.poster = `${featuredShot.thumbnail_url || ''}${bust}`;
+      featuredVideo.autoplay = true;
+      featuredVideo.muted = true;
+      featuredVideo.loop = true;
+      featuredVideo.playsInline = true;
+      featured.appendChild(featuredVideo);
+    } else {
+      const featuredImg = document.createElement('img');
+      featuredImg.src = `${featuredShot.thumbnail_url || featuredShot.url}${bust}`;
+      featuredImg.alt = featuredShot.label || 'Generated example preview';
+      featured.appendChild(featuredImg);
     }
-    return board;
+    wrap.appendChild(featured);
+
+    shots.forEach((shot, i) => {
+      const opt = document.createElement('button');
+      opt.type = 'button';
+      opt.className = 'shot-example-option';
+      opt.setAttribute('role', 'listitem');
+      opt.draggable = true;
+      opt.dataset.exampleUrl = shot.url;
+      if (shot.pinned) opt.classList.add('pinned');
+      if (sel && sel.url === shot.url) opt.classList.add('selected');
+      opt.title = shot.pinned
+        ? 'Pinned example — double-click to unpin; click to select'
+        : 'Click to select; double-click to pin';
+      opt.addEventListener('dragstart', event => {
+        event.stopPropagation();
+        event.dataTransfer.effectAllowed = 'copy';
+        event.dataTransfer.setData('application/x-generated-shot', JSON.stringify({
+          url: shot.url,
+          thumbnail_url: shot.thumbnail_url || shot.url,
+          kind: shot.kind || 'image',
+          label: shot.label || '',
+          visual_description: shot.visual_description || '',
+          shot_size: shot.shot_size || '',
+          movement: shot.movement || '',
+        }));
+      });
+      if (shot.kind === 'video') {
+        const video = document.createElement('video');
+        video.className = 'shot-example-video';
+        video.src = `${shot.url}${bust}`;
+        video.poster = `${shot.thumbnail_url || ''}${bust}`;
+        video.muted = true;
+        video.autoplay = true;
+        video.loop = true;
+        video.playsInline = true;
+        opt.appendChild(video);
+      } else {
+        const img = document.createElement('img');
+        img.src = `${shot.thumbnail_url || shot.url}${bust}`;
+        img.alt = shot.label || `example ${i + 1}`;
+        img.loading = 'lazy';
+        opt.appendChild(img);
+      }
+      if (shot.label) {
+        const lbl = document.createElement('div');
+        lbl.className = 'shot-example-label';
+        const movementLabel = SHOT_MOVEMENT_LABELS[shot.movement]
+          || (shot.movement || '').replaceAll('_', ' ').toUpperCase();
+        lbl.textContent = [shot.label, shot.shot_size, movementLabel].filter(Boolean).join(' · ');
+        opt.appendChild(lbl);
+      }
+      let clickTimer = null;
+      opt.addEventListener('click', event => {
+        event.stopPropagation();
+        // Defer a single-click commit briefly so a double-click can pin the
+        // card without the first click rebuilding its DOM underneath us.
+        if (event.detail > 1) return;
+        clickTimer = setTimeout(() => commitExampleSelection(shot), 220);
+      });
+      opt.addEventListener('dblclick', event => {
+        event.stopPropagation();
+        if (clickTimer) clearTimeout(clickTimer);
+        togglePinnedExample(shot);
+      });
+      grid.appendChild(opt);
+    });
+
+    wrap.appendChild(grid);
+
+    return wrap;
   },
   stockVideo(section) {
     if (!section.selectedVideo) return null;
@@ -935,7 +1733,11 @@ const VISUAL_BOX_RENDERERS = {
     return player;
   },
   video(section) {
-    if (!section.uploadedFootagePath) return null;
+    // A generated video dragged into the footage/sketch slot has a preview
+    // URL but no local upload path. It is still valid scene-reference media,
+    // so render it exactly like an uploaded clip; only hide the renderer when
+    // neither a path nor a preview exists.
+    if (!section.uploadedFootagePath && !section.uploadedFootagePreviewUrl) return null;
     if (!section.uploadedFootagePreviewUrl) {
       // Uploaded before preview_url existed (an older saved session) - no
       // URL to play back, just say so.
@@ -947,8 +1749,8 @@ const VISUAL_BOX_RENDERERS = {
     const player = document.createElement('video');
     player.className = 'paper-section-visual-media';
     player.src = section.uploadedFootagePreviewUrl;
+    configureUploadedFootagePreview(player, section);
     player.controls = true;
-    player.preload = 'metadata';
     // See stockVideo's own comment above - same reasoning.
     player.addEventListener('click', event => event.stopPropagation());
     return player;
@@ -996,6 +1798,7 @@ const VISUAL_BOX_RENDERERS = {
     const player = document.createElement('video');
     player.className = 'paper-section-visual-media';
     player.src = src;
+    configureGeneratedVideoPreview(player, section);
     player.controls = true;
     player.loop = true;
     player.preload = 'metadata';
@@ -1005,48 +1808,407 @@ const VISUAL_BOX_RENDERERS = {
   },
 };
 
-function buildVisualBox(section) {
+function buildVisualBox(section, options) {
+  options = options || {};
   const box = document.createElement('div');
   box.className = 'paper-section-visual-box';
 
   let rendered = null;
-  for (const key of [section.visualSource, 'cutaways', 'shotFrames', 'stockVideo', 'video', 'animatedSketch', 'sketch', 'image']) {
+  let renderedKey = null;
+  // User footage remains the visual preview priority when present. An
+  // uploaded sketch is a generation/content reference, not a reason to hide
+  // footage the presenter has supplied for the scene.
+  const preferredSource = section.uploadedFootagePreviewUrl ? 'video' : section.visualSource;
+  // A generated examples gallery is the active preview after Preview
+  // examples/video. Prefer it over legacy shotFrames fields that are retained
+  // only for export compatibility; otherwise an image click can fall through
+  // to the old START ⇄ END artboard and its Purpose caption. `exampleImages`
+  // is included for older saved sessions that predate `exampleShots`.
+  const hasExamples = (Array.isArray(section.exampleShots) && section.exampleShots.length > 0)
+    || (Array.isArray(section.exampleImages) && section.exampleImages.length > 0)
+    || (Array.isArray(section.pinnedExamples) && section.pinnedExamples.length > 0);
+  const examplesModeActive = section.visualSource === 'examples' || hasExamples;
+  const candidates = [
+    hasExamples ? 'examples' : null,
+    preferredSource, 'uploadedSketch', 'cutaways',
+    // Once the modern examples/video workflow is active, never render the
+    // legacy start/end-frame artboard. It is the source of the misleading
+    // Purpose + START ⇄ END captions users see after choosing an example.
+    !examplesModeActive ? 'shotFrames' : null,
+    'stockVideo',
+    'video', 'animatedSketch', 'sketch', 'image',
+  ]
+    .filter(key => !(options.excludeUploadedFootage
+      && (key === 'video' || key === 'uploadedSketch' || key === 'stockVideo')))
+    .filter(key => !(options.excludePaperFigure && key === 'image'));
+  for (const key of candidates) {
     if (!key) continue;
     rendered = VISUAL_BOX_RENDERERS[key](section);
-    if (rendered) break;
+    if (rendered) { renderedKey = key; break; }
   }
+
+  // Distinguish AI-generated visuals from the presenter's own picked/uploaded
+  // footage (see the user-vs-LLM visual language in styles-index.css). A
+  // stock/uploaded clip is the presenter's choice; frames/cutaways/sketches
+  // are model output.
+  const LLM_VISUAL_KEYS = ['cutaways', 'shotFrames', 'examples', 'video', 'animatedSketch', 'sketch', 'image'];
+  if (renderedKey && LLM_VISUAL_KEYS.includes(renderedKey)) box.classList.add('llm-generated');
+  else if (renderedKey) box.classList.add('user-content');
 
   if (rendered) {
     box.appendChild(rendered);
   } else {
     const placeholder = document.createElement('div');
     placeholder.className = 'paper-section-visual-placeholder';
-    placeholder.textContent = section.visual || '(no visual yet - generate a storyboard)';
+    placeholder.textContent = section.visual || '(suggested shots and video)';
     box.appendChild(placeholder);
   }
 
   return box;
 }
 
-// Decodes a section's disk-persisted narration audio into a playable
-// AudioBuffer (a fresh recording/drag decodes immediately instead - see
-// finishAssigningNarrationAudio below) - returns a promise resolving to
-// that buffer, so the Play Narration button (see buildSectionBlock) can
-// actively wait on it rather than only relying on the background prefetch
-// this same function is also called with at render time (see
-// buildSectionBlock) having already finished by the time it's clicked -
-// clicking immediately after a reload, before that fetch/decode resolves,
-// would otherwise silently do nothing.
-function ensureSectionNarrationAudioDecoded(section) {
-  if (section.narrationAudioBuffer) return Promise.resolve(section.narrationAudioBuffer);
-  if (!section.narrationAudioPreviewUrl) return Promise.reject(new Error('No narration audio for this section yet.'));
-  return fetch(section.narrationAudioPreviewUrl)
-    .then(response => response.arrayBuffer())
-    .then(arrayBuffer => ensurePlaybackAudioCtx().decodeAudioData(arrayBuffer))
-    .then(audioBuffer => {
-      section.narrationAudioBuffer = audioBuffer;
-      return audioBuffer;
+// A generated example can be promoted to the scene's content/reference slot
+// by dragging it onto "Your footage or sketches". The selected example's
+// visual description becomes the editable subject description used by future
+// generation requests.
+function applyDraggedGeneratedReference(section, shot) {
+  if (!section || !shot || !shot.url) return;
+  cancelSceneGeneration(section);
+  const description = (shot.visual_description || '').trim();
+  if (shot.kind === 'video') {
+    section.uploadedFootagePath = null;
+    section.uploadedFootagePreviewUrl = shot.url;
+    section.uploadedFootageThumbnailUrl = shot.thumbnail_url || shot.url;
+    section.uploadedSketchPath = null;
+    section.uploadedSketchPreviewUrl = null;
+    section.visualSource = 'video';
+    section.footageOrigin = 'generatedReference';
+  } else {
+    section.uploadedSketchPath = null;
+    section.uploadedSketchPreviewUrl = shot.url;
+    section.uploadedSketchUploadedAt = Date.now();
+    section.uploadedFootagePath = null;
+    section.uploadedFootagePreviewUrl = null;
+    section.uploadedFootageThumbnailUrl = null;
+    section.visualSource = 'uploadedSketch';
+    section.footageOrigin = 'generatedReference';
+  }
+  if (description) section.footageSubject = description;
+  section.generatedReferenceDescription = description || section.generatedReferenceDescription || '';
+  saveDebugSession();
+  const remaining = currentSections.filter(s => !s.removed);
+  renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+}
+
+function audioBufferToWavBlob(audioBuffer) {
+  if (!audioBuffer || typeof audioBuffer.getChannelData !== 'function'
+      || !(Number(audioBuffer.length) > 0) || !(Number(audioBuffer.sampleRate) > 0)) {
+    throw new Error('Decoded narration audio is not a valid AudioBuffer.');
+  }
+  const channels = Math.min(audioBuffer.numberOfChannels || 1, 2);
+  const frames = audioBuffer.length;
+  const bytesPerSample = 2;
+  const dataSize = frames * channels * bytesPerSample;
+  const output = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(output);
+  const writeString = (offset, value) => {
+    for (let i = 0; i < value.length; i += 1) view.setUint8(offset + i, value.charCodeAt(i));
+  };
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, channels, true);
+  view.setUint32(24, audioBuffer.sampleRate, true);
+  view.setUint32(28, audioBuffer.sampleRate * channels * bytesPerSample, true);
+  view.setUint16(32, channels * bytesPerSample, true);
+  view.setUint16(34, 16, true);
+  writeString(36, 'data');
+  view.setUint32(40, dataSize, true);
+  const channelData = Array.from({ length: channels }, (_, index) => audioBuffer.getChannelData(index));
+  let offset = 44;
+  for (let frame = 0; frame < frames; frame += 1) {
+    for (let channel = 0; channel < channels; channel += 1) {
+      const sample = Math.max(-1, Math.min(1, channelData[channel][frame] || 0));
+      view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+      offset += 2;
+    }
+  }
+  return new Blob([output], { type: 'audio/wav' });
+}
+
+// Keep the visible narration player on a native <audio> element. If the
+// browser rejects the original MediaRecorder container, decode the same clip
+// through Web Audio and retry the visible player with a universal PCM/WAV
+// object URL. The controls remain native in both cases.
+function attachNativeAudioSource(audio, url, narrationClip) {
+  if (!audio || !url) return;
+  let fallbackStarted = false;
+  let objectUrl = null;
+  audio.preload = 'auto';
+  const startFallback = () => {
+    if (fallbackStarted || !narrationClip) return Promise.reject(new Error('Narration fallback is unavailable.'));
+    fallbackStarted = true;
+    return ensureNarrationClipDecoded(narrationClip)
+      .then(audioBufferToWavBlob)
+      .then(blob => {
+        const previousObjectUrl = objectUrl;
+        const nextObjectUrl = URL.createObjectURL(blob);
+        objectUrl = nextObjectUrl;
+        audio.src = nextObjectUrl;
+        audio.load();
+        if (previousObjectUrl) URL.revokeObjectURL(previousObjectUrl);
+        return true;
+      });
+  };
+  // Expose recovery to the linked-sequence button. Calling play() while the
+  // error handler is asynchronously replacing src/load produces the browser's
+  // misleading "The operation was aborted" rejection.
+  try {
+    Object.defineProperty(audio, '_startNarrationFallback', {
+      value: startFallback, configurable: true, enumerable: false,
     });
+  } catch (err) { audio._startNarrationFallback = startFallback; }
+  audio.addEventListener('error', () => {
+    startFallback().catch(() => { /* keep the native error state visible */ });
+  });
+  audio.addEventListener('emptied', () => {
+    if (objectUrl && audio.src !== objectUrl) {
+      URL.revokeObjectURL(objectUrl);
+      objectUrl = null;
+    }
+  });
+  audio.src = url;
+  audio.load();
+
+  // A restored act-board recording has no in-memory blob URL. Decode it once
+  // up front and use a PCM/WAV object URL when possible, which avoids browser
+  // differences in persisted WebM/MP4 MediaRecorder containers. Keep the
+  // original source active if the presenter starts the native controls before
+  // normalization finishes; swapping an already-playing element would abort
+  // that playback.
+  let sourceReady = Promise.resolve();
+  const restoredSource = narrationClip
+    && !narrationClip._nativePreviewUrl
+    && !String(url).startsWith('blob:');
+  if (restoredSource) {
+    sourceReady = ensureNarrationClipDecoded(narrationClip)
+      .then(audioBufferToWavBlob)
+      .then(blob => {
+        if (!audio.paused) return false;
+        const previousObjectUrl = objectUrl;
+        objectUrl = URL.createObjectURL(blob);
+        audio.src = objectUrl;
+        audio.load();
+        if (previousObjectUrl) URL.revokeObjectURL(previousObjectUrl);
+        return true;
+      })
+      .catch(() => false);
+  }
+  try {
+    Object.defineProperty(audio, '_narrationSourceReady', {
+      value: sourceReady, configurable: true, enumerable: false,
+    });
+  } catch (err) { audio._narrationSourceReady = sourceReady; }
+}
+
+// The timeline transport still mixes narration through Web Audio. Keep that
+// decode path independent from the visible native player above.
+function narrationPreviewCandidates(clip) {
+  const raw = clip && (clip._nativePreviewUrl || clip.previewUrl);
+  if (!raw) return [];
+  const candidates = [raw];
+  // Disk previews are normally served by the same static server as the page,
+  // but a deployed/forwarded page may need to fetch the identical path from
+  // the API host instead. Try both before surfacing the native-player error.
+  if (raw.startsWith('/') && typeof API_BASE_URL === 'string') {
+    candidates.push(`${API_BASE_URL}${raw}`);
+  }
+  return Array.from(new Set(candidates));
+}
+
+function isDecodedNarrationAudioBuffer(value) {
+  return !!value && typeof value.getChannelData === 'function'
+    && Number(value.length) > 0 && Number(value.sampleRate) > 0;
+}
+
+function cacheNarrationAudioBuffer(clip, buffer) {
+  // AudioBuffer is runtime-only. Keep it non-enumerable so saveDebugSession
+  // never serializes a stale `{}` placeholder that later masquerades as a
+  // decoded buffer after refresh.
+  try {
+    Object.defineProperty(clip, 'audioBuffer', {
+      value: buffer, configurable: true, writable: true, enumerable: false,
+    });
+  } catch (err) {
+    clip.audioBuffer = buffer;
+  }
+}
+
+function ensureNarrationClipDecoded(clip) {
+  if (isDecodedNarrationAudioBuffer(clip.audioBuffer)) return Promise.resolve(clip.audioBuffer);
+  if (clip.audioBuffer) delete clip.audioBuffer;
+  const candidates = narrationPreviewCandidates(clip);
+  if (!candidates.length) return Promise.reject(new Error('Narration clip has no preview URL.'));
+  const loadAndDecode = (index) => fetch(candidates[index]).then(response => {
+    if (!response.ok) throw new Error(`Could not load narration audio (${response.status}).`);
+    return response.arrayBuffer();
+  }).then(bytes => ensurePlaybackAudioCtx().decodeAudioData(bytes)).catch(error => {
+    if (index >= candidates.length - 1) throw error;
+    return loadAndDecode(index + 1);
+  });
+  return loadAndDecode(0)
+    .then(buffer => {
+      cacheNarrationAudioBuffer(clip, buffer);
+      clip.sourceDurationSeconds = buffer.duration;
+      if (!(Number(clip.durationSeconds) > 0)) clip.durationSeconds = buffer.duration;
+      return buffer;
+    });
+}
+
+function migrateNarrationClips(section) {
+  if (!Array.isArray(section.narrationClips)) section.narrationClips = [];
+  if (section.narrationAudioPreviewUrl && !section.narrationClips.some(c => c.previewUrl === section.narrationAudioPreviewUrl)) {
+    section.narrationClips.push({
+      id: `legacy-${section.index}`,
+      name: 'Narration', previewUrl: section.narrationAudioPreviewUrl,
+      sourceDurationSeconds: Number(section.narrationDurationSeconds) || getSceneDuration(section),
+      trimStartSeconds: 0,
+      durationSeconds: Number(section.narrationDurationSeconds) || getSceneDuration(section),
+      timelineOffsetSeconds: 0,
+    });
+  }
+  return section.narrationClips;
+}
+
+function buildNarrationClipEditor(section, narrationClip) {
+  // Render the native player immediately, even before Web Audio or metadata
+  // has decoded a freshly uploaded clip. The metadata listener below replaces
+  // this temporary duration with the file's real duration when available.
+  let segment = normalizeSelectedAudioSegment(narrationClip);
+  if (!segment) {
+    const fallbackDuration = Math.max(
+      MIN_SFX_SEGMENT_SECONDS,
+      Number(section.narrationDurationSeconds) || getSceneDuration(section) || DEFAULT_SCENE_SECONDS);
+    narrationClip.sourceDurationSeconds = fallbackDuration;
+    narrationClip.durationSeconds = fallbackDuration;
+    segment = normalizeSelectedAudioSegment(narrationClip);
+  }
+  if (!segment) return document.createTextNode('Loading narration…');
+  const editor = document.createElement('div');
+  editor.className = 'selected-sfx-summary narration-clip-editor';
+  const narrationSummary = document.createElement('span');
+  const clipDuration = Number(narrationClip.durationSeconds) || segment.durationSeconds;
+  narrationSummary.textContent = `Narration · ${clipDuration.toFixed(1)}s selected`;
+  editor.appendChild(narrationSummary);
+  const audio = document.createElement('audio');
+  audio.controls = true;
+  audio.addEventListener('click', event => event.stopPropagation());
+  const keepPreviewInsideSelection = () => {
+    const start = Number(narrationClip.trimStartSeconds) || 0;
+    const end = start + (Number(narrationClip.durationSeconds) || segment.durationSeconds);
+    if (audio.currentTime < start - 0.05 || audio.currentTime >= end - 0.02) audio.currentTime = start;
+  };
+  audio.addEventListener('play', keepPreviewInsideSelection);
+  audio.addEventListener('timeupdate', () => {
+    const start = Number(narrationClip.trimStartSeconds) || 0;
+    const end = start + (Number(narrationClip.durationSeconds) || segment.durationSeconds);
+    if (audio.currentTime >= end - 0.02) {
+      audio.pause();
+      audio.currentTime = start;
+    }
+  });
+  audio.addEventListener('loadedmetadata', () => {
+    if (!(Number(audio.duration) > 0)) return;
+    const previousNatural = Number(narrationClip.sourceDurationSeconds) || 0;
+    narrationClip.sourceDurationSeconds = audio.duration;
+    if (!(Number(narrationClip.durationSeconds) > 0) ||
+        narrationClip.durationSeconds >= previousNatural - 0.01) {
+      narrationClip.durationSeconds = audio.duration;
+    }
+    segment = normalizeSelectedAudioSegment(narrationClip) || segment;
+    narrationSummary.textContent = `Narration · ${Number(narrationClip.durationSeconds).toFixed(1)}s selected`;
+    redraw();
+  });
+  editor.appendChild(audio);
+  const trimEditor = document.createElement('div');
+  trimEditor.className = 'sfx-segment-editor';
+  trimEditor.addEventListener('click', event => event.stopPropagation());
+  const readout = document.createElement('div');
+  readout.className = 'sfx-segment-readout';
+  trimEditor.appendChild(readout);
+  const strip = document.createElement('div'); strip.className = 'sfx-source-strip';
+  strip.title = 'Drag the selected window or either edge to choose the narration source';
+  const selection = document.createElement('div'); selection.className = 'sfx-source-selection';
+  const label = document.createElement('span'); label.className = 'sfx-source-selection-label'; selection.appendChild(label);
+  const handles = ['start', 'end'].map(edge => {
+    const h = document.createElement('span');
+    h.className = `sfx-source-handle ${edge}`;
+    h.title = edge === 'start' ? 'Drag narration in-point' : 'Drag narration out-point';
+    selection.appendChild(h);
+    return [h, edge];
+  });
+  strip.appendChild(selection); trimEditor.appendChild(strip); editor.appendChild(trimEditor);
+  function redraw() {
+    const start = Number(narrationClip.trimStartSeconds) || 0;
+    const duration = Number(narrationClip.durationSeconds) || segment.naturalDurationSeconds;
+    selection.style.left = `${start / segment.naturalDurationSeconds * 100}%`;
+    selection.style.width = `${duration / segment.naturalDurationSeconds * 100}%`;
+    label.textContent = `${duration.toFixed(1)}s`;
+    readout.textContent = `Using ${start.toFixed(1)}s–${(start + duration).toFixed(1)}s · ${duration.toFixed(1)}s`;
+  }
+  const wire = (target, mode) => target.addEventListener('pointerdown', event => {
+    event.preventDefault(); event.stopPropagation();
+    const width = strip.getBoundingClientRect().width || 1;
+    const x = event.clientX;
+    const start = Number(narrationClip.trimStartSeconds) || 0;
+    const duration = Number(narrationClip.durationSeconds) || segment.naturalDurationSeconds;
+    const end = start + duration;
+    try { target.setPointerCapture(event.pointerId); } catch (err) { /* optional */ }
+    const move = e => {
+      const delta = Math.round(((e.clientX - x) / width) * segment.naturalDurationSeconds * 10) / 10;
+      if (mode === 'start') {
+        narrationClip.trimStartSeconds = Math.max(0, Math.min(start + delta, end - MIN_SFX_SEGMENT_SECONDS));
+        narrationClip.durationSeconds = end - narrationClip.trimStartSeconds;
+      } else if (mode === 'end') {
+        narrationClip.durationSeconds = Math.max(MIN_SFX_SEGMENT_SECONDS, Math.min(duration + delta, segment.naturalDurationSeconds - start));
+      } else narrationClip.trimStartSeconds = Math.max(0, Math.min(start + delta, segment.naturalDurationSeconds - duration));
+      redraw();
+    };
+    const up = () => {
+      target.removeEventListener('pointermove', move);
+      target.removeEventListener('pointerup', up);
+      target.removeEventListener('pointercancel', up);
+      try { target.releasePointerCapture(event.pointerId); } catch (err) { /* optional */ }
+      normalizeSelectedAudioSegment(narrationClip);
+      saveDebugSession();
+      const remaining = currentSections.filter(s => !s.removed);
+      renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+    };
+    target.addEventListener('pointermove', move); target.addEventListener('pointerup', up);
+    target.addEventListener('pointercancel', up);
+  });
+  handles.forEach(([h, edge]) => wire(h, edge)); wire(selection, 'window'); redraw();
+  // Attach only after all playback/metadata listeners are in place.
+  attachNativeAudioSource(audio, narrationClip._nativePreviewUrl || narrationClip.previewUrl, narrationClip);
+  const remove = document.createElement('button');
+  remove.type = 'button'; remove.className = 'btn-secondary remove-narration-btn'; remove.textContent = 'Remove';
+  remove.title = 'Remove narration clip';
+  remove.addEventListener('click', event => {
+    event.stopPropagation();
+    section.narrationClips = migrateNarrationClips(section).filter(c => c.id !== narrationClip.id);
+    if (section.narrationAudioPreviewUrl === narrationClip.previewUrl) {
+      const replacement = section.narrationClips[section.narrationClips.length - 1];
+      section.narrationAudioPreviewUrl = replacement ? replacement.previewUrl : null;
+      section.narrationDurationSeconds = replacement ? replacement.durationSeconds : null;
+    }
+    saveDebugSession();
+    renderMovieEditor(resultsEl, currentLabel, currentSections.filter(s => !s.removed), currentAssignments);
+  });
+  editor.appendChild(remove);
+  return editor;
 }
 
 // Shared tail of both ways to attach real spoken narration audio to a
@@ -1060,20 +2222,45 @@ function ensureSectionNarrationAudioDecoded(section) {
 // format purely from it) - each caller below passes its own actual
 // filename, not a hardcoded guess, since a dragged clip could be any
 // format it was originally recorded/uploaded as.
-function finishAssigningNarrationAudio(section, previewUrl, blob, filename, statusEl) {
+function finishAssigningNarrationAudio(section, previewUrl, blob, filename, statusEl, filePath) {
+  const clip = {
+    id: `narration-${section.index}-${Date.now()}`,
+    name: filename || 'Narration', previewUrl, filePath: filePath || null,
+    trimStartSeconds: 0, timelineOffsetSeconds: 0,
+  };
+  // Keep a page-local Blob URL for the native player. The server URL remains
+  // the persisted/exportable source; this transient URL avoids codec/container
+  // quirks during the current recording session and is non-enumerable so it
+  // can never overwrite saved session data.
+  try {
+    Object.defineProperty(clip, '_nativePreviewUrl', {
+      value: URL.createObjectURL(blob), configurable: true, enumerable: false,
+    });
+  } catch (err) { /* object URLs are an optional playback enhancement */ }
+  migrateNarrationClips(section).push(clip);
+  // Legacy fields continue to point at the newest clip for old saved data and
+  // older consumers; the timeline/export use narrationClips.
   section.narrationAudioPreviewUrl = previewUrl;
   delete section.narrationAudioBuffer; // stale until the decode below resolves
   saveDebugSession();
 
   blob.arrayBuffer()
     .then(arrayBuffer => ensurePlaybackAudioCtx().decodeAudioData(arrayBuffer))
-    .then(audioBuffer => { section.narrationAudioBuffer = audioBuffer; })
+    .then(audioBuffer => {
+      cacheNarrationAudioBuffer(clip, audioBuffer);
+      clip.sourceDurationSeconds = audioBuffer.duration;
+      clip.durationSeconds = audioBuffer.duration;
+      section.narrationDurationSeconds = audioBuffer.duration;
+    })
     .catch(() => { }); // no in-browser playback for this clip - not fatal, still saved to disk
 
   statusEl.textContent = 'Transcribing narration ...';
   fetchTranscription(blob, filename)
     .then(({ text }) => {
-      section.narration = (text || '').trim() || section.narration;
+      const transcript = (text || '').trim();
+      // A fresh recording is the authoritative narration for this scene;
+      // don't prepend an older generated draft to the new transcription.
+      if (transcript) section.narration = transcript;
       statusEl.textContent = '';
     })
     .catch(err => {
@@ -1097,9 +2284,9 @@ function runRecordSectionNarration(section, file, statusEl) {
   statusEl.textContent = 'Uploading narration ...';
   statusEl.classList.remove('error');
   fetchUploadMediaBankItem(file, premiereProjectId)
-    .then(({ project_id, preview_url }) => {
+    .then(({ project_id, preview_url, file_path }) => {
       premiereProjectId = project_id;
-      finishAssigningNarrationAudio(section, preview_url, file, file.name, statusEl);
+      finishAssigningNarrationAudio(section, preview_url, file, file.name, statusEl, file_path);
     })
     .catch(err => {
       statusEl.textContent = err.message;
@@ -1121,7 +2308,7 @@ function runAssignDraggedNarration(section, mediaItem, statusEl) {
   const filename = mediaItem.previewUrl.split('/').pop() || 'narration.webm';
   fetch(mediaItem.previewUrl)
     .then(response => response.blob())
-    .then(blob => finishAssigningNarrationAudio(section, mediaItem.previewUrl, blob, filename, statusEl))
+    .then(blob => finishAssigningNarrationAudio(section, mediaItem.previewUrl, blob, filename, statusEl, mediaItem.filePath))
     .catch(err => {
       statusEl.textContent = `Could not use that clip: ${err.message}`;
       statusEl.classList.add('error');
@@ -1133,15 +2320,18 @@ function runAssignDraggedNarration(section, mediaItem, statusEl) {
 // tell these apart from other drags (media-bank audio, section reordering) so
 // only these highlight/drop into the notes.
 const NOTES_DRAG_TYPES = ['application/x-technique', 'application/x-documentary-mode', 'application/x-source-material-index'];
+function dataTransferHasType(dataTransfer, type) {
+  return !!dataTransfer && Array.from(dataTransfer.types || []).includes(type);
+}
 function isNotesDrag(dataTransfer) {
-  return !!dataTransfer && NOTES_DRAG_TYPES.some(t => dataTransfer.types.includes(t));
+  return NOTES_DRAG_TYPES.some(type => dataTransferHasType(dataTransfer, type));
 }
 
 function buildSectionBlock(section, selectable) {
   const block = document.createElement('div');
   block.className = 'paper-section-block';
   block.classList.toggle('paper-section-block-shot', !!selectable);
-  block.classList.toggle('removed', section.removed);
+  block.classList.toggle('removed', selectable ? !!section.sceneRemoved : !!section.removed);
   block.classList.toggle('selected', selectedSectionIndices.has(section.index));
   block.dataset.sectionIndex = String(section.index);
 
@@ -1160,7 +2350,11 @@ function buildSectionBlock(section, selectable) {
 
   const body = document.createElement('div');
   body.className = 'paper-section-text';
-  body.textContent = section.text || '(no text captured for this section)';
+  // Arranged storyboard cards have a separate editable composition-notes
+  // field; the flat index.html paper feed must continue showing/editing the
+  // extracted paper text itself.
+  const bodyValue = selectable ? section.sceneNotes : section.text;
+  body.textContent = bodyValue || '(add notes)';
 
   makeEditable(title, () => section.title, value => {
     section.title = value;
@@ -1176,13 +2370,14 @@ function buildSectionBlock(section, selectable) {
     }
     saveDebugSession();
   });
-  makeEditable(body, () => section.text || '(no text captured for this section)', value => {
-    section.text = value;
+  makeEditable(body, () => (selectable ? section.sceneNotes : section.text) || '(add notes)', value => {
+    if (selectable) section.sceneNotes = value;
+    else section.text = value;
     saveDebugSession();
   }, { multiline: true, allowEmpty: true });
 
-  // Which timeline track this scene is (its role/label) - A-roll, B-roll, or
-  // Sound effects. Auto-inferred (see getSceneRole), overridable here;
+  // Which visual timeline track this scene is (Primary or Cutaway).
+  // Auto-inferred (see getSceneRole), overridable here;
   // changing it moves the scene's clip to the matching track on the timeline
   // (see buildNarrativeTimeline), so a full re-render follows. Only shown on
   // the arranged-view shot cards (selectable), not the flat pre-arrangement
@@ -1210,20 +2405,49 @@ function buildSectionBlock(section, selectable) {
   });
   roleRow.appendChild(roleLabelEl);
   roleRow.appendChild(roleSelect);
+  const durationLabelEl = document.createElement('span');
+  durationLabelEl.className = 'paper-section-role-label paper-section-duration-label';
+  durationLabelEl.textContent = 'Seconds';
+  const durationInput = document.createElement('input');
+  durationInput.type = 'number';
+  durationInput.className = 'paper-section-duration-input';
+  durationInput.min = '0.5';
+  durationInput.step = '0.5';
+  durationInput.value = String(getSceneDuration(section));
+  durationInput.title = 'Set this scene’s timeline duration in seconds';
+  durationInput.setAttribute('aria-label', 'Scene duration in seconds');
+  durationInput.addEventListener('click', event => event.stopPropagation());
+  durationInput.addEventListener('change', () => {
+    const seconds = Math.max(0.5, Number(durationInput.value) || DEFAULT_SCENE_SECONDS);
+    section.editPlan = Object.assign(
+      { transitionIn: 'hard_cut', kenBurns: { enabled: false, pan: null }, textOverlay: null },
+      section.editPlan || {}, { durationSeconds: seconds });
+    durationInput.value = String(seconds);
+    saveDebugSession();
+    const remaining = currentSections.filter(s => !s.removed);
+    renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+  });
+  roleRow.appendChild(durationLabelEl);
+  roleRow.appendChild(durationInput);
 
-  // Drop target for dragging a documentary technique, a documentary mode, or a
-  // Source material excerpt into this scene's notes - appends rather than
-  // replacing, so dropping in a few builds up the working text. Only responds
-  // to those drag types (isNotesDrag), so a media-bank audio drag or a
-  // section-reorder chip drag passes through untouched. `dropEl` is the drop
-  // surface (the whole shot card, so dropping anywhere on the scene lands in
-  // the notes; or the field itself on the flat feed); `highlightEl` is what
-  // gets the drag-over outline (the Scene Notes block). stopPropagation keeps
-  // it out of .narrative-act-row's reorder handler (handleChipDrop).
-  const wireNotesDrop = (dropEl, highlightEl) => {
+  // Drop target for documentary techniques/modes and Source material excerpts.
+  // Arranged cards use separate targets: techniques/modes go to Scene Notes,
+  // while a Source material excerpt can only be dropped onto the dedicated
+  // paper-section-source-material-text field. Flat index.html fields retain
+  // the legacy all-purpose behavior.
+  const wireNotesDrop = (dropEl, highlightEl, options) => {
     highlightEl = highlightEl || dropEl;
+    options = options || {};
+    const sourceOnly = !!options.sourceOnly;
+    const notesOnly = !!options.notesOnly;
+    const accepts = dataTransfer => {
+      const hasSource = dataTransferHasType(dataTransfer, 'application/x-source-material-index');
+      if (sourceOnly) return hasSource;
+      if (notesOnly) return isNotesDrag(dataTransfer) && !hasSource;
+      return isNotesDrag(dataTransfer);
+    };
     dropEl.addEventListener('dragover', event => {
-      if (!isNotesDrag(event.dataTransfer)) return;
+      if (!accepts(event.dataTransfer)) return;
       event.preventDefault();
       event.stopPropagation();
       highlightEl.classList.add('drag-over');
@@ -1235,7 +2459,7 @@ function buildSectionBlock(section, selectable) {
       highlightEl.classList.remove('drag-over');
     });
     dropEl.addEventListener('drop', event => {
-      if (!isNotesDrag(event.dataTransfer)) return;
+      if (!accepts(event.dataTransfer)) return;
       event.preventDefault();
       event.stopPropagation();
       highlightEl.classList.remove('drag-over');
@@ -1244,10 +2468,37 @@ function buildSectionBlock(section, selectable) {
       const modeKey = event.dataTransfer.getData('application/x-documentary-mode');
       const sourceIndexRaw = event.dataTransfer.getData('application/x-source-material-index');
 
-      let addition = '';
+      if (sourceOnly) {
+        const source = currentSections.find(s => s.index === parseInt(sourceIndexRaw, 10));
+        const addition = source ? (source.text || '') : '';
+        if (!addition) return;
+        section.text = section.text ? `${section.text}\n\n${addition}` : addition;
+        // A source excerpt can also carry the paper's extracted figure. Keep
+        // that visual attached to the scene's open slot instead of copying
+        // only the text and leaving the figure behind in the source library.
+        const gainedFigure = !section.image && source && source.image;
+        if (gainedFigure) section.image = source.image;
+        const sourceField = document.querySelector(
+          `.paper-section-block[data-section-index="${section.index}"] .paper-section-source-material-text`);
+        if (sourceField) sourceField.textContent = section.text;
+        saveDebugSession();
+        if (gainedFigure) {
+          const remaining = currentSections.filter(s => !s.removed);
+          renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+        }
+        return;
+      }
+
+      // A dropped technique applies to THIS scene's technique list. It does
+      // not start an image/video request; the presenter can explicitly press
+      // Generate examples or Generate video after editing the scene.
       if (technique) {
-        addition = technique;
-      } else if (modeKey) {
+        applyTechniqueToScene(section, technique);
+        return;
+      }
+
+      let addition = '';
+      if (modeKey) {
         const mode = DOCUMENTARY_MODES.find(m => m.key === modeKey);
         addition = mode ? mode.label : modeKey;
       } else if (sourceIndexRaw !== '') {
@@ -1256,8 +2507,13 @@ function buildSectionBlock(section, selectable) {
       }
       if (!addition) return;
 
-      section.text = section.text ? `${section.text}\n\n${addition}` : addition;
-      body.textContent = section.text;
+      if (selectable) {
+        section.sceneNotes = section.sceneNotes ? `${section.sceneNotes}\n\n${addition}` : addition;
+        body.textContent = section.sceneNotes;
+      } else {
+        section.text = section.text ? `${section.text}\n\n${addition}` : addition;
+        body.textContent = section.text;
+      }
       saveDebugSession();
     });
   };
@@ -1268,7 +2524,15 @@ function buildSectionBlock(section, selectable) {
     // there) -> the visual box/footage actions (see buildVisualBox) - a
     // presenter reads what the shot's about and what to say before acting
     // on how to actually shoot/find it.
-    const visualBox = buildVisualBox(section);
+    // Uploaded footage previews in the dedicated "Your footage" slot beside
+    // this box. Excluding it here preserves the generated/planned reference on
+    // the left instead of showing the same uploaded video twice.
+    const visualBox = buildVisualBox(section, {
+      excludeUploadedFootage: true,
+      // Attached paper figures are shown in the open slot at left as the
+      // source visual, so do not duplicate them in the generated-preview box.
+      excludePaperFigure: !!section.image,
+    });
 
     const footageActions = document.createElement('div');
     footageActions.className = 'paper-section-footage-actions';
@@ -1289,16 +2553,42 @@ function buildSectionBlock(section, selectable) {
     // /paper/generate_shot). Never disabled - it always has *something* to go
     // on (at minimum the scene title / arc part), and even with nothing the
     // backend generates a shot rather than refusing. Clicking again redesigns.
-    const generateShotBtn = document.createElement('button');
-    generateShotBtn.type = 'button';
-    generateShotBtn.className = 'btn-secondary';
-    generateShotBtn.textContent = section.startFramePreviewUrl ? 'Re-generate shot' : 'Generate shot';
-    generateShotBtn.title = "Design this scene's shot (start frame → end frame) from its narration, notes, and title";
-    generateShotBtn.addEventListener('click', event => {
+    // const generateShotBtn = document.createElement('button');
+    // generateShotBtn.type = 'button';
+    // generateShotBtn.className = 'btn-secondary generate-shot-btn';
+    // generateShotBtn.textContent = section.startFramePreviewUrl ? 'Re-preview shot' : 'Preview shot';
+    // generateShotBtn.title = "Design this scene's shot (start frame → end frame) from its narration, notes, and title";
+    // generateShotBtn.addEventListener('click', event => {
+    //   event.stopPropagation();
+    //   runGenerateShot(section, generateShotBtn, sectionStatus);
+    // });
+    // footageActions.appendChild(generateShotBtn);
+
+    // A batch of two cheap image frames to pick from (see
+    // runGenerateShotExamples). Cheaper model, more variety.
+    const generateExamplesBtn = document.createElement('button');
+    generateExamplesBtn.type = 'button';
+    generateExamplesBtn.className = 'btn-secondary generate-shot-examples-btn';
+    generateExamplesBtn.textContent = 'Generate examples';
+    generateExamplesBtn.title = 'Generate two image options to pick from (cheaper model)';
+    generateExamplesBtn.addEventListener('click', event => {
       event.stopPropagation();
-      runGenerateShot(section, generateShotBtn, sectionStatus);
+      runGenerateShotExamples(section, generateExamplesBtn, sectionStatus);
     });
-    footageActions.appendChild(generateShotBtn);
+    footageActions.appendChild(generateExamplesBtn);
+
+    // Video counterpart: same inputs, generates a short animated clip instead
+    // of the stills (see runGenerateShotVideo). Slower; stills stay the default.
+    const generateVideoBtn = document.createElement('button');
+    generateVideoBtn.type = 'button';
+    generateVideoBtn.className = 'btn-secondary generate-shot-video-btn';
+    generateVideoBtn.textContent = 'Generate video';
+    generateVideoBtn.title = 'Animate the chosen example image using this scene’s notes, techniques, and narrative operation (~60s)';
+    generateVideoBtn.addEventListener('click', event => {
+      event.stopPropagation();
+      runGenerateShotVideo(section, generateVideoBtn, sectionStatus);
+    });
+    footageActions.appendChild(generateVideoBtn);
 
     // Captures video+audio via getUserMedia/MediaRecorder, then uploads the
     // recorded clip through the same /premiere/upload_footage bridge as a
@@ -1365,6 +2655,17 @@ function buildSectionBlock(section, selectable) {
 
     const mediaResults = document.createElement('div');
     mediaResults.className = 'paper-section-media';
+    const sfxBlock = document.createElement('div');
+    sfxBlock.className = 'paper-section-sfx-block';
+    const sfxLabel = document.createElement('div');
+    sfxLabel.className = 'paper-section-text-label';
+    sfxLabel.textContent = 'Sound effects';
+    sfxBlock.appendChild(sfxLabel);
+    const sfxActions = document.createElement('div');
+    sfxActions.className = 'paper-section-sfx-actions';
+    sfxBlock.appendChild(sfxActions);
+    const sfxResults = document.createElement('div');
+    sfxResults.className = 'paper-section-media paper-section-sfx-results';
 
     // Always available. If the scene doesn't yet have LLM-suggested search
     // phrases (video_query/audio_query), runFindFootage derives them from the
@@ -1373,44 +2674,275 @@ function buildSectionBlock(section, selectable) {
     findFootageBtn.type = 'button';
     findFootageBtn.className = 'btn-secondary find-footage-btn';
     findFootageBtn.textContent = 'Find footage';
+    const footageSearchGroup = document.createElement('div');
+    footageSearchGroup.className = 'media-query-action-group footage-search-group';
+    const videoQueryInput = document.createElement('input');
+    videoQueryInput.type = 'text';
+    videoQueryInput.className = 'media-query-input footage-query-input';
+    videoQueryInput.placeholder = 'Video search query';
+    videoQueryInput.value = section.videoQuery || '';
+    videoQueryInput.title = 'Edit the suggested video search query';
+    videoQueryInput.addEventListener('click', event => event.stopPropagation());
+    videoQueryInput.addEventListener('keydown', event => event.stopPropagation());
+    videoQueryInput.addEventListener('input', () => {
+      section.videoQuery = videoQueryInput.value.trim();
+      saveDebugSession();
+    });
     findFootageBtn.addEventListener('click', event => {
       event.stopPropagation();
-      runFindFootage(section, mediaResults, sectionStatus, findFootageBtn);
+      runFindFootage(section, mediaResults, sectionStatus, findFootageBtn, videoQueryInput, audioQueryInput);
     });
-    footageActions.appendChild(findFootageBtn);
+    footageSearchGroup.appendChild(videoQueryInput);
+    footageSearchGroup.appendChild(findFootageBtn);
+    footageActions.appendChild(footageSearchGroup);
 
-    // Alternative to Record/Find: the researcher's own footage file from
-    // disk, uploaded to premiere_exports/ (see backend/premiere_bridge.py)
-    // for the Premiere Pro UXP plugin to import directly - takes priority
-    // over a selected stock clip in /premiere/export's shot list.
+    // A presenter-supplied sound takes priority over search results and is
+    // stored as the scene's selected SFX immediately after upload. Keep this
+    // picker beside (and to the left of) Find Sound so the two choices are
+    // equally discoverable.
+    const uploadSfxInput = document.createElement('input');
+    uploadSfxInput.type = 'file';
+    uploadSfxInput.accept = 'audio/*,.mp3,.wav,.m4a,.aac,.ogg,.oga,.flac,.webm';
+    uploadSfxInput.className = 'paper-section-sfx-input';
+    uploadSfxInput.title = 'Upload your own sound effect';
+    uploadSfxInput.addEventListener('click', event => event.stopPropagation());
+
+    const uploadSfxBtn = document.createElement('button');
+    uploadSfxBtn.type = 'button';
+    uploadSfxBtn.className = 'btn-secondary upload-sfx-btn';
+    uploadSfxBtn.textContent = 'Upload sound';
+    uploadSfxBtn.title = 'Use your own audio file as this scene’s sound effect';
+    uploadSfxBtn.addEventListener('click', event => {
+      event.stopPropagation();
+      if (uploadSfxInput.disabled) return;
+      uploadSfxInput.value = '';
+      uploadSfxInput.click();
+    });
+    uploadSfxInput.addEventListener('change', () => {
+      const file = uploadSfxInput.files && uploadSfxInput.files[0];
+      if (file) runUploadSoundEffect(section, file, sectionStatus, uploadSfxInput);
+    });
+    sfxActions.appendChild(uploadSfxBtn);
+    sfxActions.appendChild(uploadSfxInput);
+
+    const sfxSearchGroup = document.createElement('div');
+    sfxSearchGroup.className = 'media-query-action-group sfx-search-group';
+    const audioQueryInput = document.createElement('input');
+    audioQueryInput.type = 'text';
+    audioQueryInput.className = 'media-query-input sfx-query-input';
+    audioQueryInput.placeholder = 'Sound search query';
+    audioQueryInput.value = section.audioQuery || '';
+    audioQueryInput.title = 'Edit the suggested sound search query';
+    audioQueryInput.addEventListener('click', event => event.stopPropagation());
+    audioQueryInput.addEventListener('keydown', event => event.stopPropagation());
+    audioQueryInput.addEventListener('input', () => {
+      section.audioQuery = audioQueryInput.value.trim();
+      saveDebugSession();
+    });
+    const suggestSfxBtn = document.createElement('button');
+    suggestSfxBtn.type = 'button';
+    suggestSfxBtn.className = 'btn-secondary suggest-sfx-btn';
+    suggestSfxBtn.textContent = 'Find Sound';
+    suggestSfxBtn.addEventListener('click', event => {
+      event.stopPropagation();
+      runSuggestSoundEffects(section, sfxResults, sectionStatus, suggestSfxBtn, audioQueryInput, videoQueryInput);
+    });
+    sfxSearchGroup.appendChild(audioQueryInput);
+    sfxSearchGroup.appendChild(suggestSfxBtn);
+    sfxActions.appendChild(sfxSearchGroup);
+
+    if (section.selectedAudio) {
+      const segment = normalizeSelectedAudioSegment(section.selectedAudio);
+      const selectedSfx = document.createElement('div');
+      selectedSfx.className = 'selected-sfx-summary';
+      const selectedSfxText = document.createElement('span');
+      const selectedDuration = segment ? segment.durationSeconds : 0;
+      selectedSfxText.textContent = `SFX: ${section.selectedAudio.name || 'Selected sound'}${selectedDuration > 0 ? ` · ${selectedDuration.toFixed(1)}s selected` : ''}`;
+      selectedSfx.appendChild(selectedSfxText);
+      const preview = document.createElement('audio');
+      preview.controls = true;
+      preview.preload = 'metadata';
+      preview.src = section.selectedAudio.localPreviewUrl || section.selectedAudio.preview_url;
+      preview.addEventListener('click', event => event.stopPropagation());
+      if (segment) {
+        const keepPreviewInsideSelection = () => {
+          const start = section.selectedAudio.trimStartSeconds;
+          const end = start + section.selectedAudio.durationSeconds;
+          if (preview.currentTime < start - 0.05 || preview.currentTime >= end - 0.02) preview.currentTime = start;
+        };
+        preview.addEventListener('play', keepPreviewInsideSelection);
+        preview.addEventListener('timeupdate', () => {
+          const end = section.selectedAudio.trimStartSeconds + section.selectedAudio.durationSeconds;
+          if (preview.currentTime >= end - 0.02) {
+            preview.pause();
+            preview.currentTime = section.selectedAudio.trimStartSeconds;
+          }
+        });
+      }
+      selectedSfx.appendChild(preview);
+
+      if (segment) {
+        const editor = document.createElement('div');
+        editor.className = 'sfx-segment-editor';
+        editor.addEventListener('click', event => event.stopPropagation());
+
+        const selectionReadout = document.createElement('div');
+        selectionReadout.className = 'sfx-segment-readout';
+        const refreshSelectionReadout = () => {
+          const start = section.selectedAudio.trimStartSeconds;
+          const duration = section.selectedAudio.durationSeconds;
+          selectionReadout.textContent = `Using ${start.toFixed(1)}s–${(start + duration).toFixed(1)}s · ${duration.toFixed(1)}s`;
+          selectedSfxText.textContent = `SFX: ${section.selectedAudio.name || 'Selected sound'} · ${duration.toFixed(1)}s selected`;
+        };
+        editor.appendChild(selectionReadout);
+
+        const sourceStrip = document.createElement('div');
+        sourceStrip.className = 'sfx-source-strip';
+        sourceStrip.title = 'Drag the selected window or either edge to choose the source sound';
+        const sourceSelection = document.createElement('div');
+        sourceSelection.className = 'sfx-source-selection';
+        const selectionLabel = document.createElement('span');
+        selectionLabel.className = 'sfx-source-selection-label';
+        sourceSelection.appendChild(selectionLabel);
+        const sourceInHandle = document.createElement('span');
+        sourceInHandle.className = 'sfx-source-handle start';
+        sourceInHandle.title = 'Drag source in-point';
+        sourceSelection.appendChild(sourceInHandle);
+        const sourceOutHandle = document.createElement('span');
+        sourceOutHandle.className = 'sfx-source-handle end';
+        sourceOutHandle.title = 'Drag source out-point';
+        sourceSelection.appendChild(sourceOutHandle);
+        sourceStrip.appendChild(sourceSelection);
+        editor.appendChild(sourceStrip);
+
+        const redrawSourceSelection = () => {
+          const start = section.selectedAudio.trimStartSeconds;
+          const duration = section.selectedAudio.durationSeconds;
+          sourceSelection.style.left = `${(start / segment.naturalDurationSeconds) * 100}%`;
+          sourceSelection.style.width = `${(duration / segment.naturalDurationSeconds) * 100}%`;
+          selectionLabel.textContent = `${duration.toFixed(1)}s`;
+          refreshSelectionReadout();
+        };
+        const wireSourceWindowDrag = (target, mode) => {
+          target.addEventListener('pointerdown', pointerEvent => {
+            pointerEvent.preventDefault();
+            pointerEvent.stopPropagation();
+            const stripWidth = sourceStrip.getBoundingClientRect().width || 1;
+            const startX = pointerEvent.clientX;
+            const initialStart = section.selectedAudio.trimStartSeconds;
+            const initialDuration = section.selectedAudio.durationSeconds;
+            const initialEnd = initialStart + initialDuration;
+            try { target.setPointerCapture(pointerEvent.pointerId); } catch (err) { /* optional */ }
+            const onMove = moveEvent => {
+              const delta = Math.round(
+                ((moveEvent.clientX - startX) / stripWidth) * segment.naturalDurationSeconds * 10) / 10;
+              if (mode === 'start') {
+                const nextStart = Math.max(0, Math.min(
+                  initialStart + delta, initialEnd - MIN_SFX_SEGMENT_SECONDS));
+                section.selectedAudio.trimStartSeconds = nextStart;
+                section.selectedAudio.durationSeconds = initialEnd - nextStart;
+              } else if (mode === 'end') {
+                section.selectedAudio.durationSeconds = Math.max(MIN_SFX_SEGMENT_SECONDS, Math.min(
+                  initialDuration + delta, segment.naturalDurationSeconds - initialStart));
+              } else {
+                section.selectedAudio.trimStartSeconds = Math.max(0, Math.min(
+                  initialStart + delta, segment.naturalDurationSeconds - initialDuration));
+              }
+              try { preview.currentTime = section.selectedAudio.trimStartSeconds; } catch (err) { /* metadata not ready */ }
+              redrawSourceSelection();
+            };
+            const onUp = () => {
+              target.removeEventListener('pointermove', onMove);
+              target.removeEventListener('pointerup', onUp);
+              try { target.releasePointerCapture(pointerEvent.pointerId); } catch (err) { /* optional */ }
+              normalizeSelectedAudioSegment(section.selectedAudio);
+              saveDebugSession();
+              const remaining = currentSections.filter(s => !s.removed);
+              renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+            };
+            target.addEventListener('pointermove', onMove);
+            target.addEventListener('pointerup', onUp);
+          });
+        };
+        wireSourceWindowDrag(sourceInHandle, 'start');
+        wireSourceWindowDrag(sourceOutHandle, 'end');
+        wireSourceWindowDrag(sourceSelection, 'window');
+        redrawSourceSelection();
+        refreshSelectionReadout();
+        selectedSfx.appendChild(editor);
+      }
+      const removeSfxBtn = document.createElement('button');
+      removeSfxBtn.type = 'button';
+      removeSfxBtn.className = 'btn-secondary remove-sfx-btn';
+      removeSfxBtn.textContent = 'Remove';
+      removeSfxBtn.addEventListener('click', event => {
+        event.stopPropagation();
+        delete section.selectedAudio;
+        saveDebugSession();
+        const remaining = currentSections.filter(s => !s.removed);
+        renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+      });
+      selectedSfx.appendChild(removeSfxBtn);
+      sfxResults.appendChild(selectedSfx);
+    }
+    sfxBlock.appendChild(sfxResults);
+
+    // Hidden picker opened by the large "Your footage" slot below. This input
+    // had previously been commented out while the slot's click handler still
+    // tried to find it, leaving that control as a silent no-op.
     const uploadFootageInput = document.createElement('input');
     uploadFootageInput.type = 'file';
-    uploadFootageInput.accept = 'video/*';
-    uploadFootageInput.title = 'Upload your own footage for this shot';
+    uploadFootageInput.accept = '.mp4,video/mp4,video/quicktime,video/webm,image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp';
+    uploadFootageInput.className = 'paper-section-footage-input';
+    uploadFootageInput.title = 'Upload video footage or an image sketch for this scene';
     uploadFootageInput.addEventListener('click', event => event.stopPropagation());
     uploadFootageInput.addEventListener('change', () => {
-      const file = uploadFootageInput.files[0];
-      if (file) runUploadFootage(section, file, sectionStatus, uploadFootageInput);
+      const file = uploadFootageInput.files && uploadFootageInput.files[0];
+      if (!file) return;
+      const looksLikeImage = (file.type && file.type.startsWith('image/'))
+        || /\.(png|jpe?g|webp)$/i.test(file.name || '');
+      if (looksLikeImage) {
+        runUploadSketch(section, file, sectionStatus, uploadFootageInput);
+      } else {
+        runUploadFootage(section, file, sectionStatus, uploadFootageInput);
+      }
     });
     footageActions.appendChild(uploadFootageInput);
+    const openFootagePicker = () => {
+      if (uploadFootageInput.disabled) return;
+      // Reset first so choosing the same MP4 again after a failed upload still
+      // emits a change event.
+      uploadFootageInput.value = '';
+      uploadFootageInput.click();
+    };
+
 
     // Underneath the visual box: narration + audio.
     const narrationAudio = document.createElement('div');
     narrationAudio.className = 'paper-section-narration-audio';
 
-    const narrationLine = document.createElement('div');
-    narrationLine.className = 'paper-section-narration';
-    // With no recorded narration yet, this reads as instructions for what to
-    // say - the arc part's own description (moved here from the act heading),
-    // which is the guidance for what this scene's voiceover should cover.
-    // Falls back to a generic prompt if the arc part has no description. Once
-    // narration is recorded, it shows that transcript instead.
-    const narrationAct = currentArcSections.find(a => a.key === currentAssignments[section.index]);
-    const narrationPrompt = (narrationAct && narrationAct.description && narrationAct.description.trim())
-      ? narrationAct.description.trim()
-      : "Record what you'd want to say over this scene.";
-    narrationLine.textContent = section.narration || narrationPrompt;
-    narrationAudio.appendChild(narrationLine);
+    const narrationSuggestionLine = document.createElement('div');
+    narrationSuggestionLine.className = 'paper-section-narration suggested-narration llm-generated';
+    const narrationTranscriptLine = document.createElement('div');
+    narrationTranscriptLine.className = 'paper-section-narration recorded-narration-transcript';
+    // An accepted arc's draft is authoritative: it is the exact text shown in
+    // .arc-suggestion-part-narration. Keep the ordinary per-scene field as a
+    // fallback for scenes drafted later from their own Suggest narration
+    // button.
+    const suggestedNarration = (
+      section.arcSuggestedNarration
+      || acceptedArcNarrationForSection(section)
+      || section.narrationSuggestion
+      || ''
+    ).trim();
+    if (suggestedNarration) {
+      const suggestedLabel = document.createElement('strong');
+      suggestedLabel.textContent = 'Suggested narration:';
+      narrationSuggestionLine.appendChild(suggestedLabel);
+      narrationSuggestionLine.appendChild(document.createTextNode(` ${suggestedNarration}`));
+    }
+    if (section.narration) narrationTranscriptLine.textContent = section.narration;
+    const narrationClips = migrateNarrationClips(section);
 
     // --- The section's actual spoken narration audio - required to come
     // from a human voice, not generated text: either recorded directly
@@ -1418,55 +2950,58 @@ function buildSectionBlock(section, selectable) {
     // storyboard.html's "Your Media" module (see renderMediaBankItems'
     // draggable audio items, and the drop handlers on narrationAudio
     // itself, just below). Either way it's transcribed into
-    // narrationLine's text above and decoded for in-browser playback (see
-    // playAudioBuffer's own comment on why not a plain <audio src>).
+    // the narration text below and played from the native audio element in
+    // each narration clip editor.
     // Distinct from section.selectedAudio further down - that's
     // stock/found ambience from Find Footage, not the presenter's voice.
     //
-    // Best-effort prefetch so playback is instant once clicked - a
-    // rejection here is silent (degraded, not fatal); the button's own
-    // click handler below awaits this same call directly, so a click that
-    // arrives before this prefetch finishes (or one that arrives after it
-    // failed, e.g. a transient network error) still works/retries rather
-    // than silently doing nothing.
-    ensureSectionNarrationAudioDecoded(section).catch(() => { });
-
     const narrationAudioControls = document.createElement('div');
     narrationAudioControls.className = 'paper-section-narration-audio-controls';
 
-    if (section.narrationAudioPreviewUrl) {
-      const playNarrationBtn = document.createElement('button');
-      playNarrationBtn.type = 'button';
-      playNarrationBtn.className = 'btn-secondary';
-      playNarrationBtn.textContent = '▶ Play narration';
-      playNarrationBtn.addEventListener('click', event => {
-        event.stopPropagation();
-        if (currentPlaybackOwner === playNarrationBtn) {
-          stopNarrationPlayback();
-          return;
-        }
-        playNarrationBtn.disabled = true;
-        ensureSectionNarrationAudioDecoded(section)
-          .then(audioBuffer => {
-            playNarrationBtn.disabled = false;
-            playAudioBuffer(audioBuffer, playNarrationBtn, () => {
-              playNarrationBtn.textContent = '▶ Play narration';
-            });
-            playNarrationBtn.textContent = '⏸ Pause';
-          })
-          .catch(err => {
-            playNarrationBtn.disabled = false;
-            sectionStatus.textContent = `Could not play narration: ${err.message}`;
-            sectionStatus.classList.add('error');
-          });
-      });
-      narrationAudioControls.appendChild(playNarrationBtn);
-    }
+    // Draft a voice-over from the attached paper section and the act this
+    // scene belongs to. Keep the draft separate from section.narration so a
+    // later microphone recording remains the authoritative transcript.
+    const suggestNarrationBtn = document.createElement('button');
+    suggestNarrationBtn.type = 'button';
+    suggestNarrationBtn.className = 'btn-secondary suggest-narration-btn';
+    suggestNarrationBtn.textContent = suggestedNarration ? 'Suggest again' : 'Suggest narration';
+    suggestNarrationBtn.title = 'Draft a short voice-over from this paper section and its narrative act';
+    suggestNarrationBtn.addEventListener('click', event => {
+      event.stopPropagation();
+      suggestNarrationBtn.disabled = true;
+      sectionStatus.textContent = 'Drafting narration from this section and act...';
+      sectionStatus.classList.remove('error');
+      const act = currentArcSections.find(a => a.key === currentAssignments[section.index]);
+      fetchSuggestNarration({
+        sectionTitle: section.title,
+        sectionText: section.text,
+        actTitle: act ? act.label : '',
+        actDescription: act ? act.description : '',
+        abstract: findAbstractText(),
+        documentaryMode: selectedDocumentaryMode,
+      })
+        .then(({ narration }) => {
+          // A manual re-suggestion intentionally replaces the arc draft for
+          // this scene; future renders should show the new text, not the old
+          // arc-authoritative copy.
+          section.arcSuggestedNarration = null;
+          section.narrationSuggestion = (narration || '').trim();
+          saveDebugSession();
+          const remaining = currentSections.filter(s => !s.removed);
+          renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+        })
+        .catch(err => {
+          sectionStatus.textContent = err.message;
+          sectionStatus.classList.add('error');
+          suggestNarrationBtn.disabled = false;
+        });
+    });
+    narrationAudioControls.appendChild(suggestNarrationBtn);
 
     const recordNarrationBtn = document.createElement('button');
     recordNarrationBtn.type = 'button';
     recordNarrationBtn.className = 'btn-secondary';
-    const recordNarrationRestingLabel = section.narrationAudioPreviewUrl ? 'Re-record narration' : 'Record narration';
+    const recordNarrationRestingLabel = narrationClips.length ? 'Record another narration' : 'Record narration';
     recordNarrationBtn.textContent = recordNarrationRestingLabel;
     let narrationRecordStream = null;
     let narrationRecorder = null;
@@ -1507,7 +3042,15 @@ function buildSectionBlock(section, selectable) {
     });
     narrationAudioControls.appendChild(recordNarrationBtn);
 
+    // Keep the suggested draft independent from recorded transcripts: it
+    // stays above the controls while each fresh transcript is shown below
+    // those controls and immediately above its clip editor.
+    if (suggestedNarration) narrationAudio.appendChild(narrationSuggestionLine);
     narrationAudio.appendChild(narrationAudioControls);
+    if (section.narration) narrationAudio.appendChild(narrationTranscriptLine);
+    narrationClips.forEach(clip => {
+      narrationAudio.appendChild(buildNarrationClipEditor(section, clip));
+    });
 
     // Drop target for dragging an audio clip in from "Your Media" (see
     // renderMediaBankItems) - a quicker alternative to recording fresh
@@ -1567,11 +3110,10 @@ function buildSectionBlock(section, selectable) {
     //   if (plan.textOverlay) appendStoryboardLine(narrationAudio, 'Overlay', plan.textOverlay);
     // }
 
-    // Reading order: title, then a labeled "Narration" block (what to say),
-    // then the paper's own text under a "Scene Notes" label - reference
-    // material the shot is grounded in, not shot direction - then the visual
-    // box/footage actions last, once the presenter knows what the shot's
-    // about and what they're saying over it.
+    // Reading order: title, narration, then the visual-production unit. The
+    // attached paper text is placed inside that unit below the visual row as
+    // Source Material, keeping the visual reference and its grounding text
+    // together.
     block.classList.add(`role-${getSceneRole(section)}`);
     block.appendChild(removeBtn);
 
@@ -1590,29 +3132,47 @@ function buildSectionBlock(section, selectable) {
     // nudge to record the documentary's voiceover for this scene.
     const narrationBlock = document.createElement('div');
     narrationBlock.className = 'paper-section-narration-block';
-    if (!section.narrationAudioPreviewUrl) narrationBlock.classList.add('needs-narration');
+    if (!narrationClips.length) narrationBlock.classList.add('needs-narration');
     const narrationLabel = document.createElement('div');
     narrationLabel.className = 'paper-section-text-label';
-    narrationLabel.textContent = 'Narration';
+    narrationLabel.textContent = 'Your narration';
     narrationBlock.appendChild(narrationLabel);
     narrationBlock.appendChild(narrationAudio);
     block.appendChild(narrationBlock);
+
+    // Scene direction, picture preview, and footage controls form one visual-
+    // production unit. Keeping these three blocks under a shared parent also
+    // gives layout changes a stable hook without affecting narration/SFX.
+    const visualProductionBlock = document.createElement('div');
+    visualProductionBlock.className = 'paper-section-visual-production-block';
+    const footageNotesLabel = document.createElement('div');
+    footageNotesLabel.className = 'paper-section-text-label';
+    footageNotesLabel.textContent = 'Your footage';
+    visualProductionBlock.appendChild(footageNotesLabel);
+
+    block.appendChild(visualProductionBlock);
 
     const notesBlock = document.createElement('div');
     notesBlock.className = 'paper-section-notes-block';
     const sceneNotesLabel = document.createElement('div');
     sceneNotesLabel.className = 'paper-section-text-label';
-    sceneNotesLabel.textContent = 'Scene Notes';
+    sceneNotesLabel.textContent = 'Scene composition & camera techniques';
     notesBlock.appendChild(sceneNotesLabel);
     notesBlock.appendChild(body);
-    block.appendChild(notesBlock);
+    // The per-scene technique chips (dragged onto this scene) live right under
+    // the notes now, each removable - see buildSceneTechniquesRow.
+    const techRow = buildSceneTechniquesRow(section);
+    if (techRow) notesBlock.appendChild(techRow);
+    visualProductionBlock.appendChild(notesBlock);
 
-    // The WHOLE scene card is the drop surface for technique/mode/source
-    // drags - dropping anywhere on the scene lands in the Scene Notes, and
-    // the Scene Notes block is what highlights. The narration block is a
-    // dead zone for these drags (see below), so hovering it shows no outline
-    // and nothing drops there - only media-bank audio drags land on narration.
-    wireNotesDrop(block, notesBlock);
+    // Scene Notes accepts only technique/mode drags. Source excerpts have a
+    // separate target below the visual row; the narration block remains a
+    // dead zone for these drags (only media-bank audio can land there).
+    wireNotesDrop(notesBlock, notesBlock, { notesOnly: true });
+    // The whole paper-section block is also a valid technique target. Nested
+    // media/source drop zones stop propagation, so the timeline is not needed
+    // as a second technique target.
+    wireNotesDrop(block, block, { notesOnly: true });
     narrationBlock.addEventListener('dragover', event => {
       if (!isNotesDrag(event.dataTransfer)) return; // let audio drags reach narrationAudio
       event.stopPropagation();                       // don't bubble to the block's notes-drop
@@ -1626,9 +3186,164 @@ function buildSectionBlock(section, selectable) {
       block.appendChild(entitiesLine);
     }
 
-    block.appendChild(visualBox);
-    block.appendChild(footageActions);
-    block.appendChild(mediaResults);
+    // The generated visual sits beside an "open slot" that invites the
+    // presenter to go capture / upload their OWN footage for this scene (real
+    // footage always beats a generated stand-in) - clicking it opens the same
+    // footage file picker the footage actions use.
+    const visualRow = document.createElement('div');
+    visualRow.className = 'paper-section-visual-row';
+
+    const openSlot = document.createElement('div');
+    openSlot.className = 'paper-section-open-slot';
+    // Generated example cards are draggable references. Accept only that
+    // payload here, so ordinary scene/timeline drags do not turn the upload
+    // slot into a generic drop target.
+    openSlot.addEventListener('dragover', event => {
+      if (!dataTransferHasType(event.dataTransfer, 'application/x-generated-shot')) return;
+      event.preventDefault();
+      event.stopPropagation();
+      openSlot.classList.add('generated-reference-drag-over');
+    });
+    openSlot.addEventListener('dragleave', event => {
+      if (event.relatedTarget && openSlot.contains(event.relatedTarget)) return;
+      openSlot.classList.remove('generated-reference-drag-over');
+    });
+    openSlot.addEventListener('drop', event => {
+      if (!dataTransferHasType(event.dataTransfer, 'application/x-generated-shot')) return;
+      event.preventDefault();
+      event.stopPropagation();
+      openSlot.classList.remove('generated-reference-drag-over');
+      try {
+        const shot = JSON.parse(event.dataTransfer.getData('application/x-generated-shot'));
+        applyDraggedGeneratedReference(section, shot);
+      } catch (err) {
+        // Ignore malformed external drag payloads.
+      }
+    });
+    if (section.uploadedFootagePreviewUrl || section.uploadedSketchPreviewUrl || section.image) {
+      openSlot.classList.add('has-footage');
+      const openSlotOverlay = document.createElement('div');
+      openSlotOverlay.className = 'open-slot-overlay';
+      const ownFootageLabel = document.createElement('div');
+      ownFootageLabel.className = 'open-slot-footage-label';
+      ownFootageLabel.textContent = section.uploadedFootagePreviewUrl
+        ? (section.footageOrigin === 'foundFootage' ? 'Found footage' : 'Your footage')
+        : section.uploadedSketchPreviewUrl ? 'Your sketch' : 'Paper figure';
+      openSlotOverlay.appendChild(ownFootageLabel);
+      if (section.uploadedFootagePreviewUrl) {
+        const ownFootageVideo = document.createElement('video');
+        ownFootageVideo.className = 'paper-section-open-slot-video';
+        ownFootageVideo.src = section.uploadedFootagePreviewUrl;
+        configureUploadedFootagePreview(ownFootageVideo, section);
+        ownFootageVideo.controls = true;
+        ownFootageVideo.addEventListener('click', event => event.stopPropagation());
+        openSlot.appendChild(ownFootageVideo);
+      } else if (section.uploadedSketchPreviewUrl) {
+        const ownSketchImage = document.createElement('img');
+        ownSketchImage.className = 'paper-section-open-slot-image';
+        ownSketchImage.src = section.uploadedSketchPreviewUrl;
+        ownSketchImage.alt = 'Uploaded scene sketch';
+        openSlot.appendChild(ownSketchImage);
+      } else {
+        const figureImage = document.createElement('img');
+        figureImage.className = 'paper-section-open-slot-image paper-section-paper-figure';
+        figureImage.src = section.image;
+        figureImage.alt = `${section.title || 'Attached paper'} figure`;
+        openSlot.appendChild(figureImage);
+      }
+      // Let the presenter explicitly identify the uploaded subject. The
+      // server's footage analysis is only a starting guess; this field is the
+      // authoritative content anchor sent with future example/video prompts.
+      const subjectEditor = document.createElement('div');
+      subjectEditor.className = 'open-slot-subject-editor';
+      const subjectLabel = document.createElement('label');
+      subjectLabel.className = 'open-slot-subject-label';
+      subjectLabel.textContent = 'What does this footage/sketch show?';
+      subjectEditor.appendChild(subjectLabel);
+      const subjectInput = document.createElement('textarea');
+      subjectInput.className = 'open-slot-subject-input';
+      subjectInput.rows = 2;
+      subjectInput.maxLength = 500;
+      subjectInput.placeholder = 'e.g. A red boat crossing a foggy harbor';
+      subjectInput.value = section.footageSubject || '';
+      subjectInput.title = 'Describe the subject/content so generated shots stay anchored to your upload';
+      subjectInput.addEventListener('click', event => event.stopPropagation());
+      subjectInput.addEventListener('keydown', event => event.stopPropagation());
+      subjectInput.addEventListener('input', () => {
+        section.footageSubject = subjectInput.value.trim();
+        saveDebugSession();
+      });
+      subjectEditor.appendChild(subjectInput);
+      const subjectHint = document.createElement('div');
+      subjectHint.className = 'open-slot-subject-hint';
+      subjectHint.textContent = 'Used as the content reference for generated examples and video. Click Preview examples after editing.';
+      subjectEditor.appendChild(subjectHint);
+      openSlotOverlay.appendChild(subjectEditor);
+      const replaceFootageBtn = document.createElement('button');
+      replaceFootageBtn.type = 'button';
+      replaceFootageBtn.className = 'btn-secondary replace-footage-btn';
+      replaceFootageBtn.textContent = 'Upload';
+      replaceFootageBtn.addEventListener('click', event => {
+        event.stopPropagation();
+        openFootagePicker();
+      });
+      openSlotOverlay.appendChild(replaceFootageBtn);
+      openSlot.appendChild(openSlotOverlay);
+      openSlot.title = 'Preview or replace your footage or sketch for this scene';
+    } else {
+      const slotIcon = document.createElement('div');
+      slotIcon.className = 'open-slot-icon';
+      slotIcon.textContent = '🎥';
+      const slotText = document.createElement('div');
+      slotText.className = 'open-slot-text';
+      slotText.textContent = 'Your footage or sketch — go capture and upload your own for this scene';
+      openSlot.appendChild(slotIcon);
+      openSlot.appendChild(slotText);
+      openSlot.title = 'Upload your own footage or sketch for this scene';
+      openSlot.setAttribute('role', 'button');
+      openSlot.tabIndex = 0;
+      openSlot.addEventListener('click', event => {
+        event.stopPropagation();
+        openFootagePicker();
+      });
+      openSlot.addEventListener('keydown', event => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        event.stopPropagation();
+        openFootagePicker();
+      });
+    }
+    // The user's reference stays on the left; generated examples/visuals are
+    // shown on the right in the adjacent visual box.
+    visualRow.appendChild(openSlot);
+    visualRow.appendChild(visualBox);
+    visualProductionBlock.appendChild(visualRow);
+
+    // Keep the attached paper passage below the visual row, where it acts as
+    // source material for the footage/sketch choices rather than competing
+    // with the scene-direction controls above.
+    const sourceMaterialBlock = document.createElement('div');
+    sourceMaterialBlock.className = 'paper-section-source-material-block';
+    const sourceMaterialLabel = document.createElement('div');
+    sourceMaterialLabel.className = 'paper-section-text-label';
+    sourceMaterialLabel.textContent = 'Source Material';
+    sourceMaterialBlock.appendChild(sourceMaterialLabel);
+    const sourceMaterialBody = document.createElement('div');
+    sourceMaterialBody.className = 'paper-section-text paper-section-source-material-text';
+    sourceMaterialBody.textContent = section.text || '(no attached paper text)';
+    makeEditable(sourceMaterialBody, () => section.text || '(no attached paper text)', value => {
+      section.text = value;
+      saveDebugSession();
+    }, { multiline: true, allowEmpty: true });
+    wireNotesDrop(sourceMaterialBody, sourceMaterialBody, { sourceOnly: true });
+    sourceMaterialBlock.appendChild(sourceMaterialBody);
+    visualProductionBlock.appendChild(sourceMaterialBlock);
+
+    // Keep shot-generation/search actions attached to the visual itself, at
+    // its bottom edge, so the controls stay with the examples/video preview.
+    visualBox.appendChild(footageActions);
+    visualProductionBlock.appendChild(mediaResults);
+    block.appendChild(sfxBlock);
     // The status line sits at the very bottom of the block, under all the
     // rest of the content (visual box, footage actions, media results),
     // rather than wedged between the actions and their results.
@@ -1651,15 +3366,16 @@ function buildSectionBlock(section, selectable) {
   }
 
   function updateRemoveBtn() {
-    removeBtn.textContent = section.removed ? '↺' : '×';
-    removeBtn.title = section.removed ? 'Restore this section' : 'Exclude this section';
+    const isRemoved = selectable ? !!section.sceneRemoved : !!section.removed;
+    removeBtn.textContent = isRemoved ? '↺' : '×';
+    removeBtn.title = isRemoved ? 'Restore this section' : 'Exclude this section';
   }
   updateRemoveBtn();
 
   removeBtn.addEventListener('click', event => {
     event.stopPropagation();
-    section.removed = !section.removed;
     if (selectable) {
+      section.sceneRemoved = !section.sceneRemoved;
       // Arranged view: a deleted scene leaves the timeline and its arc row
       // entirely (renderMovieEditor is only ever fed non-removed sections)
       // and shows up in the "Deleted scenes" sidebar module, restorable
@@ -1669,6 +3385,7 @@ function buildSectionBlock(section, selectable) {
       const remaining = currentSections.filter(s => !s.removed);
       renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
     } else {
+      section.removed = !section.removed;
       block.classList.toggle('removed', section.removed);
       updateRemoveBtn();
     }
@@ -1700,7 +3417,10 @@ function buildInsertSectionDivider(afterIndex) {
   divider.textContent = '+ Add Section';
   divider.title = 'Insert a new section here';
   divider.addEventListener('click', () => {
-    insertSection(afterIndex, 'New Section', '', null, true);
+    // A section added from the paper feed is source material, not a storyboard
+    // scene, so keep it visible on index.html and out of the narrativeOnly
+    // scaffold set.
+    insertSection(afterIndex, 'New Section', '', null, false);
     renderSectionFeed(resultsEl, currentLabel, currentSections);
     updateComposeStoryboardVisibility();
     saveDebugSession();
@@ -1711,14 +3431,11 @@ function buildInsertSectionDivider(afterIndex) {
 function renderSectionFeed(container, label, sections) {
   container.innerHTML = '';
 
-  // The paper's own source material only - never the scaffold scenes added
-  // while arranging/storyboarding on storyboard.html (narrativeOnly AND
-  // assigned to an arc act - see insertSection / the arranged view's
-  // "+ Add Scene" and mode scaffolding). Those ride along in the shared saved
-  // session (see saveDebugSession) but aren't source material and mustn't
-  // swell this feed. A narrativeOnly section with no act is one added right
-  // here on the flat feed (see buildInsertSectionDivider), which does belong.
-  const sourceSections = sections.filter(section => !(section.narrativeOnly && currentAssignments[section.index]));
+  // The paper's own source material only - never the narrativeOnly scaffold
+  // scenes added while arranging/storyboarding on storyboard.html. Those ride
+  // along in the shared saved session but are not source material and must not
+  // swell this feed.
+  const sourceSections = sections.filter(section => !section.narrativeOnly);
 
   const title = document.createElement('h2');
   title.textContent = 'Source material';
@@ -1835,6 +3552,10 @@ function runExtraction() {
 
   task
     .then(({ label, sections }) => {
+      // A new paper gets its own durable source snapshot; later edits to this
+      // paper continue updating that file rather than overwriting a previous
+      // extraction with the same browser session.
+      rotatePaperSnapshotId();
       currentLabel = label;
       currentSections = sections.map((section, index) => ({
         index,
@@ -1897,31 +3618,713 @@ function findAbstractText() {
 function paperSectionsForArc() {
   return currentSections
     .filter(s => !s.removed && !s.narrativeOnly)
-    .map(s => ({ index: s.index, title: s.title }));
+    // A short body snippet (not the full text) gives the distillation real
+    // placement signal beyond the (often generic) title, while keeping the
+    // whole-paper prompt lean - see distill_from_moodboard's listing. The
+    // arc-only /paper/suggest_arcs route ignores the extra field.
+    .map(s => ({ index: s.index, title: s.title, snippet: (s.text || '').trim().slice(0, 280) }));
 }
 
 function runSuggestArcs() {
-  suggestArcsBtn.disabled = true;
+  // suggestArcsBtn.disabled = true;
   suggestArcsStatusEl.textContent = 'Suggesting narrative arcs ...';
   suggestArcsStatusEl.classList.remove('error');
   arcSuggestionPanelEl.style.display = 'none';
 
-  fetchSuggestArcs(recordedTranscript, Array.from(selectedFocusStatements), findAbstractText(), paperSectionsForArc())
+  fetchSuggestArcs(Array.from(selectedFocusStatements), findAbstractText(), paperSectionsForArc())
     .then(({ recommended, alternatives }) => {
       suggestArcsStatusEl.textContent = '';
-      suggestArcsBtn.disabled = false;
-      renderArcSuggestion(recommended, alternatives);
+      // suggestArcsBtn.disabled = false;
+      renderArcSuggestionWithNarration(recommended, alternatives, selectedDocumentaryMode);
     })
     .catch(err => {
       suggestArcsStatusEl.textContent = err.message;
       suggestArcsStatusEl.classList.add('error');
-      suggestArcsBtn.disabled = false;
+      // suggestArcsBtn.disabled = false;
     });
 }
 
 // suggestArcsBtn only exists on storyboard.html - guarded so this is a
 // no-op on index.html (which loads the same shared script).
-if (suggestArcsBtn) suggestArcsBtn.addEventListener('click', runSuggestArcs);
+// if (suggestArcsBtn) suggestArcsBtn.addEventListener('click', runSuggestArcs);
+
+// --- Moodboard entry point (index.html): add references, poll their
+// background analysis, and (on storyboard.html) distill them into a
+// suggested arc + mode + techniques. Replaces the old narration recorder.
+
+function addMoodboardReference({ kind, name, url, file }) {
+  // Optimistic placeholder card shown immediately; the fetch fills in its
+  // ref_id, then polling flips it to ready/error.
+  const entry = {
+    refId: null,
+    sourceKind: kind,
+    title: name || (file ? file.name : (url || 'Reference')),
+    sourceUrl: url || '',
+    note: '',
+    state: 'analyzing',
+    profile: null,
+    thumbnailUrl: null,
+  };
+  moodboardReferences.push(entry);
+  renderMoodboardList();
+  refreshMoodboardStatusLine();
+
+  fetchAddMoodboardReference({ kind, name, url, file, note: '', projectId: premiereProjectId })
+    .then(({ project_id, ref_id }) => {
+      premiereProjectId = project_id;
+      entry.refId = ref_id;
+      saveDebugSession();
+      pollMoodboardReference(ref_id);
+    })
+    .catch(err => {
+      entry.state = 'error';
+      entry.errorMessage = err.message;
+      renderMoodboardList();
+      refreshMoodboardStatusLine();
+    });
+}
+
+function pollMoodboardReference(refId) {
+  if (!premiereProjectId) return;
+  fetchMoodboardReferenceStatus(premiereProjectId, refId)
+    .then(status => {
+      const entry = moodboardReferences.find(r => r.refId === refId);
+      if (!entry) return;  // removed while a poll was in flight
+      if (status.state === 'ready') {
+        entry.state = 'ready';
+        entry.profile = status.profile || null;
+        if (entry.profile) {
+          entry.title = entry.profile.title || entry.title;
+          entry.thumbnailUrl = entry.profile.thumbnail_url || null;
+          if (!entry.note) entry.note = entry.profile.note || '';
+        }
+        renderMoodboardList();
+        refreshMoodboardStatusLine();
+        saveDebugSession();
+        updateComposeStoryboardVisibility();
+        refreshSuggestionsFromMoodboard();  // storyboard: re-distill once analyzed
+      } else if (status.state === 'error' || status.state === 'unknown') {
+        entry.state = 'error';
+        entry.errorMessage = status.message || 'Analysis failed.';
+        renderMoodboardList();
+        refreshMoodboardStatusLine();
+        saveDebugSession();
+      } else {
+        entry.stepMessage = status.message || '';
+        renderMoodboardList();
+        setTimeout(() => pollMoodboardReference(refId), 2500);
+      }
+    })
+    .catch(() => {
+      // Transient network blip - keep polling a little slower.
+      setTimeout(() => pollMoodboardReference(refId), 4000);
+    });
+}
+
+function refreshMoodboardStatusLine() {
+  if (!moodboardStatusEl) return;
+  const analyzing = moodboardReferences.filter(r => r.state === 'analyzing').length;
+  const ready = moodboardReferences.filter(r => r.state === 'ready').length;
+  moodboardStatusEl.classList.remove('error');
+  if (analyzing > 0) {
+    moodboardStatusEl.textContent = `Analyzing ${analyzing} reference${analyzing === 1 ? '' : 's'} … you can keep adding more or upload your paper.`;
+  } else if (ready > 0) {
+    moodboardStatusEl.textContent = `${ready} reference${ready === 1 ? '' : 's'} analyzed.`;
+  } else {
+    moodboardStatusEl.textContent = '';
+  }
+}
+
+// Cards mark the reference itself as .user-content (the presenter's own pick)
+// and the analysis-derived style summary as .llm-generated, so the two are
+// visually distinct (see styles-index.css).
+// The analysis-derived style summary for a reference profile (the same LLM
+// output shown on index.html's cards and storyboard.html's recap). Built from
+// DOM nodes so tone/pacing/mode and the "Techniques:" label can be bold.
+// Carries the .llm-generated treatment.
+function buildMoodboardStyleSummary(profile) {
+  const style = document.createElement('div');
+  style.className = 'moodboard-card-style llm-generated';
+  const sep = () => { if (style.childNodes.length) style.appendChild(document.createTextNode(' — ')); };
+  const bold = text => { const b = document.createElement('strong'); b.textContent = text; return b; };
+
+  if (profile.visual_style) style.appendChild(document.createTextNode(profile.visual_style));
+
+  const modeLabel = (DOCUMENTARY_MODES.find(m => m.key === profile.suggested_mode) || {}).label
+    || profile.suggested_mode || '';
+  const metaParts = [profile.tone, profile.pacing, modeLabel].filter(Boolean);
+  if (metaParts.length) {
+    sep();
+    metaParts.forEach((val, i) => {
+      if (i) style.appendChild(document.createTextNode(' · '));
+      style.appendChild(bold(val));
+    });
+  }
+
+  const techs = profile.observed_techniques || [];
+  if (techs.length) {
+    sep();
+    style.appendChild(bold('Techniques:'));
+    style.appendChild(document.createTextNode(' ' + techs.join(', ')));
+  }
+
+  if (!style.childNodes.length) style.textContent = 'Analyzed (no distinct style cues detected).';
+  return style;
+}
+
+// The horizontal strip of frames sampled from a clip (null when there are none,
+// e.g. a named reference).
+function buildMoodboardFramesStrip(profile) {
+  const frameUrls = profile.frame_urls || [];
+  if (!frameUrls.length) return null;
+  const strip = document.createElement('div');
+  strip.className = 'moodboard-card-frames';
+  frameUrls.forEach(url => {
+    const fimg = document.createElement('img');
+    fimg.className = 'moodboard-frame';
+    fimg.src = url;
+    fimg.alt = 'sampled frame';
+    fimg.loading = 'lazy';
+    strip.appendChild(fimg);
+  });
+  return strip;
+}
+
+// storyboard.html's read-only "Moodboard" recap module (#moodboard-summary-module)
+// - shows the analyzed references carried over from index.html (thumbnail,
+// title, source badge, style summary, sampled frames, and any note), without
+// the add/remove/poll controls. Hides itself when there's nothing analyzed.
+function renderMoodboardSummaryList() {
+  if (!moodboardSummaryListEl) return;
+  const refs = moodboardReferences.filter(r => r.profile);
+  if (moodboardSummaryModuleEl) moodboardSummaryModuleEl.style.display = refs.length ? '' : 'none';
+  moodboardSummaryListEl.innerHTML = '';
+
+  refs.forEach(ref => {
+    const card = document.createElement('div');
+    card.className = 'moodboard-card user-content';
+
+    const thumb = document.createElement('div');
+    thumb.className = 'moodboard-card-thumb';
+    if (ref.thumbnailUrl) {
+      const img = document.createElement('img');
+      img.src = ref.thumbnailUrl;
+      img.alt = ref.title || 'reference';
+      thumb.appendChild(img);
+    } else {
+      thumb.classList.add('moodboard-card-thumb--placeholder');
+      thumb.textContent = ref.sourceKind === 'named' ? '🎬' : (ref.sourceKind === 'youtube' ? '▶' : '🎞');
+    }
+    card.appendChild(thumb);
+
+    const body = document.createElement('div');
+    body.className = 'moodboard-card-body';
+
+    const titleRow = document.createElement('div');
+    titleRow.className = 'moodboard-card-title-row';
+    const title = document.createElement('span');
+    title.className = 'moodboard-card-title';
+    title.textContent = ref.title || 'Reference';
+    titleRow.appendChild(title);
+    const badge = document.createElement('span');
+    badge.className = 'moodboard-source-badge';
+    badge.textContent = ref.sourceKind === 'named' ? 'Named' : (ref.sourceKind === 'youtube' ? 'YouTube' : 'Upload');
+    titleRow.appendChild(badge);
+    body.appendChild(titleRow);
+
+    body.appendChild(buildMoodboardStyleSummary(ref.profile));
+    const strip = buildMoodboardFramesStrip(ref.profile);
+    if (strip) body.appendChild(strip);
+    if (ref.note) {
+      const noteEl = document.createElement('div');
+      noteEl.className = 'moodboard-card-note-static';
+      noteEl.textContent = `Note: ${ref.note}`;
+      body.appendChild(noteEl);
+    }
+
+    card.appendChild(body);
+    moodboardSummaryListEl.appendChild(card);
+  });
+}
+
+function renderMoodboardList() {
+  if (!moodboardListEl) return;
+  // On storyboard.html the moodboard lives in #moodboard-summary-module and is
+  // always shown (so references can be edited any time), unlike index.html.
+  if (moodboardSummaryModuleEl) moodboardSummaryModuleEl.style.display = '';
+  moodboardListEl.innerHTML = '';
+  moodboardReferences.forEach(ref => {
+    const card = document.createElement('div');
+    card.className = 'moodboard-card user-content';
+    card.dataset.state = ref.state;
+
+    const thumb = document.createElement('div');
+    thumb.className = 'moodboard-card-thumb';
+    if (ref.thumbnailUrl) {
+      const img = document.createElement('img');
+      img.src = ref.thumbnailUrl;
+      img.alt = ref.title || 'reference';
+      thumb.appendChild(img);
+    } else {
+      thumb.classList.add('moodboard-card-thumb--placeholder');
+      thumb.textContent = ref.sourceKind === 'named' ? '🎬' : (ref.sourceKind === 'youtube' ? '▶' : '🎞');
+    }
+    card.appendChild(thumb);
+
+    const body = document.createElement('div');
+    body.className = 'moodboard-card-body';
+
+    const titleRow = document.createElement('div');
+    titleRow.className = 'moodboard-card-title-row';
+    const title = document.createElement('span');
+    title.className = 'moodboard-card-title';
+    title.textContent = ref.title || 'Reference';
+    titleRow.appendChild(title);
+    const badge = document.createElement('span');
+    badge.className = 'moodboard-source-badge';
+    badge.textContent = ref.sourceKind === 'named' ? 'Named' : (ref.sourceKind === 'youtube' ? 'YouTube' : 'Upload');
+    titleRow.appendChild(badge);
+    const pill = document.createElement('span');
+    pill.className = `moodboard-status-pill moodboard-status-pill--${ref.state}`;
+    pill.textContent = ref.state === 'ready' ? 'Analyzed' : (ref.state === 'error' ? 'Failed' : 'Analyzing…');
+    titleRow.appendChild(pill);
+    body.appendChild(titleRow);
+
+    if (ref.state === 'ready' && ref.profile) {
+      body.appendChild(buildMoodboardStyleSummary(ref.profile));
+      const strip = buildMoodboardFramesStrip(ref.profile);
+      if (strip) body.appendChild(strip);
+    } else if (ref.state === 'error') {
+      const errEl = document.createElement('div');
+      errEl.className = 'moodboard-card-error';
+      errEl.textContent = ref.errorMessage || 'Analysis failed.';
+      body.appendChild(errEl);
+    }
+
+    const noteInput = document.createElement('input');
+    noteInput.type = 'text';
+    noteInput.className = 'moodboard-card-note';
+    noteInput.placeholder = 'Add a note (what you like about it)…';
+    noteInput.value = ref.note || '';
+    noteInput.addEventListener('change', () => {
+      ref.note = noteInput.value;
+      if (ref.profile) ref.profile.note = noteInput.value;
+      saveDebugSession();
+    });
+    body.appendChild(noteInput);
+
+    card.appendChild(body);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'moodboard-card-remove';
+    removeBtn.textContent = '✕';
+    removeBtn.title = 'Remove this reference';
+    removeBtn.addEventListener('click', () => {
+      moodboardReferences = moodboardReferences.filter(r => r !== ref);
+      renderMoodboardList();
+      refreshMoodboardStatusLine();
+      saveDebugSession();
+      updateComposeStoryboardVisibility();
+      refreshSuggestionsFromMoodboard();  // storyboard: re-distill after removal
+    });
+    card.appendChild(removeBtn);
+
+    moodboardListEl.appendChild(card);
+  });
+}
+
+// index.html add-controls (guarded - null on storyboard.html).
+if (moodboardAddNameBtn && moodboardNameInput) {
+  const addName = () => {
+    const name = (moodboardNameInput.value || '').trim();
+    if (!name) return;
+    addMoodboardReference({ kind: 'named', name });
+    moodboardNameInput.value = '';
+  };
+  moodboardAddNameBtn.addEventListener('click', addName);
+  moodboardNameInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addName(); } });
+}
+if (moodboardAddUrlBtn && moodboardUrlInput) {
+  const addUrl = () => {
+    const url = (moodboardUrlInput.value || '').trim();
+    if (!url) return;
+    addMoodboardReference({ kind: 'youtube', url });
+    moodboardUrlInput.value = '';
+  };
+  moodboardAddUrlBtn.addEventListener('click', addUrl);
+  moodboardUrlInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addUrl(); } });
+}
+if (moodboardFileInput) {
+  moodboardFileInput.addEventListener('change', () => {
+    const file = moodboardFileInput.files && moodboardFileInput.files[0];
+    if (!file) return;
+    addMoodboardReference({ kind: 'upload', file });
+    moodboardFileInput.value = '';
+  });
+}
+
+// --- 3D reconstruction entry point (index.html): upload a photo/panorama/clip,
+// poll its background reconstruction, then explore it in an INLINE three.js
+// viewer (js/reconstruct-viewer.js). Mirrors the moodboard add/poll flow.
+
+function addReconstruct({ file, kindHint, engine }) {
+  const item = {
+    reconId: null,
+    name: file ? file.name : 'Reconstruction',
+    kindHint: kindHint || 'auto',
+    engine: engine || 'sharp',
+    state: 'reconstructing',
+    stepMessage: '',
+    profile: null,
+    expanded: false,
+    teardown: null,
+  };
+  reconstructItems.push(item);
+  renderReconstructList();
+  refreshReconstructStatusLine();
+
+  fetchAddReconstruct({ file, kind: kindHint, engine, projectId: premiereProjectId })
+    .then(({ project_id, recon_id }) => {
+      premiereProjectId = project_id;
+      item.reconId = recon_id;
+      saveDebugSession();
+      pollReconstruct(recon_id);
+    })
+    .catch(err => {
+      item.state = 'error';
+      item.errorMessage = err.message;
+      renderReconstructList();
+      refreshReconstructStatusLine();
+    });
+}
+
+function pollReconstruct(reconId) {
+  if (!premiereProjectId) return;
+  fetchReconstructStatus(premiereProjectId, reconId)
+    .then(status => {
+      const item = reconstructItems.find(r => r.reconId === reconId);
+      if (!item) return;  // removed while a poll was in flight
+      if (status.state === 'ready') {
+        item.state = 'ready';
+        item.profile = status.profile || null;
+        renderReconstructList();
+        refreshReconstructStatusLine();
+        saveDebugSession();
+      } else if (status.state === 'error' || status.state === 'unknown') {
+        item.state = 'error';
+        item.errorMessage = status.message || 'Reconstruction failed.';
+        renderReconstructList();
+        refreshReconstructStatusLine();
+        saveDebugSession();
+      } else {
+        item.stepMessage = status.message || '';
+        renderReconstructList();
+        setTimeout(() => pollReconstruct(reconId), 2500);
+      }
+    })
+    .catch(() => {
+      setTimeout(() => pollReconstruct(reconId), 4000);
+    });
+}
+
+function refreshReconstructStatusLine() {
+  if (!reconstructStatusEl) return;
+  const working = reconstructItems.filter(r => r.state === 'reconstructing').length;
+  const ready = reconstructItems.filter(r => r.state === 'ready').length;
+  reconstructStatusEl.classList.remove('error');
+  if (working > 0) {
+    reconstructStatusEl.textContent = `Reconstructing ${working} item${working === 1 ? '' : 's'} …`;
+  } else if (ready > 0) {
+    reconstructStatusEl.textContent = `${ready} scene${ready === 1 ? '' : 's'} ready — click "View in 3D".`;
+  } else {
+    reconstructStatusEl.textContent = '';
+  }
+}
+
+const RECONSTRUCT_MODE_LABEL = {
+  'splat': '3D Gaussian splats',
+  'depth-displace': '2.5D depth',
+  'pano': '360° panorama',
+  'flat': 'flat (no depth)',
+};
+
+// Collapse any other expanded viewer first (tears down its WebGL context) so at
+// most one is live at a time.
+function collapseReconstruct(except) {
+  reconstructItems.forEach(other => {
+    if (other !== except && other.expanded) {
+      other.expanded = false;
+      if (other.teardown) { try { other.teardown(); } catch (e) {} other.teardown = null; }
+    }
+  });
+}
+
+function renderReconstructList() {
+  if (!reconstructListEl) return;
+  // The list is rebuilt wholesale, so any live viewer's canvas is about to be
+  // detached - tear each down (expanded items are re-created in the loop below)
+  // to avoid orphaned WebGL contexts.
+  reconstructItems.forEach(it => {
+    if (it.teardown) { try { it.teardown(); } catch (e) {} it.teardown = null; }
+  });
+  reconstructListEl.innerHTML = '';
+  reconstructItems.forEach(item => {
+    const card = document.createElement('div');
+    card.className = 'moodboard-card user-content reconstruct-card';
+    card.dataset.state = item.state;
+
+    const thumb = document.createElement('div');
+    thumb.className = 'moodboard-card-thumb';
+    if (item.profile && item.profile.color_url) {
+      const img = document.createElement('img');
+      img.src = item.profile.color_url;
+      img.alt = item.name;
+      thumb.appendChild(img);
+    } else {
+      thumb.classList.add('moodboard-card-thumb--placeholder');
+      thumb.textContent = '🧊';
+    }
+    card.appendChild(thumb);
+
+    const body = document.createElement('div');
+    body.className = 'moodboard-card-body';
+
+    const titleRow = document.createElement('div');
+    titleRow.className = 'moodboard-card-title-row';
+    const title = document.createElement('span');
+    title.className = 'moodboard-card-title';
+    title.textContent = item.name;
+    titleRow.appendChild(title);
+    if (item.profile) {
+      const badge = document.createElement('span');
+      badge.className = 'moodboard-source-badge';
+      badge.textContent = RECONSTRUCT_MODE_LABEL[item.profile.viewer_mode] || item.profile.viewer_mode;
+      titleRow.appendChild(badge);
+    }
+    const pill = document.createElement('span');
+    pill.className = `moodboard-status-pill moodboard-status-pill--${item.state === 'reconstructing' ? 'analyzing' : item.state}`;
+    pill.textContent = item.state === 'ready' ? 'Ready' : (item.state === 'error' ? 'Failed' : 'Reconstructing…');
+    titleRow.appendChild(pill);
+    body.appendChild(titleRow);
+
+    if (item.state === 'ready' && item.profile) {
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'btn-secondary reconstruct-view-toggle';
+      toggle.textContent = item.expanded ? 'Hide 3D ▲' : 'View in 3D ▼';
+      const host = document.createElement('div');
+      host.className = 'reconstruct-viewer-host';
+      host.style.display = item.expanded ? '' : 'none';
+      toggle.addEventListener('click', () => {
+        item.expanded = !item.expanded;
+        if (item.expanded) {
+          collapseReconstruct(item);
+          host.style.display = '';
+          toggle.textContent = 'Hide 3D ▲';
+          item.teardown = openReconstructViewer(item.profile, host);
+        } else {
+          host.style.display = 'none';
+          toggle.textContent = 'View in 3D ▼';
+          if (item.teardown) { try { item.teardown(); } catch (e) {} item.teardown = null; }
+        }
+      });
+      body.appendChild(toggle);
+      body.appendChild(host);
+      if (item.expanded) item.teardown = openReconstructViewer(item.profile, host);
+    } else if (item.state === 'error') {
+      const errEl = document.createElement('div');
+      errEl.className = 'moodboard-card-error';
+      errEl.textContent = item.errorMessage || 'Reconstruction failed.';
+      body.appendChild(errEl);
+    } else {
+      const stepEl = document.createElement('div');
+      stepEl.className = 'moodboard-card-style';
+      stepEl.textContent = item.stepMessage || 'Reconstructing …';
+      body.appendChild(stepEl);
+    }
+
+    card.appendChild(body);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'moodboard-card-remove';
+    removeBtn.textContent = '✕';
+    removeBtn.title = 'Remove this reconstruction';
+    removeBtn.addEventListener('click', () => {
+      if (item.teardown) { try { item.teardown(); } catch (e) {} item.teardown = null; }
+      reconstructItems = reconstructItems.filter(r => r !== item);
+      renderReconstructList();
+      refreshReconstructStatusLine();
+      saveDebugSession();
+    });
+    card.appendChild(removeBtn);
+
+    reconstructListEl.appendChild(card);
+  });
+}
+
+if (reconstructFileInput) {
+  reconstructFileInput.addEventListener('change', () => {
+    const file = reconstructFileInput.files && reconstructFileInput.files[0];
+    if (!file) return;
+    const checked = document.querySelector('input[name="reconstruct-kind"]:checked');
+    const engineChecked = document.querySelector('input[name="reconstruct-engine"]:checked');
+    addReconstruct({
+      file,
+      kindHint: checked ? checked.value : 'auto',
+      engine: engineChecked ? engineChecked.value : 'sharp',
+    });
+    reconstructFileInput.value = '';
+  });
+}
+
+// A plain-text summary of the ready references, used as the documentary_goal
+// fallback the rest of the pipeline reads (the shot/storyboard/edit-plan
+// generation all read recordedTranscript when there's no intent textarea) -
+// keeps those flows working now that there's no spoken narration.
+// The analyzed moodboard profiles (compact) passed into shot generation to
+// anchor the frames' visual style (see fetchGenerateShot / shot_plan_llm's
+// _format_moodboard). Only the style-relevant fields.
+function moodboardProfilesForGeneration() {
+  return moodboardReferences
+    .filter(r => r.state === 'ready' && r.profile)
+    .map(r => ({
+      title: r.profile.title,
+      visual_style: r.profile.visual_style,
+      tone: r.profile.tone,
+      pacing: r.profile.pacing,
+      observed_techniques: r.profile.observed_techniques,
+    }));
+}
+
+function buildMoodboardGoalSummary() {
+  return moodboardReferences
+    .filter(r => r.state === 'ready' && r.profile)
+    .map(r => [r.profile.title, r.profile.visual_style, r.profile.tone, r.note].filter(Boolean).join(' — '))
+    .join(' | ');
+}
+
+// Use exactly the same inputs as the narration batch that runs after
+// "Apply this arc" (see runAcceptArc/autoSuggestNarrationForStoryboard), but
+// draft against an arc part before there is a scene object to attach it to.
+// Each part's mapped paper sections become the new scene's attached source
+// material, just as they do on accept.
+function suggestNarrationForArcPart(part, documentaryMode) {
+  const sourceByIndex = new Map(currentSections.map(section => [section.index, section]));
+  const sectionText = (part.section_indices || [])
+    .map(index => sourceByIndex.get(index))
+    .filter(section => section && !section.removed && !section.narrativeOnly)
+    .map(section => section.text)
+    .filter(Boolean)
+    .join('\n\n');
+  return fetchSuggestNarration({
+    sectionTitle: 'New Scene',
+    sectionText,
+    actTitle: part.name || part.label || '',
+    actDescription: part.description || '',
+    abstract: findAbstractText(),
+    documentaryMode,
+  }).then(({ narration }) => {
+    part.suggested_narration = (narration || '').trim();
+  });
+}
+
+// Render an arc immediately with a per-part loading state, then replace those
+// states with the generated drafts as they arrive. Only the visible/current arc
+// is drafted up front; an alternative is drafted when the presenter selects it
+// so the distillation step does not make a large burst of unnecessary calls.
+function renderArcSuggestionWithNarration(current, others, documentaryMode) {
+  const generation = ++arcNarrationGeneration;
+  const arcs = [current].filter(Boolean);
+  arcs.forEach(arc => (arc.sections || []).forEach(part => {
+    arcNarrationFailedParts.delete(part);
+    if ((part.suggested_narration || '').trim()) {
+      arcNarrationPendingParts.delete(part);
+    } else {
+      arcNarrationPendingParts.add(part);
+    }
+  }));
+  renderArcSuggestion(current, others);
+
+  const jobs = arcs.flatMap(arc => (arc.sections || []).map(part => {
+    if ((part.suggested_narration || '').trim()) return Promise.resolve();
+    return suggestNarrationForArcPart(part, documentaryMode)
+      .catch(() => {
+        arcNarrationFailedParts.add(part);
+        part.suggested_narration = '';
+      })
+      .finally(() => arcNarrationPendingParts.delete(part));
+  }));
+  return Promise.all(jobs).then(() => {
+    if (generation !== arcNarrationGeneration) return;
+    saveDebugSession();
+    renderArcSuggestion(current, others);
+  });
+}
+
+// storyboard.html: distill the analyzed moodboard into a suggested arc (+ its
+// alternatives), a documentary mode, and techniques. The arc rendering is
+// identical to runSuggestArcs; additionally we pre-select the suggested mode
+// + technique chips and stash the rationale for renderMovieEditor to show.
+function runDistillMoodboard() {
+  const readyProfiles = moodboardReferences
+    .filter(r => r.state === 'ready' && r.profile)
+    .map(r => ({ ...r.profile, note: r.note || r.profile.note || '' }));
+  if (!readyProfiles.length) {
+    suggestArcsRowEl.style.display = '';
+    suggestArcsStatusEl.textContent = 'Go back to setup and add at least one reference documentary to your moodboard first.';
+    return;
+  }
+  // suggestArcsBtn.disabled = true;
+  suggestArcsStatusEl.textContent = 'Distilling your moodboard into a narrative arc, mode, and techniques ...';
+  suggestArcsStatusEl.classList.remove('error');
+  arcSuggestionPanelEl.style.display = 'none';
+
+  fetchDistillMoodboard(readyProfiles, findAbstractText(), paperSectionsForArc())
+    .then(({ recommended, alternatives, suggested_mode, suggested_techniques, style_rationale }) => {
+      suggestArcsStatusEl.textContent = '';
+      // suggestArcsBtn.disabled = false;
+      if (suggested_mode) selectedDocumentaryMode = suggested_mode;
+      const cleanSuggestedTechniques = sanitizeDocumentaryTechniques(suggested_techniques);
+      selectedTechniques = new Set(cleanSuggestedTechniques);
+      distilledStyleRationale = style_rationale || '';
+      lastDistillResult = {
+        recommended, alternatives, suggested_mode,
+        suggested_techniques: cleanSuggestedTechniques, style_rationale,
+      };
+      recordedTranscript = buildMoodboardGoalSummary();
+      saveDebugSession();
+      renderArcSuggestionWithNarration(recommended, alternatives, selectedDocumentaryMode);
+      // If an arc's already been accepted (the movie editor is on screen),
+      // refresh it so the "Moodboard styles:" + techniques modules reflect the
+      // new distill. currentArcSections is unchanged (a NEW arc still needs an
+      // explicit Accept - see the suggestion panel), so scenes are preserved.
+      if (currentArcSections.length > 0 && resultsEl) {
+        const remaining = currentSections.filter(s => !s.removed);
+        renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+      }
+    })
+    .catch(err => {
+      suggestArcsStatusEl.textContent = err.message;
+      suggestArcsStatusEl.classList.add('error');
+      // suggestArcsBtn.disabled = false;
+    });
+}
+
+// storyboard.html: after the moodboard changes (a reference added or removed),
+// re-distill the suggested arc/mode/techniques and refresh the styles +
+// techniques modules. Debounced so several references finishing analysis at
+// once (or a burst of edits) collapse into a single distill. No-op on
+// index.html, which has no arc suggestion panel.
+let moodboardRefreshTimer = null;
+function refreshSuggestionsFromMoodboard() {
+  if (!arcSuggestionPanelEl) return;  // storyboard-only
+  clearTimeout(moodboardRefreshTimer);
+  moodboardRefreshTimer = setTimeout(() => {
+    if (moodboardReferences.some(r => r.state === 'ready')) runDistillMoodboard();
+  }, 500);
+}
 
 // current: {arc_name, sections, reasoning} - the arc on offer for accept/
 // swap right now; reasoning is only ever non-empty for the LLM's own top
@@ -1934,28 +4337,44 @@ function renderArcSuggestion(current, others) {
   arcSuggestionPanelEl.style.display = '';
 
   const card = document.createElement('div');
-  card.className = 'arc-suggestion-card';
+  card.className = 'arc-suggestion-card llm-generated';
 
   const title = document.createElement('div');
   title.className = 'arc-suggestion-title';
   title.textContent = current.arc_name;
   card.appendChild(title);
 
-  // Concrete preview: under each chapter, list the actual paper sections that
-  // would map into it (from the suggestion's section_indices), so the presenter
-  // can compare what each arc would really do with THIS paper - not just an
-  // abstract blurb. Falls back to name+description alone if no mapping exists.
+  // Concrete preview: under each chapter, show the generated narration and the
+  // actual paper sections that would map into it (from section_indices), so the
+  // presenter can compare what each arc would really do with THIS paper.
   const titleByIndex = new Map(currentSections.map(s => [s.index, s.title]));
   const partsList = document.createElement('div');
   partsList.className = 'arc-suggestion-parts';
-  current.sections.forEach(part => {
+  current.sections.forEach((part, partIdx) => {
     const partEl = document.createElement('div');
     partEl.className = 'arc-suggestion-part';
 
     const nameEl = document.createElement('div');
     nameEl.className = 'arc-suggestion-part-name';
-    nameEl.textContent = part.description ? `${part.name} - ${part.description}` : part.name;
+    const actLabel = `Act ${partIdx + 1}: ${part.name}`;
+    nameEl.textContent = actLabel;
     partEl.appendChild(nameEl);
+
+    const narrationEl = document.createElement('div');
+    narrationEl.className = 'arc-suggestion-part-narration';
+    const narrationLabel = document.createElement('strong');
+    narrationLabel.textContent = 'Suggested narration:';
+    narrationEl.appendChild(narrationLabel);
+    if (arcNarrationPendingParts.has(part)) {
+      narrationEl.appendChild(document.createTextNode(' Generating…'));
+    } else if ((part.suggested_narration || '').trim()) {
+      narrationEl.appendChild(document.createTextNode(` ${part.suggested_narration.trim()}`));
+    } else if (arcNarrationFailedParts.has(part)) {
+      narrationEl.appendChild(document.createTextNode(' Unavailable — you can generate it after applying the arc.'));
+    } else {
+      narrationEl.appendChild(document.createTextNode(' Not generated yet.'));
+    }
+    partEl.appendChild(narrationEl);
 
     const titles = (part.section_indices || []).map(i => titleByIndex.get(i)).filter(Boolean);
     if (titles.length) {
@@ -1979,7 +4398,12 @@ function renderArcSuggestion(current, others) {
   acceptBtn.type = 'button';
   acceptBtn.id = 'accept-arc-btn';
   acceptBtn.className = 'btn-primary';
-  acceptBtn.textContent = 'Apply this arc';
+  const narrationPending = (current.sections || []).some(part => arcNarrationPendingParts.has(part));
+  acceptBtn.textContent = narrationPending ? 'Generating narration…' : 'Apply this arc';
+  acceptBtn.disabled = narrationPending;
+  if (narrationPending) {
+    acceptBtn.title = 'Wait for the suggested narration drafts to finish generating.';
+  }
   acceptBtn.addEventListener('click', () => runAcceptArc(current));
   card.appendChild(acceptBtn);
 
@@ -1988,7 +4412,7 @@ function renderArcSuggestion(current, others) {
   if (others.length > 0) {
     const otherLabel = document.createElement('p');
     otherLabel.className = 'chip-row-caption';
-    otherLabel.style.marginTop = '14px';
+    otherLabel.style.marginTop = '25px';
     otherLabel.style.fontSize = '12px';
     otherLabel.style.opacity = '0.75';
     otherLabel.textContent = 'Or pick a different arc:';
@@ -2007,9 +4431,10 @@ function renderArcSuggestion(current, others) {
         // to this swap) rejoins the alternatives list alongside whatever's
         // left of it.
         const remaining = others.filter(o => o !== alt);
-        renderArcSuggestion(
+        renderArcSuggestionWithNarration(
           { arc_name: alt.arc_name, sections: alt.sections, reasoning: null },
-          remaining.concat([{ arc_name: current.arc_name, sections: current.sections }])
+          remaining.concat([{ arc_name: current.arc_name, sections: current.sections }]),
+          selectedDocumentaryMode
         );
       });
       otherChips.appendChild(chip);
@@ -2040,10 +4465,10 @@ function renderArcSuggestion(current, others) {
     customBtn.disabled = true;
     suggestArcsStatusEl.textContent = 'Resolving your own focus into a narrative arc ...';
     suggestArcsStatusEl.classList.remove('error');
-    fetchSuggestArcs(recordedTranscript, Array.from(selectedFocusStatements).concat([customText]), findAbstractText(), paperSectionsForArc())
+    fetchSuggestArcs(Array.from(selectedFocusStatements).concat([customText]), findAbstractText(), paperSectionsForArc())
       .then(({ recommended, alternatives }) => {
         suggestArcsStatusEl.textContent = '';
-        renderArcSuggestion(recommended, alternatives);
+        renderArcSuggestionWithNarration(recommended, alternatives, selectedDocumentaryMode);
       })
       .catch(err => {
         suggestArcsStatusEl.textContent = err.message;
@@ -2058,28 +4483,21 @@ function renderArcSuggestion(current, others) {
 
 // Locks in whichever arc (recommended/alternative/custom) the presenter
 // accepted and shows it straight away as a vertical list of narrative-act
-// groups (renderMovieEditor) - each starting with one auto-created "New
-// Section" to work with (see renderMovieEditor's own empty-row handling),
-// not sections auto-assigned by an LLM. The presenter fills each act in
-// from here (editing that starting section directly, the "+ Add Section"
-// button per row, or dragging an already-placed section's chip into a
-// different row). The suggestion panel (see renderArcSuggestion) is left
-// open rather than hidden, so a different arc can still be accepted
-// afterward; relocateArcSuggestionToSidebar then moves it out of the main
-// column so it doesn't compete with the arranged view for space.
+// groups (renderMovieEditor). Each new act receives one fresh scene whose
+// source-material field is populated from the paper sections mapped to that
+// act. Narration generated during distillation is carried into the new scene;
+// any missing draft is generated against the same act/scene context below.
+// Existing source sections and generated work remain in state, while the new
+// arc gets a clean assigned scene for each of its parts.
 function runAcceptArc(arc) {
   selectedNarrationArc = { sections: arc.sections, arc_name: arc.arc_name };
   currentArcSections = arc.sections.map(s => ({ key: s.name, label: s.name, description: s.description || '' }));
   selectedSectionIndices = new Set();
 
-  // Preserve & re-map (non-destructive): keep every real paper section and all
-  // its generated work (visual/narration/edit plan/shot frames/cutaways/
-  // footage) and re-assign those sections into the NEW arc's chapters from the
-  // suggestion's section->part mapping. Nothing generated is silently wiped.
-  // Only BLANK scaffold placeholders (narrativeOnly with no content, tied to
-  // the old chapters) are dropped; a scaffold scene the presenter actually
-  // filled in is kept (it just becomes unassigned - re-draggable - since it
-  // has no place in the new mapping).
+  // Preserve the paper library and all generated work (visual/narration/edit
+  // plan/shot frames/cutaways/footage). Only blank scaffold placeholders from
+  // the previous arc are dropped; a scaffold scene the presenter filled in is
+  // retained in state, even though the new arc gets a clean scene set.
   const hasContent = s => !!(
     (s.text && s.text.trim()) || s.narration || s.narrationAudioPreviewUrl ||
     s.startFramePreviewUrl || (s.cutaways && s.cutaways.length) ||
@@ -2087,20 +4505,76 @@ function runAcceptArc(arc) {
   );
   currentSections = currentSections.filter(s => !(s.narrativeOnly && !hasContent(s)));
 
-  currentAssignments = {};
-  const validIndices = new Set(currentSections.map(s => s.index));
+  // The paper sections mapped into each arc part, in reading order.
+  const validIndices = new Set(currentSections.filter(s => !s.removed).map(s => s.index));
+  const sectionsByAct = {};
+  const mappedPaperIndices = new Set();
   arc.sections.forEach(part => {
-    (part.section_indices || []).forEach(idx => {
-      if (validIndices.has(idx)) currentAssignments[idx] = part.name;
-    });
+    sectionsByAct[part.name] = (part.section_indices || [])
+      .filter(idx => validIndices.has(idx))
+      .map(idx => currentSections.find(s => s.index === idx))
+      .filter(source => source && !source.narrativeOnly);
+    sectionsByAct[part.name].forEach(source => mappedPaperIndices.add(source.index));
+  });
+  // If the arc suggestion omitted some paper sections, attach the remaining
+  // source material across the new acts instead of leaving it orphaned.
+  const unassignedPaper = currentSections.filter(source =>
+    !source.removed && !source.narrativeOnly && !mappedPaperIndices.has(source.index));
+  splitContiguous(unassignedPaper, currentArcSections.length).forEach((bucket, index) => {
+    const part = currentArcSections[index];
+    if (part) sectionsByAct[part.key] = (sectionsByAct[part.key] || []).concat(bucket);
+  });
+
+  // A newly accepted arc gets one fresh scene per arc part. The original
+  // paper sections remain untouched in `currentSections`; their text is copied
+  // into the new scene as its attached source material, and the source indices
+  // are retained so the relationship is explicit and recoverable. Existing
+  // generated scenes are not deleted, but they are left unassigned to this new
+  // arc rather than silently mixing old narration into the new structure.
+  currentAssignments = {};
+  const newArcScenes = [];
+  currentArcSections.forEach(part => {
+    const attachedSources = sectionsByAct[part.key] || [];
+    const sourceText = attachedSources.map(source => source.text).filter(Boolean).join('\n\n');
+    const scene = insertSection(-1, 'New Scene', sourceText, part.key, true);
+    scene.sourceMaterialIndices = attachedSources.map(source => source.index);
+    // Carry the first attached paper figure into the new scene's open slot.
+    // Arc acceptance creates a fresh scene object, so copying only the text
+    // would otherwise leave the source image behind on the library section.
+    const attachedFigure = attachedSources.find(source => source && source.image);
+    if (attachedFigure) scene.image = attachedFigure.image;
+    scene.sceneNotes = '';
+    scene.role = 'aRoll';
+    if ((part.suggested_narration || '').trim()) {
+      // Carry the draft generated while distilling into the same field used
+      // by the post-accept narration pipeline, so the scene card shows the
+      // exact text the presenter already saw in the arc suggestion.
+      scene.arcSuggestedNarration = part.suggested_narration.trim();
+      scene.narrationSuggestion = scene.arcSuggestedNarration;
+    }
+    scene.editPlan = {
+      transitionIn: 'hard_cut',
+      durationSeconds: DEFAULT_SCENE_SECONDS,
+      kenBurns: { enabled: false, pan: null },
+      textOverlay: null,
+    };
+    currentAssignments[scene.index] = part.key;
+    newArcScenes.push(scene);
   });
 
   const remaining = currentSections.filter(section => !section.removed);
   renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
-  paperActionsEl.style.display = '';
-  setStoryboardStatus('');
   relocateAllSidebarModules();
   saveDebugSession();
+
+  // Applying an arc is a fresh storyboard-generation pass for its new scene
+  // set: retain any narration draft generated during distillation, generate
+  // only missing narration, then use the same technique assignment,
+  // media-query preparation, and two-example-image pipeline as Generate all.
+  // The forced generation token keeps an older arc's in-flight narration from
+  // writing into this one.
+  autoSuggestNarrationForStoryboard({ force: true, targets: newArcScenes })
+    .then(() => runGenerateStoryboardForSections(newArcScenes, null));
 }
 //#endregion
 
@@ -2123,7 +4597,9 @@ const composeStoryboardBtn = document.getElementById('compose-storyboard-btn');
 // call sites).
 function updateComposeStoryboardVisibility() {
   if (!composeStoryboardRowEl) return;
-  const hasIntent = !!recordedTranscript || selectedFocusStatements.size > 0;
+  // At least one reference documentary must have finished analyzing before
+  // there's anything to distill into an arc (see runDistillMoodboard).
+  const hasIntent = moodboardReferences.some(r => r.state === 'ready');
   const hasSections = currentSections.some(section => !section.removed);
   composeStoryboardRowEl.style.display = (hasIntent && hasSections) ? '' : 'none';
 }
@@ -2188,16 +4664,30 @@ function buildMediaVideoOption(section, video) {
     // A pick is a bare remote URL until it's actually downloaded to disk -
     // neither export path (the Premiere plugin or the ffmpeg render) can
     // use a URL directly. See fetchDownloadStockMedia's own comment.
-    fetchDownloadStockMedia(section.index, 'video', video.video_url, premiereProjectId)
-      .then(({ project_id, preview_url }) => {
+    fetchDownloadStockMedia(
+      section.index,
+      'video',
+      video.video_url,
+      premiereProjectId,
+      getSceneDuration(section),
+      video.id || `scene-${section.index}`,
+    )
+      .then(({ project_id, preview_url, file_path, thumbnail_url }) => {
         premiereProjectId = project_id;
         section.selectedVideo = { ...video, localPreviewUrl: preview_url };
-        // Picking a found-footage frame is a deliberate choice - see
-        // buildVisualBox's visualSource lookup (same reasoning as
-        // runUploadFootage/runGenerateSketch's own).
-        section.visualSource = 'stockVideo';
-        // Full re-render (rather than just toggling .selected in place) so the
-        // visual box picks up the new selection immediately - see buildVisualBox.
+        // A found-footage pick is the scene's open-slot reference, not a
+        // generated visual-box result. Keep a local copy + extracted poster so
+        // the same slot renders it like uploaded footage and future shot/image
+        // generation can use its frame as an anchor.
+        section.uploadedFootagePath = file_path || null;
+        section.uploadedFootagePreviewUrl = preview_url || null;
+        section.uploadedFootageThumbnailUrl = thumbnail_url || video.thumbnail_url || null;
+        section.uploadedSketchPath = null;
+        section.uploadedSketchPreviewUrl = null;
+        section.uploadedSketchUploadedAt = null;
+        section.footageOrigin = 'foundFootage';
+        section.visualSource = 'video';
+        // Full re-render so the open slot picks up the selected clip immediately.
         const remaining = currentSections.filter(s => !s.removed);
         renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
         saveDebugSession();
@@ -2221,7 +4711,9 @@ function buildMediaAudioOption(section, audio) {
   const label = document.createElement('div');
   label.className = 'media-audio-option-label';
   const licenseSuffix = audio.license ? `, ${audio.license}` : '';
-  label.textContent = `${audio.name || 'Untitled'} — ${audio.creator || 'unknown'}${licenseSuffix}`;
+  const duration = Number(audio.duration);
+  const durationSuffix = Number.isFinite(duration) && duration > 0 ? ` · ${duration.toFixed(1)}s` : '';
+  label.textContent = `${audio.name || 'Untitled'} — ${audio.creator || 'unknown'}${licenseSuffix}${durationSuffix}`;
   option.appendChild(label);
 
   const player = document.createElement('audio');
@@ -2229,6 +4721,18 @@ function buildMediaAudioOption(section, audio) {
   player.src = audio.preview_url;
   player.addEventListener('click', event => event.stopPropagation());
   option.appendChild(player);
+
+  if (audio.source_url) {
+    const sourceLink = document.createElement('a');
+    sourceLink.className = 'media-option-link';
+    sourceLink.href = audio.source_url;
+    sourceLink.target = '_blank';
+    sourceLink.rel = 'noopener noreferrer';
+    sourceLink.textContent = '↗';
+    sourceLink.title = 'Open this sound on Freesound';
+    sourceLink.addEventListener('click', event => event.stopPropagation());
+    option.appendChild(sourceLink);
+  }
 
   option.addEventListener('click', event => {
     event.stopPropagation(); // don't let this bubble to the card's own click-to-select handler
@@ -2238,9 +4742,17 @@ function buildMediaAudioOption(section, audio) {
     // neither export path (the Premiere plugin or the ffmpeg render) can
     // use a URL directly. See fetchDownloadStockMedia's own comment.
     fetchDownloadStockMedia(section.index, 'audio', audio.preview_url, premiereProjectId)
-      .then(({ project_id, preview_url }) => {
+      .then(({ project_id, preview_url, file_path, duration_seconds }) => {
         premiereProjectId = project_id;
-        section.selectedAudio = { ...audio, localPreviewUrl: preview_url };
+        const naturalDuration = Number(duration_seconds) > 0 ? Number(duration_seconds) : duration;
+        section.selectedAudio = {
+          ...audio,
+          localPreviewUrl: preview_url,
+          localFilePath: file_path || null,
+          sourceDurationSeconds: naturalDuration,
+          trimStartSeconds: 0,
+          durationSeconds: naturalDuration,
+        };
         // Full re-render so the audio placeholder under the visual box (see
         // buildSectionBlock) picks up the new player immediately.
         const remaining = currentSections.filter(s => !s.removed);
@@ -2254,6 +4766,76 @@ function buildMediaAudioOption(section, audio) {
   });
 
   return option;
+}
+
+// Sound effects use their own search action rather than piggy-backing on
+// Find footage. The storyboard's audio_query is still shared, but the result
+// area and request lifecycle are independent so video and SFX searches can be
+// used/retried without replacing one another's UI.
+function runUploadSoundEffect(section, file, statusEl, inputEl) {
+  inputEl.disabled = true;
+  statusEl.textContent = `Uploading “${file.name}”...`;
+  statusEl.classList.remove('error');
+
+  return fetchUploadMediaBankItem(file, premiereProjectId)
+    .then(({ project_id, preview_url, file_path, duration_seconds }) => {
+      premiereProjectId = project_id;
+      const naturalDuration = Number(duration_seconds);
+      section.selectedAudio = {
+        name: file.name,
+        source: 'user-upload',
+        preview_url: preview_url,
+        localPreviewUrl: preview_url,
+        localFilePath: file_path || null,
+        sourceDurationSeconds: naturalDuration > 0 ? naturalDuration : null,
+        trimStartSeconds: 0,
+        durationSeconds: naturalDuration > 0 ? naturalDuration : null,
+      };
+      normalizeSelectedAudioSegment(section.selectedAudio);
+      saveDebugSession();
+      const remaining = currentSections.filter(s => !s.removed);
+      renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+    })
+    .catch(err => {
+      statusEl.textContent = `Could not upload sound effect: ${err.message}`;
+      statusEl.classList.add('error');
+      inputEl.disabled = false;
+    });
+}
+
+function runSuggestSoundEffects(section, resultsEl, statusEl, btn, queryInput, pairedQueryInput) {
+  btn.disabled = true;
+  statusEl.textContent = section.audioQuery
+    ? 'Searching for sound effects...'
+    : 'Finding a sound-effects search phrase, then searching...';
+  statusEl.classList.remove('error');
+
+  return ensureFootageQueries(section)
+    .then(() => {
+      if (queryInput) queryInput.value = section.audioQuery || '';
+      if (pairedQueryInput) pairedQueryInput.value = section.videoQuery || '';
+      statusEl.textContent = `Searching Freesound for “${section.audioQuery}”...`;
+      return fetchAudioOptions(section.audioQuery);
+    })
+    .then(({ audio }) => {
+      resultsEl.innerHTML = '';
+      const queryLabel = document.createElement('div');
+      queryLabel.className = 'sfx-search-query';
+      queryLabel.textContent = `Freesound query: “${section.audioQuery}”`;
+      resultsEl.appendChild(queryLabel);
+      const row = document.createElement('div');
+      row.className = 'media-audio-options';
+      (audio || []).forEach(sound => row.appendChild(buildMediaAudioOption(section, sound)));
+      resultsEl.appendChild(row);
+      statusEl.textContent = audio && audio.length
+        ? ''
+        : `No sound effects found for “${section.audioQuery}”.`;
+    })
+    .catch(err => {
+      statusEl.textContent = err.message;
+      statusEl.classList.add('error');
+    })
+    .finally(() => { btn.disabled = false; });
 }
 
 // --- Narrative arc: a named, dynamically-sized documentary structure (see
@@ -2289,6 +4871,37 @@ function handleSectionClick(index, event) {
 // draggable - dragging a big two-column card around felt too easy to
 // trigger by accident while editing its text/using its buttons; the
 // compact chip strip is the only drag handle now.
+// Split an array into n balanced, CONTIGUOUS chunks (preserving order) - used
+// when an arc response leaves some paper sections unmapped. Some chunks may be
+// empty when there are fewer sources than acts.
+function splitContiguous(arr, n) {
+  const chunks = [];
+  const len = arr.length;
+  for (let i = 0; i < n; i++) {
+    chunks.push(arr.slice(Math.floor(i * len / n), Math.floor((i + 1) * len / n)));
+  }
+  return chunks;
+}
+
+// The first scene (in reading order) assigned to an act - the target for
+// paper-section content dragged onto the act (see appendSectionTextToFirstScene)
+// and the merge target when a mode is scaffolded (see runAcceptArc).
+function firstSceneOfAct(actKey) {
+  return currentSections.find(s => isSceneActive(s) && currentAssignments[s.index] === actKey) || null;
+}
+
+// Append a source paper section's text to the first scene's Scene Notes in an
+// act (rather than adding the section as its own scene). Returns whether it did
+// anything (there was a first scene and some text to add).
+function appendSectionTextToFirstScene(actKey, sourceSection) {
+  const scene = firstSceneOfAct(actKey);
+  if (!scene) return false;
+  const addition = (sourceSection.text || '').trim();
+  if (!addition) return false;
+  scene.text = scene.text ? `${scene.text}\n\n${addition}` : addition;
+  return true;
+}
+
 function handleChipDrop(event, actKey) {
   event.preventDefault();
   const draggedIndex = parseInt(event.dataTransfer.getData('text/plain'), 10);
@@ -2320,6 +4933,31 @@ function handleChipDrop(event, actKey) {
   renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
 }
 
+// Scroll a scene card below the sticky action bar + timeline. Native
+// scrollIntoView({block:'start'}) leaves the card underneath the timeline when
+// the timeline is expanded, so calculate the live chrome height instead.
+function scrollSceneBelowStickyChrome(target) {
+  if (!target) return;
+  const chromeBottom = ['.action-bar', '.premiere-timeline']
+    .map(selector => document.querySelector(selector))
+    .filter(Boolean)
+    .map(el => el.getBoundingClientRect())
+    .filter(rect => rect.height > 0)
+    .reduce((bottom, rect) => Math.max(bottom, rect.bottom), 0);
+  const gap = 14;
+  const targetY = window.scrollY + target.getBoundingClientRect().top - chromeBottom - gap;
+  window.scrollTo({ top: Math.max(0, targetY), behavior: 'smooth' });
+}
+
+function scrollTimelineClipToScene(sectionIndex) {
+  const target = document.querySelector(
+    `.paper-section-block[data-section-index="${sectionIndex}"]`);
+  if (!target) return;
+  activeSfxSectionIndex = sectionIndex;
+  timelinePreviewProgrammaticScrollUntil = performance.now() + 1200;
+  scrollSceneBelowStickyChrome(target);
+}
+
 // A single click selects (like a card click - see handleSectionClick); a
 // double-click instead scrolls the section's full card into view without
 // changing the selection, for jumping to a section spotted in the chip
@@ -2344,7 +4982,7 @@ function buildArcRowChip(section) {
   chip.addEventListener('dblclick', event => {
     event.stopPropagation();
     const card = document.querySelector(`.paper-section-block[data-section-index="${section.index}"]`);
-    if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    scrollSceneBelowStickyChrome(card);
   });
   return chip;
 }
@@ -2362,15 +5000,12 @@ const OUTLINE_ACTIVE_THRESHOLD_PX = 90;
 // COUNT per act, not time - still gives the "how much of the film is this
 // act" read a real timeline gives, just on a coarser axis.
 //
-// A-roll reflects narration state, B-roll reflects visual state, each on
-// its own 3-step ladder (see buildVisualBox/VISUAL_BOX_RENDERERS and
-// finishAssigningNarrationAudio for the same "real asset > drafted text
-// only > nothing" distinction made elsewhere): unfilled (dashed, nothing
-// yet) -> .drafted (an LLM-suggested line/description, no real asset
-// attached) -> .filled (real recorded/dragged audio, or a real assigned
-// visual). Both tracks share the same section ordering/widths, so a
-// vertical slice through both tracks is one shot - same idea as a real
-// timeline's synced audio/video tracks.
+// Each track has its own 3-step ladder (see buildVisualBox /
+// VISUAL_BOX_RENDERERS and finishAssigningNarrationAudio for the same
+// "real asset > drafted text only > nothing" distinction made elsewhere):
+// unfilled (dashed, nothing yet) -> .drafted (an LLM suggestion, no real
+// asset attached) -> .filled (a real asset for THAT lane). A narration asset
+// therefore cannot color footage, and an SFX asset cannot color narration.
 //
 // Returns a Map from section.index to that section's [aRollClip, bRollClip]
 // pair - renderMovieEditor's scroll listener uses this to highlight
@@ -2396,14 +5031,21 @@ function buildTimelineTrack(timelineEl, label) {
 // via buildSectionBlock's role picker or a scaffolded mode template) if
 // present, else inferred from whatever's attached - a picked stock clip reads
 // as B-roll, a generated/uploaded primary visual as A-roll, otherwise A-roll
-// by default (the narrative spine). Sound effects is only ever an explicit
-// choice (a supplementary sound pick doesn't, on its own, make a whole scene
-// a sound-effects scene).
+// by default (the narrative spine). Sound effects are attached independently.
 function getSceneRole(section) {
   if (section.role && SCENE_ROLE_LABELS[section.role]) return section.role;
   if (section.visualSource === 'stockVideo') return 'bRoll';
   if (['sketch', 'animatedSketch', 'video'].includes(section.visualSource)) return 'aRoll';
   return 'aRoll';
+}
+
+// Expository is a project mode as well as a scaffolded scene kind. Older or
+// hand-arranged scenes may not carry shotKind, so generation must honor the
+// selected mode too. Cutaway-role scenes remain ordinary individual shots.
+function isExpositoryPrimaryScene(section) {
+  return getSceneRole(section) === 'aRoll' && (
+    section.shotKind === 'expositoryNarration' || selectedDocumentaryMode === 'expository'
+  );
 }
 
 // A scene's on-screen duration in seconds - from its (auto- or hand-)
@@ -2414,44 +5056,92 @@ function getSceneDuration(section) {
   return (typeof d === 'number' && d > 0) ? d : DEFAULT_SCENE_SECONDS;
 }
 
-// Whether a scene's clip reads as filled / drafted for its own track role -
-// A-roll on primary-visual state, B-roll on stock-pick state, sound effects
-// on the sound-pick state (each on the same "real asset > drafted text only >
-// nothing" ladder used elsewhere).
-function isSceneFilledForRole(section, roleKey) {
-  if (roleKey === 'bRoll') return section.visualSource === 'stockVideo';
-  if (roleKey === 'soundEffects') return !!section.selectedAudio;
-  return ['sketch', 'animatedSketch', 'video'].includes(section.visualSource);
+// A single expository cutaway's on-screen duration - each cutaway surfaces as
+// its own B-roll segment on the timeline (see buildNarrativeTimeline). Uses a
+// per-cutaway duration_seconds if the generator supplied one, else a flat
+// default.
+const DEFAULT_CUTAWAY_SECONDS = 4;
+function getCutawayDuration(cutaway) {
+  const d = cutaway && cutaway.duration_seconds;
+  return (typeof d === 'number' && d > 0) ? d : DEFAULT_CUTAWAY_SECONDS;
 }
+
+// Timeline fill is lane-specific: narration audio must not color the footage
+// lane, a selected SFX clip must not color either visual lane, and a visual
+// preview must not color narration. Keep these predicates separate even though
+// every scene is represented by one shared visual clip spec below.
+function hasSceneNarrationAudio(section) {
+  return !!(section && (
+    (Array.isArray(section.narrationClips) && section.narrationClips.length) ||
+    section.narrationAudioPreviewUrl
+  ));
+}
+
+// The blue FOOTAGE timeline fill represents media that is actually in the
+// paper-section-open-slot, not merely a suggestion or a preview in the visual
+// box. Uploaded/recorded footage and sketches live here, as do generated
+// image/video references after the presenter deliberately drags them into the
+// slot (applyDraggedGeneratedReference uses the same fields).
+function hasSceneOpenSlotMedia(section) {
+  return !!(section && (
+    section.uploadedFootagePreviewUrl || section.uploadedSketchPreviewUrl
+  ));
+}
+
+function hasSceneSoundEffect(section) {
+  return getSelectedSfxDuration(section) > 0;
+}
+
+function isSceneFilledForRole(section, roleKey) {
+  if (roleKey === 'soundEffects') return hasSceneSoundEffect(section);
+  if (roleKey === 'narration') return hasSceneNarrationAudio(section);
+  return hasSceneOpenSlotMedia(section);
+}
+
 function isSceneDraftedForRole(section, roleKey) {
-  if (roleKey === 'bRoll') return !!section.videoQuery;
-  if (roleKey === 'soundEffects') return !!section.audioQuery;
-  return !!(section.visual && section.visual.trim());
+  if (roleKey === 'narration') return !!effectiveSectionNarration(section);
+  if (roleKey === 'soundEffects') return !!(section && section.audioQuery);
+  if (roleKey === 'bRoll') return !!(section && section.videoQuery);
+  return !!(section && section.visual && section.visual.trim());
 }
 
 // Dragging a documentary mode onto a timeline act scaffolds that act with the
 // mode's scene template (see MODE_SCENE_TEMPLATES) - one A-roll/B-roll scene
 // per entry, each a blank narrativeOnly scene the presenter then fills, with
 // its role and an auto-generated edit plan (duration in seconds) already set.
-// Replaces, not accumulates: the act's existing scaffold scenes (the previous
-// mode's, plus any auto-blank/manually-added placeholders - all narrativeOnly)
-// are cleared first, so re-dragging a mode resets the act rather than piling
-// more scenes on. Real paper sections arranged into the act are kept as the
-// source content the scaffold is built around.
+// Content-preserving, like runAcceptArc: only the act's EMPTY scaffold scenes
+// (narrativeOnly with no generated shot/cutaways/footage/narration) are cleared
+// first, so re-dragging a mode resets the blank placeholders without piling on
+// duplicates. A scaffold scene the presenter has already invested work in is
+// kept (it stays in the act alongside the new template scenes), and any real
+// (non-narrativeOnly) scene is kept too.
 function scaffoldModeOntoAct(actKey, modeKey) {
   const template = MODE_SCENE_TEMPLATES[modeKey];
   if (!template) return;
 
+  // "Worth keeping" = actual generated/added work, not just auto-populated
+  // scene notes (which every scaffold scene gets), so an untouched scaffold
+  // still clears on a mode change.
+  const hasGeneratedContent = s => !!(
+    s.startFramePreviewUrl || (s.cutaways && s.cutaways.length) ||
+    s.narration || s.narrationAudioPreviewUrl || s.visualSource ||
+    s.selectedVideo || s.selectedAudio || s.uploadedFootagePreviewUrl || s.uploadedSketchPreviewUrl
+  );
+
   currentSections = currentSections.filter(section => {
-    const isActScaffold = section.narrativeOnly && currentAssignments[section.index] === actKey;
-    if (isActScaffold) delete currentAssignments[section.index];
-    return !isActScaffold;
+    const isEmptyActScaffold = section.narrativeOnly
+      && currentAssignments[section.index] === actKey
+      && !hasGeneratedContent(section);
+    if (isEmptyActScaffold) delete currentAssignments[section.index];
+    return !isEmptyActScaffold;
   });
 
   template.forEach(spec => {
-    const scene = insertSection(-1, spec.title, '', actKey, true);
-    scene.role = spec.role;
-    if (spec.shotKind) scene.shotKind = spec.shotKind; // e.g. expository's voice-of-god narration -> cutaways
+    // Title is the generic "New Scene"; the mode's descriptive label goes into
+    // the scene notes instead (see the runAcceptArc scaffold for the same).
+    const scene = insertSection(-1, 'New Scene', spec.title, actKey, true);
+    scene.role = 'bRoll';
+    delete scene.shotKind;
     // The edit plan is auto-generated here from the mode spec itself (not an
     // LLM call) - just the duration for now, with the same neutral defaults
     // /premiere/export and the ffmpeg render already tolerate.
@@ -2467,8 +5157,540 @@ function scaffoldModeOntoAct(actKey, modeKey) {
   renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
 }
 
+// Keep the accepted arc's serialized section order in lockstep with the
+// timeline order. `currentArcSections` is the render-friendly form; the
+// accepted arc keeps the original section_indices and any other metadata.
+function persistCurrentArcOrder() {
+  if (!selectedNarrationArc) return;
+  const original = new Map((selectedNarrationArc.sections || []).map(part => [part.name || part.key, part]));
+  selectedNarrationArc.sections = currentArcSections.map(act => original.get(act.key) || ({
+    name: act.key,
+    description: act.description || '',
+    section_indices: [],
+  }));
+}
+
+function reorderTimelineActs(sourceKey, targetKey, before) {
+  if (!sourceKey || !targetKey || sourceKey === targetKey) return;
+  const sourceIndex = currentArcSections.findIndex(act => act.key === sourceKey);
+  const targetIndex = currentArcSections.findIndex(act => act.key === targetKey);
+  if (sourceIndex === -1 || targetIndex === -1) return;
+  const [source] = currentArcSections.splice(sourceIndex, 1);
+  const adjustedTarget = currentArcSections.findIndex(act => act.key === targetKey);
+  currentArcSections.splice(adjustedTarget + (before ? 0 : 1), 0, source);
+  persistCurrentArcOrder();
+  saveDebugSession();
+  const remaining = currentSections.filter(section => !section.removed);
+  renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+}
+
+// Resize a visual timeline clip by dragging its right edge. The clip width is
+// frozen during the gesture so neighboring clips do not reflow underneath the
+// pointer; the proportional layout returns on the next render.
+function wireClipResize(handle, clip, spec) {
+  handle.addEventListener('pointerdown', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    const group = clip.parentElement;
+    const siblings = group ? Array.from(group.children) : [clip];
+    siblings.forEach(el => { el.style.flex = `0 0 ${el.getBoundingClientRect().width}px`; });
+    const startX = event.clientX;
+    const startWidth = clip.getBoundingClientRect().width;
+    const startSeconds = Math.max(spec.seconds, 0.5);
+    const pxPerSecond = startWidth / startSeconds || 1;
+    let newSeconds = spec.seconds;
+    try { handle.setPointerCapture(event.pointerId); } catch (err) { /* optional */ }
+    const onMove = moveEvent => {
+      const width = Math.max(6, startWidth + moveEvent.clientX - startX);
+      clip.style.flex = `0 0 ${width}px`;
+      newSeconds = Math.max(0.5, Math.round((width / pxPerSecond) * 2) / 2);
+      clip.title = `${spec.title} · ${newSeconds}s`;
+    };
+    const onUp = () => {
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onUp);
+      try { handle.releasePointerCapture(event.pointerId); } catch (err) { /* optional */ }
+      newSeconds = Math.max(1, newSeconds);
+      if (spec.kind === 'cutaway' && spec.cutaway) spec.cutaway.duration_seconds = newSeconds;
+      else if (spec.section) {
+        spec.section.editPlan = Object.assign(
+          { transitionIn: 'hard_cut', kenBurns: { enabled: false, pan: null }, textOverlay: null },
+          spec.section.editPlan || {}, { durationSeconds: newSeconds });
+      }
+      saveDebugSession();
+      renderMovieEditor(resultsEl, currentLabel, currentSections.filter(section => !section.removed), currentAssignments);
+    };
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onUp);
+  });
+}
+
+// Drag a visual scene clip to reorder it within the current arc or move it to
+// another act. Only the FOOTAGE lane is a scene-reordering surface; narration
+// and sound-effects clips have their own audio timing controls.
+function wireClipDrag(clip, section) {
+  clip.addEventListener('pointerdown', event => {
+    if (event.button !== 0) return;
+    if (event.target.closest('.premiere-timeline-clip-handle')) return;
+    event.preventDefault();
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let dragging = false;
+    let ghost = null;
+    let drop = null;
+    const onMove = moveEvent => {
+      if (!dragging) {
+        if (Math.abs(moveEvent.clientX - startX) < 4 && Math.abs(moveEvent.clientY - startY) < 4) return;
+        dragging = true;
+        clip.classList.add('dragging');
+        ghost = clip.cloneNode(true);
+        ghost.classList.add('premiere-timeline-clip-ghost');
+        ghost.classList.remove('dragging');
+        ghost.style.width = `${clip.getBoundingClientRect().width}px`;
+        document.body.appendChild(ghost);
+      }
+      ghost.style.left = `${moveEvent.clientX + 8}px`;
+      ghost.style.top = `${moveEvent.clientY - 10}px`;
+      const el = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY);
+      const group = el && el.closest('.premiere-timeline-act-group[data-role="visual"]');
+      if (!group) { drop = null; if (clipDropIndicatorEl) clipDropIndicatorEl.style.display = 'none'; return; }
+      const neighbor = el.closest('.premiere-timeline-clip:not(.spacer)');
+      const rect = group.getBoundingClientRect();
+      let neighborIndex = null;
+      let before = true;
+      let indicatorX = rect.left;
+      if (neighbor && neighbor !== clip) {
+        const neighborRect = neighbor.getBoundingClientRect();
+        before = moveEvent.clientX < neighborRect.left + neighborRect.width / 2;
+        neighborIndex = parseInt(neighbor.dataset.sectionIndex, 10);
+        indicatorX = before ? neighborRect.left : neighborRect.right;
+      }
+      drop = { actKey: group.dataset.actKey, neighborIndex, before };
+      const indicator = ensureClipDropIndicator();
+      indicator.style.display = 'block';
+      indicator.style.left = `${indicatorX}px`;
+      indicator.style.top = `${rect.top}px`;
+      indicator.style.height = `${rect.height}px`;
+    };
+    const onUp = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      if (clipDropIndicatorEl) clipDropIndicatorEl.style.display = 'none';
+      if (ghost) ghost.remove();
+      clip.classList.remove('dragging');
+      if (dragging && drop) moveSectionInTimeline(section, drop.actKey, drop.neighborIndex, drop.before);
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  });
+}
+
+let clipDropIndicatorEl = null;
+function ensureClipDropIndicator() {
+  if (!clipDropIndicatorEl) {
+    clipDropIndicatorEl = document.createElement('div');
+    clipDropIndicatorEl.className = 'premiere-timeline-drop-indicator';
+    document.body.appendChild(clipDropIndicatorEl);
+  }
+  return clipDropIndicatorEl;
+}
+
+function moveSectionInTimeline(section, actKey, neighborIndex, before) {
+  currentAssignments[section.index] = actKey;
+  const position = currentSections.indexOf(section);
+  if (position !== -1) currentSections.splice(position, 1);
+  let insertAt = currentSections.length;
+  if (neighborIndex != null && neighborIndex !== section.index) {
+    const neighborPosition = currentSections.findIndex(item => item.index === neighborIndex);
+    insertAt = neighborPosition === -1 ? currentSections.length : neighborPosition + (before ? 0 : 1);
+  } else {
+    const actPositions = currentSections
+      .map((item, index) => currentAssignments[item.index] === actKey ? index : -1)
+      .filter(index => index >= 0);
+    if (actPositions.length) insertAt = actPositions[actPositions.length - 1] + 1;
+  }
+  currentSections.splice(insertAt, 0, section);
+  saveDebugSession();
+  renderMovieEditor(resultsEl, currentLabel, currentSections.filter(item => !item.removed), currentAssignments);
+}
+
+function wireTimelineActDrag(rulerGroup, actKey) {
+  rulerGroup.draggable = true;
+  rulerGroup.dataset.actKey = actKey;
+  rulerGroup.addEventListener('dragstart', event => {
+    event.dataTransfer.setData('application/x-timeline-act', actKey);
+    event.dataTransfer.effectAllowed = 'move';
+    rulerGroup.classList.add('dragging');
+  });
+  rulerGroup.addEventListener('dragend', () => rulerGroup.classList.remove('dragging'));
+  rulerGroup.addEventListener('dragover', event => {
+    if (!event.dataTransfer.types.includes('application/x-timeline-act')) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    rulerGroup.classList.add('act-drop-over');
+  });
+  rulerGroup.addEventListener('dragleave', event => {
+    if (!rulerGroup.contains(event.relatedTarget)) rulerGroup.classList.remove('act-drop-over');
+  });
+  rulerGroup.addEventListener('drop', event => {
+    if (!event.dataTransfer.types.includes('application/x-timeline-act')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    rulerGroup.classList.remove('act-drop-over');
+    const sourceKey = event.dataTransfer.getData('application/x-timeline-act');
+    const before = event.clientX < rulerGroup.getBoundingClientRect().left
+      + rulerGroup.getBoundingClientRect().width / 2;
+    reorderTimelineActs(sourceKey, actKey, before);
+  });
+}
+
+const MIN_SFX_SEGMENT_SECONDS = 0.25;
+
+function normalizeSelectedAudioSegment(audio) {
+  if (!audio) return null;
+  const natural = Number(audio.sourceDurationSeconds || audio.duration || audio.durationSeconds);
+  if (!(natural > 0)) return null;
+  const trimStart = Math.max(0, Math.min(Number(audio.trimStartSeconds) || 0,
+    Math.max(0, natural - MIN_SFX_SEGMENT_SECONDS)));
+  const requestedDuration = Number(audio.durationSeconds);
+  const duration = Math.max(MIN_SFX_SEGMENT_SECONDS, Math.min(
+    requestedDuration > 0 ? requestedDuration : natural - trimStart,
+    natural - trimStart));
+  audio.sourceDurationSeconds = natural;
+  audio.trimStartSeconds = trimStart;
+  audio.durationSeconds = duration;
+  if (!Number.isFinite(Number(audio.timelineOffsetSeconds))) audio.timelineOffsetSeconds = 0;
+  return { naturalDurationSeconds: natural, trimStartSeconds: trimStart, durationSeconds: duration };
+}
+
+function getSelectedSfxDuration(section) {
+  const segment = normalizeSelectedAudioSegment(section && section.selectedAudio);
+  return segment ? segment.durationSeconds : 0;
+}
+
+// Greedy interval packing: each event goes in the first lane whose previous
+// clip has ended. The same lane number is exported to Premiere, so the browser
+// timeline and the real sequence represent overlaps identically.
+function allocateSfxLanes(events) {
+  const laneEnds = [];
+  events.slice().sort((a, b) => a.startSeconds - b.startSeconds || a.endSeconds - b.endSeconds).forEach(event => {
+    let lane = laneEnds.findIndex(end => end <= event.startSeconds + 0.001);
+    if (lane === -1) lane = laneEnds.length;
+    event.lane = lane;
+    laneEnds[lane] = event.endSeconds;
+  });
+  return Math.max(1, laneEnds.length);
+}
+
+function wireSfxClipTrim(handle, clip, label, sfxEvent, edge, timelineDuration) {
+  handle.addEventListener('pointerdown', pointerEvent => {
+    pointerEvent.preventDefault();
+    pointerEvent.stopPropagation();
+    const trackWidth = clip.parentElement.getBoundingClientRect().width || 1;
+    const secondsPerPixel = Math.max(timelineDuration, 0.001) / trackWidth;
+    const startX = pointerEvent.clientX;
+    const initialTrim = sfxEvent.sourceStartSeconds;
+    const initialDuration = sfxEvent.selectedDurationSeconds;
+    const initialSourceEnd = initialTrim + initialDuration;
+    const timelineRoom = Math.max(MIN_SFX_SEGMENT_SECONDS,
+      timelineDuration - sfxEvent.startSeconds);
+    let nextTrim = initialTrim;
+    let nextDuration = initialDuration;
+    try { handle.setPointerCapture(pointerEvent.pointerId); } catch (err) { /* optional */ }
+
+    const redraw = () => {
+      const visibleDuration = Math.min(nextDuration, timelineRoom);
+      clip.style.width = `${(visibleDuration / Math.max(timelineDuration, 0.001)) * 100}%`;
+      label.textContent = `${sfxEvent.name} · ${nextTrim.toFixed(1)}–${(nextTrim + nextDuration).toFixed(1)}s`;
+      clip.title = `${sfxEvent.name} · source ${nextTrim.toFixed(1)}–${(nextTrim + nextDuration).toFixed(1)}s · ${nextDuration.toFixed(1)}s`;
+    };
+    const onMove = moveEvent => {
+      const delta = Math.round((moveEvent.clientX - startX) * secondsPerPixel * 10) / 10;
+      if (edge === 'start') {
+        nextTrim = Math.max(0, Math.min(initialTrim + delta,
+          initialSourceEnd - MIN_SFX_SEGMENT_SECONDS));
+        nextDuration = initialSourceEnd - nextTrim;
+      } else {
+        nextDuration = Math.max(MIN_SFX_SEGMENT_SECONDS, Math.min(
+          initialDuration + delta,
+          sfxEvent.sourceDurationSeconds - initialTrim,
+          timelineRoom));
+      }
+      redraw();
+    };
+    const onUp = () => {
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onUp);
+      try { handle.releasePointerCapture(pointerEvent.pointerId); } catch (err) { /* optional */ }
+      sfxEvent.audioClip.trimStartSeconds = nextTrim;
+      sfxEvent.audioClip.durationSeconds = nextDuration;
+      normalizeSelectedAudioSegment(sfxEvent.audioClip);
+      saveDebugSession();
+      const remaining = currentSections.filter(section => !section.removed);
+      renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+    };
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onUp);
+  });
+}
+
+function wireSfxClipMove(clip, label, sfxEvent, timelineDuration) {
+  clip.addEventListener('pointerdown', pointerEvent => {
+    if (pointerEvent.target.closest('.premiere-sfx-trim-handle')) return;
+    pointerEvent.preventDefault();
+    pointerEvent.stopPropagation();
+    const trackWidth = clip.parentElement.getBoundingClientRect().width || 1;
+    const secondsPerPixel = Math.max(timelineDuration, 0.001) / trackWidth;
+    const startX = pointerEvent.clientX;
+    const initialStart = sfxEvent.startSeconds;
+    const maxStart = Math.max(0,
+      timelineDuration - Math.min(sfxEvent.selectedDurationSeconds, timelineDuration));
+    let nextStart = initialStart;
+    let moved = false;
+    clip.classList.add('dragging');
+    try { clip.setPointerCapture(pointerEvent.pointerId); } catch (err) { /* optional */ }
+
+    const onMove = moveEvent => {
+      const delta = Math.round((moveEvent.clientX - startX) * secondsPerPixel * 10) / 10;
+      if (Math.abs(moveEvent.clientX - startX) > 2) moved = true;
+      nextStart = Math.max(0, Math.min(initialStart + delta, maxStart));
+      clip.style.left = `${(nextStart / Math.max(timelineDuration, 0.001)) * 100}%`;
+      label.textContent = `${sfxEvent.name} · @ ${nextStart.toFixed(1)}s`;
+      clip.title = `${sfxEvent.name} · timeline ${nextStart.toFixed(1)}s · drag to move`;
+    };
+    const onUp = () => {
+      clip.removeEventListener('pointermove', onMove);
+      clip.removeEventListener('pointerup', onUp);
+      try { clip.releasePointerCapture(pointerEvent.pointerId); } catch (err) { /* optional */ }
+      clip.classList.remove('dragging');
+      if (!moved) return;
+      // Once deliberately moved, the SFX is an independent absolute-time
+      // timeline clip rather than following the scene where it was chosen.
+      sfxEvent.audioClip.timelineStartSeconds = nextStart;
+      delete sfxEvent.audioClip.timelineOffsetSeconds;
+      saveDebugSession();
+      const remaining = currentSections.filter(section => !section.removed);
+      renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+    };
+    clip.addEventListener('pointermove', onMove);
+    clip.addEventListener('pointerup', onUp);
+  });
+}
+
+let activeSfxLayout = null;
+let sfxPreviewEnabled = false;
+let sfxPreviewSources = [];
+let sfxPreviewAnimationId = null;
+let sfxPreviewAnchorCtxTime = 0;
+let sfxPreviewAnchorTimelineTime = 0;
+let sfxPreviewRequestId = 0;
+let sfxPlayheadEl = null;
+let activeSfxSectionIndex = null;
+let timelinePreviewScrolledSectionIndex = null;
+let timelinePreviewProgrammaticScrollUntil = 0;
+let timelinePreviewPausedTime = null;
+let timelinePreviewPausedSectionIndex = null;
+let premiereTimelineCollapsed = false;
+
+// Each module relocated into storyboard.html's left sidebar keeps its own
+// open/closed state.  This mirrors the Premiere timeline's collapse affordance
+// without hiding the other sidebar modules when one is tucked away.
+let sidebarModuleCollapsed = Object.create(null);
+const sfxAudioBufferCache = new Map();
+
+function stopSfxPreview(disable) {
+  sfxPreviewRequestId += 1;
+  sfxPreviewSources.forEach(source => {
+    try { source.stop(); } catch (err) { /* already stopped */ }
+    try { source.disconnect(); } catch (err) { /* already disconnected */ }
+  });
+  sfxPreviewSources = [];
+  if (sfxPreviewAnimationId) cancelAnimationFrame(sfxPreviewAnimationId);
+  sfxPreviewAnimationId = null;
+  if (disable) {
+    sfxPreviewEnabled = false;
+    timelinePreviewPausedTime = null;
+    timelinePreviewPausedSectionIndex = null;
+  }
+  if (disable) document.querySelectorAll('.premiere-sfx-playhead').forEach(el => { el.style.display = 'none'; });
+  if (disable) timelinePreviewScrolledSectionIndex = null;
+}
+
+function ensureSfxAudioBuffer(event) {
+  if (event.kind === 'narration') {
+    return ensureNarrationClipDecoded(event.audioClip).then(buffer => {
+      if (activeSfxLayout) {
+        event.endSeconds = Math.min(
+          activeSfxLayout.durationSeconds, event.startSeconds + buffer.duration);
+        event.durationSeconds = Math.max(0, event.endSeconds - event.startSeconds);
+      }
+      return buffer;
+    });
+  }
+  const url = event.previewUrl;
+  if (!url) return Promise.reject(new Error('Sound effect has no local preview URL.'));
+  if (sfxAudioBufferCache.has(url)) return sfxAudioBufferCache.get(url);
+  const promise = fetch(url)
+    .then(response => {
+      if (!response.ok) throw new Error(`Could not load sound effect (${response.status}).`);
+      return response.arrayBuffer();
+    })
+    .then(bytes => ensurePlaybackAudioCtx().decodeAudioData(bytes))
+    .catch(err => {
+      sfxAudioBufferCache.delete(url);
+      throw err;
+    });
+  sfxAudioBufferCache.set(url, promise);
+  return promise;
+}
+
+function updateSfxPlayhead(timelineTime) {
+  if (!activeSfxLayout || !sfxPlayheadEl) return;
+  const duration = Math.max(activeSfxLayout.durationSeconds, 0.001);
+  const bounded = Math.max(0, Math.min(timelineTime, duration));
+  sfxPlayheadEl.style.display = '';
+  sfxPlayheadEl.style.left = `${(bounded / duration) * 100}%`;
+  document.querySelectorAll('.premiere-sfx-playhead').forEach(playhead => {
+    playhead.style.display = '';
+    playhead.style.left = `${(bounded / duration) * 100}%`;
+  });
+  activeSfxLayout.audioEvents.forEach(event => {
+    if (!event.clipEl) return;
+    const progress = Math.max(0, Math.min(1, (bounded - event.startSeconds) / Math.max(event.durationSeconds, 0.001)));
+    event.clipEl.style.setProperty('--sfx-progress', `${progress * 100}%`);
+    event.clipEl.classList.toggle('playing', bounded >= event.startSeconds && bounded < event.endSeconds);
+  });
+}
+
+function startSfxPreviewAt(timelineTime) {
+  if (!sfxPreviewEnabled || !activeSfxLayout) return;
+  stopNarrationPlayback();
+  stopSfxPreview(false);
+  const requestId = sfxPreviewRequestId;
+  const layoutAtStart = activeSfxLayout;
+  const time = Math.max(0, Math.min(timelineTime, layoutAtStart.durationSeconds));
+  // Narration duration may only become authoritative after decoding (notably
+  // on a restored session), so load narration even when its provisional scene
+  // duration says it ended; the decoded duration below decides spillover.
+  const playable = layoutAtStart.audioEvents.filter(event =>
+    event.previewUrl && (event.kind === 'narration' || event.endSeconds > time));
+  const ctx = ensurePlaybackAudioCtx();
+  if (ctx.state === 'suspended') ctx.resume();
+
+  Promise.all(playable.map(event => ensureSfxAudioBuffer(event).then(buffer => ({ event, buffer })).catch(() => null)))
+    .then(loaded => {
+      if (!sfxPreviewEnabled || activeSfxLayout !== layoutAtStart || requestId !== sfxPreviewRequestId) return;
+      sfxPreviewAnchorCtxTime = ctx.currentTime;
+      sfxPreviewAnchorTimelineTime = time;
+      loaded.filter(Boolean).forEach(({ event, buffer }) => {
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        const gain = ctx.createGain();
+        gain.gain.value = event.kind === 'narration' ? 1.0 : 0.5;
+        source.connect(gain);
+        gain.connect(ctx.destination);
+        const delay = Math.max(0, event.startSeconds - time);
+        const timelineOffset = Math.max(0, time - event.startSeconds);
+        const offset = Math.max(0, Number(event.sourceStartSeconds) || 0) + timelineOffset;
+        const remaining = Math.min(buffer.duration - offset, event.endSeconds - Math.max(time, event.startSeconds));
+        if (remaining > 0.001) {
+          source.start(ctx.currentTime + delay, offset, remaining);
+          sfxPreviewSources.push(source);
+        }
+      });
+      const draw = () => {
+        if (!sfxPreviewEnabled || activeSfxLayout !== layoutAtStart) return;
+        const now = sfxPreviewAnchorTimelineTime + (ctx.currentTime - sfxPreviewAnchorCtxTime);
+        updateSfxPlayhead(now);
+        const sceneWindow = layoutAtStart.sceneWindows.find(
+          windowSpec => now >= windowSpec.startSeconds && now < windowSpec.endSeconds);
+        if (sceneWindow && timelinePreviewScrolledSectionIndex !== sceneWindow.sectionIndex) {
+          timelinePreviewScrolledSectionIndex = sceneWindow.sectionIndex;
+          activeSfxSectionIndex = sceneWindow.sectionIndex;
+          const target = document.querySelector(
+            `.paper-section-block[data-section-index="${sceneWindow.sectionIndex}"]`);
+          if (target) {
+            timelinePreviewProgrammaticScrollUntil = performance.now() + 1200;
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+        if (now >= layoutAtStart.durationSeconds) {
+          stopSfxPreview(true);
+          return;
+        }
+        sfxPreviewAnimationId = requestAnimationFrame(draw);
+      };
+      draw();
+    });
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) stopSfxPreview(true);
+});
+
+// Spacebar is the single timeline transport. It starts from the scene currently
+// active in the scrollspy, mixes narration + all overlapping SFX, advances the
+// global playhead, and follows subsequent scene cards as time passes.
+document.addEventListener('keydown', event => {
+  if (event.code !== 'Space' || event.repeat || !activeSfxLayout) return;
+  const target = event.target;
+  if (target && (target.matches('input, textarea, select, button') || target.isContentEditable)) return;
+  event.preventDefault();
+  if (sfxPreviewEnabled) {
+    const pausedAt = sfxPreviewAnchorTimelineTime
+      + (ensurePlaybackAudioCtx().currentTime - sfxPreviewAnchorCtxTime);
+    const pausedSection = activeSfxSectionIndex;
+    stopSfxPreview(true);
+    timelinePreviewPausedTime = pausedAt;
+    timelinePreviewPausedSectionIndex = pausedSection;
+    return;
+  }
+  if (!activeSfxLayout.audioEvents.length) return;
+  sfxPreviewEnabled = true;
+  timelinePreviewScrolledSectionIndex = null;
+  const resumeHere = timelinePreviewPausedSectionIndex === activeSfxSectionIndex
+    && Number.isFinite(timelinePreviewPausedTime);
+  const start = resumeHere
+    ? timelinePreviewPausedTime
+    : (activeSfxLayout.sceneStartSeconds.get(activeSfxSectionIndex) || 0);
+  timelinePreviewPausedTime = null;
+  timelinePreviewPausedSectionIndex = null;
+  startSfxPreviewAt(start);
+});
+
 function buildNarrativeTimeline(timelineEl, sections, assignmentsByIndex) {
   timelineEl.innerHTML = '';
+  timelineEl.classList.toggle('collapsed', premiereTimelineCollapsed);
+
+  const timelineHeader = document.createElement('div');
+  timelineHeader.className = 'premiere-timeline-header';
+  const timelineTitle = document.createElement('span');
+  timelineTitle.textContent = 'Timeline';
+  timelineHeader.appendChild(timelineTitle);
+  // const timelineHint = document.createElement('span');
+  // timelineHint.className = 'premiere-timeline-header-hint';
+  // timelineHint.textContent = 'Drag Act headers to reorder · drag scene clips to rearrange or resize';
+  // timelineHeader.appendChild(timelineHint);
+  const collapseBtn = document.createElement('button');
+  collapseBtn.type = 'button';
+  collapseBtn.className = 'premiere-timeline-collapse-btn';
+  const updateCollapseButton = () => {
+    const action = premiereTimelineCollapsed ? 'Expand' : 'Collapse';
+    collapseBtn.textContent = premiereTimelineCollapsed ? '▾' : '▴';
+    collapseBtn.title = `${action} Timeline`;
+    collapseBtn.setAttribute('aria-label', `${action} Timeline`);
+    collapseBtn.setAttribute('aria-expanded', String(!premiereTimelineCollapsed));
+  };
+  updateCollapseButton();
+  collapseBtn.addEventListener('click', () => {
+    premiereTimelineCollapsed = !premiereTimelineCollapsed;
+    timelineEl.classList.toggle('collapsed', premiereTimelineCollapsed);
+    updateCollapseButton();
+    saveDebugSession();
+    collapseBtn.blur(); // next Space press remains the global audio transport
+  });
+  timelineHeader.appendChild(collapseBtn);
+  timelineEl.appendChild(timelineHeader);
 
   // The ruler mirrors a track's structure (a label-width spacer + a body)
   // so its act labels line up exactly with the clip groups in the track
@@ -2484,16 +5706,12 @@ function buildNarrativeTimeline(timelineEl, sections, assignmentsByIndex) {
   ruler.appendChild(rulerBody);
   timelineEl.appendChild(ruler);
 
-  // A-roll (the shot's own primary visual - a generated sketch/animated
-  // sketch, or real uploaded footage), B-roll (externally-sourced
-  // supplementary footage - a Find Footage/stock pick), then Sound effects.
-  // Each scene belongs to exactly ONE of these (its role - see getSceneRole),
-  // and appears as a single clip in that track sized by its duration in
-  // seconds (see getSceneDuration). The old standalone NARRATION track was
-  // removed - A-roll now carries the narrative spine.
+  // Primary and Cutaway are mutually-exclusive visual scene roles. Sound
+  // effects form an independent parallel track populated from selectedAudio,
+  // so any visual scene can have one without moving visual lanes.
   const TRACK_DEFS = [
-    { key: 'aRoll', label: 'A-ROLL' },
-    { key: 'bRoll', label: 'B-ROLL' },
+    { key: 'narration', label: 'NARRATION' },
+    { key: 'footage', label: 'FOOTAGE' },
     { key: 'soundEffects', label: 'SOUND EFFECTS' },
   ];
   const trackBodies = TRACK_DEFS.map(def => buildTimelineTrack(timelineEl, def.label));
@@ -2527,19 +5745,68 @@ function buildNarrativeTimeline(timelineEl, sections, assignmentsByIndex) {
   };
 
   const clipsBySectionIndex = new Map();
+  const sceneStartSeconds = new Map();
+  const actLayouts = [];
+  let globalActStart = 0;
 
-  currentArcSections.forEach(act => {
+  currentArcSections.forEach((act, actIndex) => {
     const rowSections = sections.filter(s => assignmentsByIndex[s.index] === act.key);
     if (rowSections.length === 0) return; // renderMovieEditor auto-populates blank rows before this runs
 
-    // Each scene sits in its own role's track, its clip sized by its
-    // duration in seconds. An act's on-screen width is its longest track's
-    // total seconds (max across tracks), so the tracks line up and a
-    // 30s-of-A-roll act is visibly wider than a 10s one.
-    const scenesByTrack = { aRoll: [], bRoll: [], soundEffects: [] };
-    rowSections.forEach(section => { scenesByTrack[getSceneRole(section)].push(section); });
-    const trackTotals = TRACK_DEFS.map(def => scenesByTrack[def.key].reduce((sum, s) => sum + getSceneDuration(s), 0));
-    const actTotal = Math.max(1, ...trackTotals);
+    // Each scene sits in its own role's track as one clip spec, sized by its
+    // duration in seconds. An expository scene additionally contributes one
+    // B-roll clip spec PER cutaway. `combinedAB` keeps the A-roll/B-roll clips
+    // in reading order (for the interspersed layout below).
+    const clipsByTrack = { aRoll: [], bRoll: [], soundEffects: [] };
+    const combinedAB = [];
+    rowSections.forEach(section => {
+      const role = getSceneRole(section);
+      const spec = {
+        kind: 'section', section, seconds: getSceneDuration(section),
+        filled: isSceneFilledForRole(section, role),
+        drafted: !isSceneFilledForRole(section, role) && isSceneDraftedForRole(section, role),
+        title: section.title,
+      };
+      // Once an expository primary scene has generated cutaways, those
+      // cutaways ARE its picture edit. Keep narration in the parallel audio
+      // mix, but do not also draw a primary visual underneath them.
+      const cutawaysReplacePrimary = role === 'aRoll' && section.cutaways && section.cutaways.length;
+      if (!cutawaysReplacePrimary) {
+        clipsByTrack[role].push(spec);
+        if (role === 'aRoll' || role === 'bRoll') combinedAB.push({ roleKey: role, spec });
+      }
+      if (section.cutaways && section.cutaways.length) {
+        section.cutaways.forEach((cut, ci) => {
+          const cutawaySpec = {
+            kind: 'cutaway', section, cutaway: cut, cutawayIndex: ci,
+            seconds: getCutawayDuration(cut),
+            // Cutaways are generated visual suggestions, not open-slot media;
+            // only an uploaded or deliberately dragged-in reference should
+            // turn the FOOTAGE lane blue for this scene.
+            filled: hasSceneOpenSlotMedia(section),
+            drafted: false,
+            title: `${cut.caption || 'Cutaway'} · Cutaway`,
+          };
+          clipsByTrack.bRoll.push(cutawaySpec);
+          combinedAB.push({ roleKey: 'bRoll', spec: cutawaySpec });
+        });
+      }
+    });
+
+    // Primary and Cutaway are one sequential visual edit: every clip receives
+    // a unique time range and the opposite lane gets a spacer. This invariant
+    // also applies to generated expository cutaways—visual tracks never overlap.
+    // Narration and SFX remain independent audio layers and may span these cuts.
+    let t = 0;
+    combinedAB.forEach(c => {
+      c.start = t;
+      if (!sceneStartSeconds.has(c.spec.section.index)) {
+        sceneStartSeconds.set(c.spec.section.index, globalActStart + t);
+      }
+      t += c.spec.seconds;
+    });
+    const actTotal = Math.max(1, t);
+    actLayouts.push({ key: act.key, startSeconds: globalActStart, durationSeconds: actTotal });
 
     // flex-basis pinned to 0 (not the shorthand's implied auto) so the ruler
     // label's own text width doesn't compete with its flex-grow share and
@@ -2549,14 +5816,17 @@ function buildNarrativeTimeline(timelineEl, sections, assignmentsByIndex) {
     const rulerGroup = document.createElement('div');
     rulerGroup.className = 'premiere-timeline-act';
     rulerGroup.style.flex = actFlex;
-    rulerGroup.textContent = act.label;
-    rulerGroup.title = 'Drag a documentary mode here to scaffold scenes for this act';
+    rulerGroup.textContent = `Act ${actIndex + 1}: ${act.label}`;
+    rulerGroup.title = 'Drag this act to reorder it; drag a documentary mode here to scaffold scenes';
     rulerBody.appendChild(rulerGroup);
+    wireTimelineActDrag(rulerGroup, act.key);
 
-    const trackGroups = trackBodies.map(body => {
+    const trackGroups = trackBodies.map((body, trackIndex) => {
       const group = document.createElement('div');
       group.className = 'premiere-timeline-act-group';
       group.style.flex = actFlex;
+      group.dataset.actKey = act.key;
+      group.dataset.role = trackIndex === 1 ? 'visual' : TRACK_DEFS[trackIndex].key;
       body.appendChild(group);
       return group;
     });
@@ -2565,40 +5835,3256 @@ function buildNarrativeTimeline(timelineEl, sections, assignmentsByIndex) {
     const actDropEls = [rulerGroup, ...trackGroups];
     actDropEls.forEach(el => makeActModeDropTarget(el, act.key, actDropEls));
 
-    TRACK_DEFS.forEach((def, ti) => {
-      scenesByTrack[def.key].forEach(section => {
-        const seconds = getSceneDuration(section);
-        const clip = document.createElement('div');
-        clip.className = 'premiere-timeline-clip';
-        clip.style.flex = `${seconds} 1 0`; // width proportional to duration
-        clip.classList.toggle('filled', isSceneFilledForRole(section, def.key));
-        clip.classList.toggle('drafted', !isSceneFilledForRole(section, def.key) && isSceneDraftedForRole(section, def.key));
-        clip.title = `${section.title} · ${Math.round(seconds)}s`;
-        // Double-click (not single) so a click doesn't fight with the
-        // hover/scale affordance - scrolls to the real section card.
-        clip.addEventListener('dblclick', () => {
-          const target = document.querySelector(`.paper-section-block[data-section-index="${section.index}"]`);
-          if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        });
-        trackGroups[ti].appendChild(clip);
-        if (!clipsBySectionIndex.has(section.index)) clipsBySectionIndex.set(section.index, []);
-        clipsBySectionIndex.get(section.index).push(clip);
+    const buildClip = spec => {
+      const { section, seconds } = spec;
+      const clip = document.createElement('div');
+      clip.className = 'premiere-timeline-clip';
+      if (spec.kind === 'cutaway') clip.classList.add('cutaway-clip');
+      clip.style.flex = `${seconds} 1 0`; // width proportional to duration
+      clip.dataset.sectionIndex = String(section.index);
+      clip.classList.toggle('filled', spec.filled);
+      clip.classList.toggle('drafted', spec.drafted);
+      clip.title = `${spec.title} · ${Math.round(seconds)}s · Drag to rearrange; drag the right edge to resize`;
+      clip.addEventListener('click', event => {
+        if (event.detail > 1 || event.target.closest('.premiere-timeline-clip-handle')) return;
+        scrollTimelineClipToScene(section.index);
       });
+      const handle = document.createElement('div');
+      handle.className = 'premiere-timeline-clip-handle';
+      handle.title = 'Drag to change this scene duration';
+      clip.appendChild(handle);
+      wireClipResize(handle, clip, spec);
+      if (spec.kind !== 'cutaway') wireClipDrag(clip, section);
+      if (!clipsBySectionIndex.has(section.index)) clipsBySectionIndex.set(section.index, []);
+      clipsBySectionIndex.get(section.index).push(clip);
+      return clip;
+    };
+    const addSpacer = (group, seconds) => {
+      if (seconds <= 0.001) return;
+      const spacer = document.createElement('div');
+      spacer.className = 'premiere-timeline-clip spacer';
+      spacer.style.flex = `${seconds} 1 0`;
+      group.appendChild(spacer);
+    };
 
-      // A trailing spacer fills the rest of a track shorter than the act's
-      // longest, so all three tracks stay aligned under the same act width
-      // (and a short B-roll track visibly leaves the act's tail uncovered).
-      const remainder = actTotal - trackTotals[ti];
-      if (remainder > 0.001) {
-        const spacer = document.createElement('div');
-        spacer.className = 'premiere-timeline-clip spacer';
-        spacer.style.flex = `${remainder} 1 0`;
-        trackGroups[ti].appendChild(spacer);
+    TRACK_DEFS.forEach((def, ti) => {
+      const group = trackGroups[ti];
+      if (def.key === 'footage') {
+        combinedAB.forEach(c => group.appendChild(buildClip(c.spec)));
+      } else addSpacer(group, actTotal);
+    });
+    globalActStart += actTotal;
+  });
+
+  // Replace the per-act placeholder groups with one absolute-time SFX canvas.
+  // This lets a natural-duration sound cross act boundaries, while lane packing
+  // keeps overlapping effects visible and mirrors the Premiere export.
+  const sfxBody = trackBodies[2];
+  sfxBody.innerHTML = '';
+  sfxBody.classList.add('premiere-sfx-track-body');
+  const sfxEvents = sections.map(section => {
+    const segment = normalizeSelectedAudioSegment(section.selectedAudio);
+    const selectedDuration = segment && segment.durationSeconds;
+    const sceneStart = sceneStartSeconds.get(section.index);
+    if (!(selectedDuration > 0) || sceneStart == null || sceneStart >= globalActStart) return null;
+    const storedTimelineStart = Number(section.selectedAudio.timelineStartSeconds);
+    const requestedStart = Number.isFinite(storedTimelineStart)
+      ? storedTimelineStart
+      : sceneStart + (Number(section.selectedAudio.timelineOffsetSeconds) || 0);
+    const latestStart = Math.max(0, globalActStart - Math.min(selectedDuration, globalActStart));
+    const start = Math.max(0, Math.min(requestedStart, latestStart));
+    const end = Math.min(globalActStart, start + selectedDuration);
+    return {
+      sectionIndex: section.index,
+      section,
+      audioClip: section.selectedAudio,
+      name: section.selectedAudio.name || section.title || 'Sound effect',
+      previewUrl: section.selectedAudio.localPreviewUrl || section.selectedAudio.preview_url || '',
+      filePath: section.selectedAudio.localFilePath || null,
+      sceneStartSeconds: sceneStart,
+      startSeconds: start,
+      endSeconds: end,
+      durationSeconds: end - start,
+      selectedDurationSeconds: selectedDuration,
+      sourceStartSeconds: segment.trimStartSeconds,
+      sourceDurationSeconds: segment.naturalDurationSeconds,
+    };
+  }).filter(Boolean);
+  const narrationEvents = sections.flatMap(section => {
+    const sceneStart = sceneStartSeconds.get(section.index);
+    if (sceneStart == null) return [];
+    return migrateNarrationClips(section).map(audioClip => {
+      const segment = normalizeSelectedAudioSegment(audioClip);
+      if (!segment) return null;
+      const stored = Number(audioClip.timelineStartSeconds);
+      const requested = Number.isFinite(stored)
+        ? stored : sceneStart + (Number(audioClip.timelineOffsetSeconds) || 0);
+      const start = Math.max(0, Math.min(requested, Math.max(0, globalActStart - MIN_SFX_SEGMENT_SECONDS)));
+      const end = Math.min(globalActStart, start + segment.durationSeconds);
+      return {
+        kind: 'narration', sectionIndex: section.index, section, audioClip,
+        name: 'Narration',
+        previewUrl: audioClip.previewUrl, filePath: audioClip.filePath || null,
+        startSeconds: start, endSeconds: end, durationSeconds: end - start,
+        selectedDurationSeconds: segment.durationSeconds,
+        sourceStartSeconds: segment.trimStartSeconds,
+        sourceDurationSeconds: segment.naturalDurationSeconds,
+      };
+    }).filter(Boolean);
+  });
+  allocateSfxLanes(narrationEvents);
+  const laneCount = allocateSfxLanes(sfxEvents);
+  sfxBody.style.height = `${laneCount * 25}px`;
+
+  actLayouts.forEach(act => {
+    const zone = document.createElement('div');
+    zone.className = 'premiere-sfx-act-zone';
+    zone.style.left = `${(act.startSeconds / Math.max(globalActStart, 1)) * 100}%`;
+    zone.style.width = `${(act.durationSeconds / Math.max(globalActStart, 1)) * 100}%`;
+    sfxBody.appendChild(zone);
+  });
+  sfxEvents.forEach(event => {
+    const clip = document.createElement('div');
+    clip.className = 'premiere-sfx-clip filled';
+    clip.dataset.sectionIndex = String(event.sectionIndex);
+    clip.style.left = `${(event.startSeconds / Math.max(globalActStart, 1)) * 100}%`;
+    clip.style.width = `${(event.durationSeconds / Math.max(globalActStart, 1)) * 100}%`;
+    clip.style.top = `${event.lane * 25}px`;
+    clip.title = `${event.name} · timeline ${event.startSeconds.toFixed(1)}s · source ${event.sourceStartSeconds.toFixed(1)}–${(event.sourceStartSeconds + event.selectedDurationSeconds).toFixed(1)}s · drag clip to move`;
+    const label = document.createElement('span');
+    label.textContent = `${event.name} · ${event.sourceStartSeconds.toFixed(1)}–${(event.sourceStartSeconds + event.selectedDurationSeconds).toFixed(1)}s`;
+    clip.appendChild(label);
+    const trimInHandle = document.createElement('span');
+    trimInHandle.className = 'premiere-sfx-trim-handle start';
+    trimInHandle.title = 'Drag to choose where the selected source segment begins';
+    clip.appendChild(trimInHandle);
+    const trimOutHandle = document.createElement('span');
+    trimOutHandle.className = 'premiere-sfx-trim-handle end';
+    trimOutHandle.title = 'Drag to change the selected sound duration';
+    clip.appendChild(trimOutHandle);
+    wireSfxClipTrim(trimInHandle, clip, label, event, 'start', globalActStart);
+    wireSfxClipTrim(trimOutHandle, clip, label, event, 'end', globalActStart);
+    wireSfxClipMove(clip, label, event, globalActStart);
+    clip.addEventListener('click', clickEvent => {
+      if (clickEvent.target.closest('.premiere-sfx-trim-handle')) return;
+      scrollTimelineClipToScene(event.sectionIndex);
+    });
+    sfxBody.appendChild(clip);
+    event.clipEl = clip;
+    if (!clipsBySectionIndex.has(event.sectionIndex)) clipsBySectionIndex.set(event.sectionIndex, []);
+    clipsBySectionIndex.get(event.sectionIndex).push(clip);
+  });
+
+  // Narration is a second independently timed, multi-lane audio canvas. It
+  // uses the same clip mover/trimmers as SFX, including source-in selection.
+  const narrationBody = trackBodies[0];
+  narrationBody.innerHTML = '';
+  narrationBody.classList.add('premiere-sfx-track-body');
+  const narrationLaneCount = allocateSfxLanes(narrationEvents);
+  narrationBody.style.height = `${narrationLaneCount * 25}px`;
+  actLayouts.forEach(act => {
+    const zone = document.createElement('div');
+    zone.className = 'premiere-sfx-act-zone';
+    zone.style.left = `${(act.startSeconds / Math.max(globalActStart, 1)) * 100}%`;
+    zone.style.width = `${(act.durationSeconds / Math.max(globalActStart, 1)) * 100}%`;
+    narrationBody.appendChild(zone);
+  });
+  narrationEvents.forEach(event => {
+    const clip = document.createElement('div');
+    clip.className = 'premiere-sfx-clip premiere-narration-clip filled';
+    clip.dataset.sectionIndex = String(event.sectionIndex);
+    clip.style.left = `${(event.startSeconds / Math.max(globalActStart, 1)) * 100}%`;
+    clip.style.width = `${(event.durationSeconds / Math.max(globalActStart, 1)) * 100}%`;
+    clip.style.top = `${event.lane * 25}px`;
+    const label = document.createElement('span');
+    label.textContent = `${event.name} · ${event.sourceStartSeconds.toFixed(1)}–${(event.sourceStartSeconds + event.selectedDurationSeconds).toFixed(1)}s`;
+    clip.appendChild(label);
+    ['start', 'end'].forEach(edge => {
+      const handle = document.createElement('span');
+      handle.className = `premiere-sfx-trim-handle ${edge}`;
+      clip.appendChild(handle);
+      wireSfxClipTrim(handle, clip, label, event, edge, globalActStart);
+    });
+    wireSfxClipMove(clip, label, event, globalActStart);
+    clip.addEventListener('click', clickEvent => {
+      if (clickEvent.target.closest('.premiere-sfx-trim-handle')) return;
+      scrollTimelineClipToScene(event.sectionIndex);
+    });
+    narrationBody.appendChild(clip);
+    event.clipEl = clip;
+    ensureSfxAudioBuffer(event).catch(() => {});
+  });
+  const narrationPlayhead = document.createElement('div');
+  narrationPlayhead.className = 'premiere-sfx-playhead';
+  narrationPlayhead.style.display = 'none';
+  narrationBody.appendChild(narrationPlayhead);
+  const playhead = document.createElement('div');
+  playhead.className = 'premiere-sfx-playhead';
+  playhead.style.display = 'none';
+  sfxBody.appendChild(playhead);
+
+  // const sfxTrackLabel = sfxBody.parentElement.querySelector('.premiere-timeline-track-label');
+  // const previewHint = document.createElement('span');
+  // previewHint.className = 'premiere-audio-preview-hint';
+  // previewHint.textContent = 'SPACE · AUDIO';
+  // previewHint.title = 'Press Space to play or pause narration and sound effects from the active scene';
+  // sfxTrackLabel.appendChild(previewHint);
+
+  const sceneWindows = Array.from(sceneStartSeconds.entries())
+    .map(([sectionIndex, startSeconds]) => ({ sectionIndex, startSeconds }))
+    .sort((a, b) => a.startSeconds - b.startSeconds);
+  sceneWindows.forEach((windowSpec, index) => {
+    windowSpec.endSeconds = index + 1 < sceneWindows.length
+      ? sceneWindows[index + 1].startSeconds : globalActStart;
+  });
+  activeSfxLayout = {
+    durationSeconds: globalActStart, sceneStartSeconds, actLayouts, sfxEvents,
+    narrationEvents, audioEvents: [...narrationEvents, ...sfxEvents], sceneWindows,
+  };
+  sfxPlayheadEl = playhead;
+  sfxEvents.forEach(event => ensureSfxAudioBuffer(event).catch(() => {}));
+
+  return { clipsBySectionIndex, layout: activeSfxLayout };
+}
+
+function moveSceneOnActBoard(sourceIndex, targetIndex, targetActKey) {
+  if (sourceIndex == null || !targetActKey) return;
+  const sourcePosition = currentSections.findIndex(section => section.index === sourceIndex);
+  if (sourcePosition === -1) return;
+  const [source] = currentSections.splice(sourcePosition, 1);
+
+  let insertPosition = currentSections.length;
+  if (targetIndex != null) {
+    const targetPosition = currentSections.findIndex(section => section.index === targetIndex);
+    if (targetPosition !== -1) insertPosition = targetPosition;
+  } else {
+    // Appending to an act means placing the scene after that act's last scene
+    // in the shared section order, while leaving all source material intact.
+    currentSections.forEach((section, index) => {
+      if (currentAssignments[section.index] === targetActKey) insertPosition = index + 1;
+    });
+  }
+  currentSections.splice(insertPosition, 0, source);
+  currentAssignments[sourceIndex] = targetActKey;
+  saveDebugSession();
+  const remaining = currentSections.filter(section => !section.removed);
+  renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+}
+
+function actBoardNodesForAct(actKey) {
+  if (!Array.isArray(actBoardNodes[actKey])) actBoardNodes[actKey] = [];
+  return actBoardNodes[actKey];
+}
+
+function ensureActBoardPlaybackNode(actKey, narrationNode) {
+  if (!narrationNode || narrationNode.type !== 'narration') return null;
+  const nodes = actBoardNodesForAct(actKey);
+  let playback = nodes.find(node => node.type === 'playback'
+    && node.narrationNodeId === narrationNode.id);
+  if (playback) return playback;
+  const narrationPosition = actBoardNodePosition(narrationNode, 0);
+  playback = {
+    id: createActBoardNodeId('playback'),
+    type: 'playback',
+    actKey,
+    narrationNodeId: narrationNode.id,
+    status: 'ready',
+    boardX: narrationPosition.x + actBoardNodeDurationWidth(narrationNode) + ACT_BOARD_NODE_GAP,
+    boardY: narrationPosition.y,
+    boardWidth: 320,
+    boardWidthMode: 'auto',
+    boardPositionMode: 'auto',
+  };
+  nodes.push(playback);
+  return playback;
+}
+
+function removeActBoardPlaybackNode(actKey, narrationNodeId) {
+  if (!narrationNodeId) return;
+  actBoardNodes[actKey] = actBoardNodesForAct(actKey)
+    .filter(node => !(node.type === 'playback' && node.narrationNodeId === narrationNodeId));
+}
+
+function createActBoardNodeId(type) {
+  const suffix = window.crypto && typeof window.crypto.randomUUID === 'function'
+    ? window.crypto.randomUUID().slice(0, 8)
+    : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return `act-board-${type}-${suffix}`;
+}
+
+function actBoardNarrationFragments(text) {
+  const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return [];
+  const seen = new Set();
+  const fragments = [];
+  const add = value => {
+    const fragment = value.replace(/^[-–—:;,\s]+|[-–—:;,\s]+$/g, '').trim();
+    if (fragment.split(/\s+/).filter(Boolean).length < 3) return;
+    const key = fragment.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    fragments.push(fragment);
+  };
+  normalized.split(/(?<=[.!?])\s+/).forEach(sentence => {
+    const clauses = sentence.split(/\s*[,;:—–]\s*/).filter(Boolean);
+    if (clauses.length > 1) clauses.forEach(add);
+    else add(sentence);
+  });
+  if (fragments.length < 2) normalized.split(/\s*[,;:—–]\s*/).forEach(add);
+  if (!fragments.length) add(normalized);
+  const maxFragments = 5;
+  if (fragments.length <= maxFragments) return fragments;
+  const evenlySpaced = [];
+  for (let index = 0; index < maxFragments; index += 1) {
+    const sourceIndex = Math.round(index * (fragments.length - 1) / (maxFragments - 1));
+    const fragment = fragments[sourceIndex];
+    if (fragment && !evenlySpaced.includes(fragment)) evenlySpaced.push(fragment);
+  }
+  return evenlySpaced;
+}
+
+function buildActBoardSuggestedNarrationText(text, fragments, onFragmentEdit, labelText = 'Suggested narration: ') {
+  const container = document.createElement('p');
+  container.className = 'storyboard-act-board-node-text';
+  const label = document.createElement('strong');
+  label.textContent = labelText;
+  container.appendChild(label);
+  const source = String(text || '');
+  const ranges = [];
+  let searchFrom = 0;
+  (Array.isArray(fragments) ? fragments : []).forEach(fragment => {
+    const index = source.toLocaleLowerCase().indexOf(String(fragment).toLocaleLowerCase(), searchFrom);
+    if (index < 0) return;
+    ranges.push({ start: index, end: index + fragment.length });
+    searchFrom = index + fragment.length;
+  });
+  ranges.sort((a, b) => a.start - b.start);
+  let cursor = 0;
+  ranges.forEach(range => {
+    if (range.start < cursor) return;
+    if (range.start > cursor) container.appendChild(document.createTextNode(source.slice(cursor, range.start)));
+    const highlight = document.createElement('span');
+    highlight.className = 'storyboard-act-board-node-fragment';
+    highlight.textContent = source.slice(range.start, range.end);
+    if (onFragmentEdit) {
+      highlight.title = 'Double-click to edit this narration phrase';
+      highlight.addEventListener('dblclick', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        makeActBoardInlinePhraseEditor(
+          highlight,
+          highlight.textContent,
+          replacement => onFragmentEdit(highlight.textContent, replacement)
+        );
+      });
+    }
+    container.appendChild(highlight);
+    cursor = range.end;
+  });
+  // Keep narration editable even when the current transcript no longer contains
+  // any of the previously detected phrase ranges.
+  if (onFragmentEdit && source && !ranges.length) {
+    const editable = document.createElement('span');
+    editable.className = 'storyboard-act-board-node-fragment';
+    editable.textContent = source;
+    editable.title = 'Double-click to edit this narration';
+    editable.addEventListener('dblclick', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      makeActBoardInlinePhraseEditor(
+        editable,
+        editable.textContent,
+        replacement => onFragmentEdit(editable.textContent, replacement)
+      );
+    });
+    container.appendChild(editable);
+    cursor = source.length;
+  }
+  if (cursor < source.length) container.appendChild(document.createTextNode(source.slice(cursor)));
+  if (!source) container.appendChild(document.createTextNode('No narration draft yet.'));
+  return container;
+}
+
+function replaceActBoardNarrationPhrase(text, original, replacement) {
+  const source = String(text || '');
+  const index = source.toLocaleLowerCase().indexOf(String(original || '').toLocaleLowerCase());
+  if (index < 0) return `${source}${source ? ' ' : ''}${replacement}`.trim();
+  return `${source.slice(0, index)}${replacement}${source.slice(index + original.length)}`;
+}
+
+function editActBoardNarrationPhrase(narrationNode, original, replacement, sourceField = 'auto') {
+  if (!narrationNode || !original || !replacement) return;
+  const field = sourceField === 'text' || sourceField === 'transcript'
+    ? sourceField
+    : (narrationNode.transcript ? 'transcript' : 'text');
+  const priorFragments = Array.isArray(narrationNode.footageFragments)
+    && narrationNode.footageFragments.length
+    ? narrationNode.footageFragments.slice()
+    : actBoardNarrationFragments(narrationNode[field] || '');
+  narrationNode[field] = replaceActBoardNarrationPhrase(narrationNode[field], original, replacement);
+  narrationNode.footageFragments = priorFragments
+    .map(fragment => fragment === original ? replacement : fragment);
+  const footage = actBoardNodesForAct(narrationNode.actKey)
+    .find(node => node.type === 'footage' && node.fragment === original
+      && node.narrationNodeId === narrationNode.id);
+  if (footage) {
+    footage.fragment = replacement;
+    footage.status = 'needs-search';
+    footage.query = '';
+    footage.results = [];
+    footage.generatedOptions = [];
+    footage.generationStatus = '';
+    footage.generationError = '';
+    footage.mediaUrl = '';
+    footage.mediaThumbnailUrl = '';
+    footage.mediaKind = '';
+    footage.mediaOrigin = '';
+    footage.selectedVisualKey = null;
+  }
+  if (field === 'transcript') alignActBoardNarrationFragments(narrationNode);
+  else recomputeActBoardTiming(narrationNode);
+  saveDebugSession();
+  rerenderActBoard();
+}
+
+function editActBoardFootagePhrase(footageNode, replacement) {
+  if (!footageNode || !replacement || replacement === footageNode.fragment) return;
+  const parent = actBoardNodesForAct(footageNode.actKey)
+    .find(node => node.type === 'narration' && node.id === footageNode.narrationNodeId);
+  if (parent) {
+    editActBoardNarrationPhrase(parent, footageNode.fragment, replacement);
+    return;
+  }
+  footageNode.fragment = replacement;
+  footageNode.status = 'needs-search';
+  footageNode.query = '';
+  footageNode.results = [];
+  footageNode.generatedOptions = [];
+  footageNode.generationStatus = '';
+  footageNode.mediaUrl = '';
+  footageNode.mediaThumbnailUrl = '';
+  footageNode.mediaKind = '';
+  footageNode.mediaOrigin = '';
+  footageNode.selectedVisualKey = null;
+  saveDebugSession();
+  rerenderActBoard();
+}
+
+function makeActBoardInlinePhraseEditor(element, original, onCommit) {
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = original;
+  input.className = 'storyboard-act-board-node-fragment-editor';
+  element.replaceWith(input);
+  input.focus();
+  input.select();
+  let finished = false;
+  const finish = commit => {
+    if (finished) return;
+    finished = true;
+    const value = input.value.trim();
+    if (commit && value && value !== original) onCommit(value);
+    else input.replaceWith(element);
+  };
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      finish(true);
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      finish(false);
+    }
+  });
+  input.addEventListener('blur', () => finish(true), { once: true });
+}
+
+function estimateActBoardNarrationSeconds(text) {
+  const words = String(text || '').trim().split(/\s+/).filter(Boolean).length;
+  return Math.max(2, words / 2.5); // roughly 150 spoken words per minute
+}
+
+function normalizedBoardWords(text) {
+  return String(text || '').toLowerCase().match(/[a-z0-9']+/g) || [];
+}
+
+function alignActBoardNarrationFragments(narrationNode) {
+  const transcript = (narrationNode.transcript || '').trim();
+  const fragments = narrationNode.footageFragments || actBoardNarrationFragments(narrationNode.text);
+  if (!transcript || !fragments.length) return;
+  const duration = Number(narrationNode.audioDurationSeconds) > 0
+    ? Number(narrationNode.audioDurationSeconds)
+    : estimateActBoardNarrationSeconds(transcript);
+  const transcriptWords = normalizedBoardWords(transcript);
+  const suppliedWords = Array.isArray(narrationNode.transcriptWords)
+    ? narrationNode.transcriptWords.filter(word => Number.isFinite(Number(word.start)) && Number.isFinite(Number(word.end)))
+    : [];
+  const timedWords = transcriptWords.map((word, index) => {
+    const supplied = suppliedWords[index];
+    return {
+      word,
+      start: supplied ? Number(supplied.start) : (index / Math.max(transcriptWords.length, 1)) * duration,
+      end: supplied ? Number(supplied.end) : ((index + 1) / Math.max(transcriptWords.length, 1)) * duration,
+    };
+  });
+  let searchFrom = 0;
+  const timings = fragments.map(fragment => {
+    const phraseWords = normalizedBoardWords(fragment);
+    let match = -1;
+    for (let i = searchFrom; i <= timedWords.length - phraseWords.length; i += 1) {
+      if (phraseWords.every((word, offset) => timedWords[i + offset].word === word)) {
+        match = i;
+        break;
+      }
+    }
+    if (match >= 0) {
+      searchFrom = match + phraseWords.length;
+      return {
+        fragment,
+        startSeconds: timedWords[match].start,
+        endSeconds: timedWords[match + phraseWords.length - 1].end,
+        matchedText: timedWords.slice(match, match + phraseWords.length).map(item => item.word).join(' '),
+      };
+    }
+    return null;
+  });
+  const fallbackWords = Math.max(1, fragments.reduce((sum, fragment) =>
+    sum + normalizedBoardWords(fragment).length, 0));
+  let fallbackCursor = 0;
+  narrationNode.fragmentTimings = timings.map((timing, index) => {
+    if (timing) {
+      fallbackCursor = Math.max(fallbackCursor, timing.endSeconds);
+      return timing;
+    }
+    const seconds = duration * normalizedBoardWords(fragments[index]).length / fallbackWords;
+    const result = {
+      fragment: fragments[index],
+      startSeconds: fallbackCursor,
+      endSeconds: Math.min(duration, fallbackCursor + seconds),
+      matchedText: '',
+    };
+    fallbackCursor = result.endSeconds;
+    return result;
+  });
+  narrationNode.alignmentSource = suppliedWords.length ? 'transcription timestamps' : 'estimated from transcript duration';
+  narrationNode.audioDurationSeconds = duration;
+  narrationNode.narrationAudioDurationSeconds = duration;
+  const nodes = actBoardNodesForAct(narrationNode.actKey);
+  const byFragment = new Map(narrationNode.fragmentTimings.map(timing => [timing.fragment, timing]));
+  const linked = (narrationNode.footageNodeIds || [])
+    .map(id => nodes.find(node => node.id === id)).filter(Boolean);
+  linked.forEach(node => {
+    const timing = byFragment.get(node.fragment);
+    if (!timing) return;
+    node.startSeconds = timing.startSeconds;
+    node.durationSeconds = Math.max(0.5, timing.endSeconds - timing.startSeconds);
+    node.durationWasSuggested = false;
+    node.alignedToNarration = true;
+  });
+  narrationNode.durationSeconds = duration;
+}
+
+async function recordActBoardNarration(node, blob, filename, statusEl) {
+  statusEl.textContent = 'Uploading narration ...';
+  statusEl.classList.remove('error');
+  try {
+    // Persist a browser-independent PCM/WAV copy for refreshes. The live page
+    // can use its original MediaRecorder blob, but WebM/MP4 container support
+    // varies across browsers and was producing distorted or aborted playback
+    // when the saved URL was loaded later.
+    let uploadBlob = blob;
+    let uploadFilename = filename;
+    try {
+      statusEl.textContent = 'Normalizing narration ...';
+      const normalizedBuffer = await blob.arrayBuffer()
+        .then(bytes => ensurePlaybackAudioCtx().decodeAudioData(bytes));
+      uploadBlob = audioBufferToWavBlob(normalizedBuffer);
+      uploadFilename = filename.replace(/\.[^.]+$/, '.wav');
+    } catch (normalizeError) {
+      // Keep recording support if a browser cannot decode its own container;
+      // the server still receives the original file as a fallback.
+      uploadBlob = blob;
+      uploadFilename = filename;
+    }
+    const uploaded = await fetchUploadMediaBankItem(
+      new File([uploadBlob], uploadFilename, { type: uploadBlob.type || 'audio/wav' }), premiereProjectId);
+    premiereProjectId = uploaded.project_id;
+    node.audioPreviewUrl = uploaded.preview_url;
+    node.audioFilePath = uploaded.file_path || null;
+    node.audioDurationSeconds = Number(uploaded.duration_seconds) || 0;
+    try {
+      if (typeof node._nativePreviewUrl === 'string' && node._nativePreviewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(node._nativePreviewUrl);
+      }
+      const nativeUrl = URL.createObjectURL(blob);
+      Object.defineProperty(node, '_nativeAudioUrl', {
+        value: nativeUrl, configurable: true, enumerable: false,
+      });
+      Object.defineProperty(node, '_nativePreviewUrl', {
+        value: nativeUrl, configurable: true, enumerable: false,
+      });
+    } catch (err) { /* native playback is optional */ }
+    if (!(node.audioDurationSeconds > 0)) {
+      try {
+        const audioBuffer = await blob.arrayBuffer()
+          .then(bytes => ensurePlaybackAudioCtx().decodeAudioData(bytes));
+        node.audioDurationSeconds = Number(audioBuffer.duration) || 0;
+      } catch (err) { /* duration can still be estimated from the transcript */ }
+    }
+    statusEl.textContent = 'Transcribing narration ...';
+    const transcript = await fetchTranscription(blob, filename);
+    node.transcript = (transcript.text || '').trim();
+    node.transcriptWords = Array.isArray(transcript.words) ? transcript.words : [];
+    alignActBoardNarrationFragments(node);
+    node.recordingStatus = 'ready';
+    node.recordingError = '';
+    const act = currentArcSections.find(item => item.key === node.actKey);
+    if (act && node.transcript) {
+      // Recording changes the narration reference only. Keep any existing
+      // footage nodes intact until the presenter explicitly asks to refresh
+      // them with Suggest footage.
+      node.footageStatus = 'Narration updated — press Suggest footage to refresh the linked footage.';
+      node.footageFragments = actBoardNarrationFragments(node.transcript);
+    }
+    statusEl.textContent = '';
+    saveDebugSession();
+    rerenderActBoard();
+  } catch (err) {
+    statusEl.textContent = `Narration recording failed: ${err.message}`;
+    statusEl.classList.add('error');
+    node.recordingStatus = 'error';
+    node.recordingError = err.message;
+    saveDebugSession();
+    rerenderActBoard();
+  }
+}
+
+function recomputeActBoardTiming(narrationNode) {
+  if (!narrationNode || narrationNode.type !== 'narration') return;
+  const fragments = Array.isArray(narrationNode.footageFragments) && narrationNode.footageFragments.length
+    ? narrationNode.footageFragments
+    : actBoardNarrationFragments(narrationNode.text);
+  const nodesById = new Map((actBoardNodesForAct(narrationNode.actKey) || [])
+    .filter(node => node.type === 'footage' && node.narrationNodeId === narrationNode.id)
+    .map(node => [node.id, node]));
+  const linked = (narrationNode.footageNodeIds || [])
+    .map(id => nodesById.get(id)).filter(Boolean);
+  if (!linked.length) return;
+  const narrationSeconds = Number(narrationNode.narrationAudioDurationSeconds) > 0
+    ? Number(narrationNode.narrationAudioDurationSeconds)
+    : estimateActBoardNarrationSeconds(narrationNode.text);
+  const totalWords = Math.max(1, fragments.reduce((sum, fragment) =>
+    sum + fragment.split(/\s+/).filter(Boolean).length, 0));
+  const timingByFragment = new Map((narrationNode.fragmentTimings || [])
+    .filter(timing => timing && timing.fragment)
+    .map(timing => [timing.fragment, timing]));
+  let cursor = 0;
+  linked.forEach((node, index) => {
+    const fragment = node.fragment || fragments[index] || '';
+    const alignedTiming = node.alignedToNarration && timingByFragment.get(fragment);
+    if (alignedTiming) {
+      node.startSeconds = Math.max(0, Number(alignedTiming.startSeconds) || 0);
+      node.durationSeconds = Math.max(0.5,
+        (Number(alignedTiming.endSeconds) || node.startSeconds + 0.5) - node.startSeconds);
+      node.durationWasSuggested = false;
+      node.sequenceIndex = index;
+      cursor = Math.max(cursor, node.startSeconds + node.durationSeconds);
+      return;
+    }
+    const words = fragment.split(/\s+/).filter(Boolean).length;
+    const suggested = Math.max(1, narrationSeconds * words / totalWords);
+    if (!(Number(node.durationSeconds) > 0) || node.durationWasSuggested !== false) {
+      node.durationSeconds = suggested;
+      node.durationWasSuggested = true;
+    }
+    node.startSeconds = cursor;
+    cursor += Number(node.durationSeconds) > 0 ? Number(node.durationSeconds) : suggested;
+    node.sequenceIndex = index;
+  });
+  narrationNode.durationSeconds = cursor;
+}
+
+function clearActBoardNarrationAlignment(narrationNode) {
+  if (!narrationNode) return;
+  actBoardNodesForAct(narrationNode.actKey)
+    .filter(node => node.type === 'footage' && node.narrationNodeId === narrationNode.id)
+    .forEach(node => { node.alignedToNarration = false; });
+}
+
+function orderedActBoardNodes(actKey, nodes) {
+  const source = Array.isArray(nodes) ? nodes : actBoardNodesForAct(actKey);
+  const byId = new Map(source.map(node => [node.id, node]));
+  const emitted = new Set();
+  const ordered = [];
+  source.forEach(node => {
+    if (node.type !== 'narration' || emitted.has(node.id)) return;
+    ordered.push(node);
+    emitted.add(node.id);
+    (node.footageNodeIds || []).forEach(id => {
+      const footage = byId.get(id);
+      if (footage && !emitted.has(footage.id)) {
+        ordered.push(footage);
+        emitted.add(footage.id);
       }
     });
   });
+  source.forEach(node => {
+    if (!emitted.has(node.id)) ordered.push(node);
+  });
+  return ordered;
+}
 
-  return clipsBySectionIndex;
+function unlinkActBoardFootageNode(actKey, footageNode) {
+  const nodes = actBoardNodesForAct(actKey);
+  const parent = nodes.find(item => item.type === 'narration'
+    && (item.footageNodeIds || []).includes(footageNode.id));
+  if (parent) {
+    parent.footageNodeIds = parent.footageNodeIds.filter(id => id !== footageNode.id);
+    recomputeActBoardTiming(parent);
+  }
+  footageNode.narrationNodeId = null;
+  footageNode.sequenceIndex = null;
+}
+
+function attachActBoardFootageBefore(actKey, source, target) {
+  if (!source || !target || source.id === target.id) return null;
+  const nodes = actBoardNodesForAct(actKey);
+  const sourceParent = nodes.find(item => item.type === 'narration'
+    && (item.footageNodeIds || []).includes(source.id));
+  if (sourceParent) {
+    sourceParent.footageNodeIds = sourceParent.footageNodeIds.filter(id => id !== source.id);
+    clearActBoardNarrationAlignment(sourceParent);
+    recomputeActBoardTiming(sourceParent);
+  }
+  const targetParent = nodes.find(item => item.type === 'narration'
+    && (item.footageNodeIds || []).includes(target.id));
+  if (targetParent) {
+    const targetIndex = targetParent.footageNodeIds.indexOf(target.id);
+    targetParent.footageNodeIds.splice(Math.max(0, targetIndex), 0, source.id);
+    source.narrationNodeId = targetParent.id;
+    source.actKey = actKey;
+    source.durationWasSuggested = false;
+    source.alignedToNarration = false;
+    ensureActBoardPlaybackNode(actKey, targetParent);
+  } else {
+    source.narrationNodeId = null;
+    source.sequenceIndex = null;
+  }
+  return targetParent;
+}
+
+function footageNodeVisualSummary(node) {
+  if (!node) return '';
+  const result = node.results && node.results[node.selectedResultIndex || 0];
+  const generated = node.generatedOptions && node.generatedOptions[node.selectedGeneratedIndex || 0];
+  return String(node.fragment || generated?.label || result?.source || 'footage').trim();
+}
+
+function clearActBoardFootageDropHover(boardLayer) {
+  const hover = boardLayer?._actBoardFootageDropHover;
+  if (!hover) return null;
+  clearTimeout(hover.timer);
+  hover.sourceCard?.classList.remove('footage-drop-hover', 'footage-drop-shaking');
+  hover.targetCard?.classList.remove('footage-drop-hover', 'footage-drop-shaking');
+  boardLayer._actBoardFootageDropHover = null;
+  return hover;
+}
+
+function actBoardDropElementsAt(boardLayer, source, clientX, clientY) {
+  const sourceCard = boardLayer?.querySelector?.(`[data-node-id="${source?.id}"]`);
+  const previousPointerEvents = sourceCard?.style.pointerEvents || '';
+  if (sourceCard) sourceCard.style.pointerEvents = 'none';
+  const elements = typeof document.elementsFromPoint === 'function'
+    ? document.elementsFromPoint(clientX, clientY)
+    : [document.elementFromPoint(clientX, clientY)];
+  if (sourceCard) sourceCard.style.pointerEvents = previousPointerEvents;
+  return elements.filter(Boolean).filter(element => {
+    const card = element.closest?.('.storyboard-act-board-node-footage');
+    return !sourceCard || card !== sourceCard;
+  });
+}
+
+function updateActBoardFootageDropHover(boardLayer, source, clientX, clientY) {
+  if (!boardLayer || !source || source.type !== 'footage') return;
+  const elements = actBoardDropElementsAt(boardLayer, source, clientX, clientY);
+  const targetCard = elements.map(element => element.closest?.('.storyboard-act-board-node-footage'))
+    .find(Boolean);
+  const targetId = targetCard?.dataset.nodeId;
+  const target = targetId
+    ? actBoardNodesForAct(source.actKey).find(node => node.id === targetId) : null;
+  const current = boardLayer._actBoardFootageDropHover;
+  if (target && target.id !== source.id) {
+    if (current && current.target?.id === target.id && current.source?.id === source.id) return;
+    clearActBoardFootageDropHover(boardLayer);
+    const hover = { source, target, sourceCard: null, targetCard, ready: false, timer: null };
+    hover.sourceCard = boardLayer.querySelector(`[data-node-id="${source.id}"]`);
+    hover.sourceCard?.classList.add('footage-drop-hover');
+    targetCard.classList.add('footage-drop-hover');
+    hover.timer = setTimeout(() => {
+      if (boardLayer._actBoardFootageDropHover !== hover) return;
+      hover.ready = true;
+      hover.sourceCard?.classList.add('footage-drop-shaking');
+      hover.targetCard?.classList.add('footage-drop-shaking');
+    }, 1000);
+    boardLayer._actBoardFootageDropHover = hover;
+    return;
+  }
+  if (current) clearActBoardFootageDropHover(boardLayer);
+}
+
+function insertFreeFootageNodeOnActBoardPath(actKey, source, sourceId, targetId) {
+  if (!source || source.type !== 'footage' || source.narrationNodeId) return false;
+  const nodes = actBoardNodesForAct(actKey);
+  const parent = nodes.find(node => node.type === 'narration'
+    && (node.footageNodeIds || []).includes(targetId)
+    && (node.id === sourceId || (node.footageNodeIds || []).includes(sourceId)));
+  if (!parent) return false;
+  const targetIndex = parent.footageNodeIds.indexOf(targetId);
+  if (targetIndex < 0 || parent.footageNodeIds.includes(source.id)) return false;
+  const targetNode = nodes.find(node => node.id === targetId);
+  const oldTotal = parent.footageNodeIds.reduce((sum, id) => {
+    const footage = nodes.find(node => node.id === id);
+    return sum + Math.max(0.5, Number(footage?.durationSeconds) || 1);
+  }, 0);
+  const newDuration = Math.max(0.5, Number(source.durationSeconds) || oldTotal / (parent.footageNodeIds.length + 1));
+  const scale = oldTotal / Math.max(0.001, oldTotal + newDuration);
+  parent.footageNodeIds.splice(targetIndex, 0, source.id);
+  source.narrationNodeId = parent.id;
+  source.actKey = actKey;
+  source.durationWasSuggested = false;
+  source.alignedToNarration = false;
+  const phrase = String(source.fragment || '').trim();
+  const existingNarration = String(parent.transcript || parent.text || '').trim();
+  const targetPhrase = String(targetNode?.fragment || '').trim();
+  const insertAt = targetPhrase
+    ? existingNarration.toLocaleLowerCase().indexOf(targetPhrase.toLocaleLowerCase()) : -1;
+  const updatedNarration = insertAt >= 0
+    ? `${existingNarration.slice(0, insertAt)}${phrase} ${existingNarration.slice(insertAt)}`.trim()
+    : `${existingNarration}${existingNarration ? ' ' : ''}${phrase}`.trim();
+  if (parent.transcript) parent.transcript = updatedNarration;
+  else parent.text = updatedNarration;
+  parent.footageFragments = parent.footageNodeIds
+    .map(id => nodes.find(node => node.id === id)?.fragment || '')
+    .filter(Boolean);
+  nodes.filter(node => node.type === 'footage' && parent.footageNodeIds.includes(node.id))
+    .forEach(node => {
+      if (node.id === source.id) node.durationSeconds = Number((newDuration * scale).toFixed(1));
+      else node.durationSeconds = Number((Math.max(0.5, Number(node.durationSeconds) || 1) * scale).toFixed(1));
+      node.durationWasSuggested = false;
+      node.alignedToNarration = false;
+    });
+  clearActBoardNarrationAlignment(parent);
+  if (parent.transcript) alignActBoardNarrationFragments(parent);
+  recomputeActBoardTiming(parent);
+  ensureActBoardPlaybackNode(actKey, parent);
+  saveDebugSession();
+  rerenderActBoard();
+  return true;
+}
+
+function openActBoardFootageDropMenu(actKey, source, target, boardLayer, clientX, clientY) {
+  boardLayer.querySelector('.storyboard-act-board-footage-drop-menu')?.remove();
+  const menu = document.createElement('div');
+  menu.className = 'storyboard-act-board-footage-drop-menu';
+  const heading = document.createElement('strong');
+  heading.textContent = 'Combine footage nodes';
+  menu.appendChild(heading);
+  const hint = document.createElement('span');
+  hint.textContent = `“${footageNodeVisualSummary(source)}” dropped on “${footageNodeVisualSummary(target)}”`;
+  menu.appendChild(hint);
+  const choices = [
+    ['split-time', 'Split sequence time', 'Give each shot half of the dropped-on shot’s duration.'],
+    ['split-screen', 'Create split screen', 'Show both concepts together for the full duration.'],
+    ['merge-generative', 'Merge with generative media', 'Generate a new visual concept combining both ideas.'],
+  ];
+  choices.forEach(([choice, label, description]) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'storyboard-act-board-footage-drop-choice';
+    const title = document.createElement('b');
+    title.textContent = label;
+    const detail = document.createElement('small');
+    detail.textContent = description;
+    button.append(title, detail);
+    button.addEventListener('click', async event => {
+      event.stopPropagation();
+      menu.remove();
+      await applyActBoardFootageDropChoice(actKey, source, target, choice);
+    });
+    menu.appendChild(button);
+  });
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'storyboard-act-board-footage-drop-cancel';
+  cancel.textContent = 'Cancel';
+  cancel.addEventListener('click', event => {
+    event.stopPropagation();
+    menu.remove();
+  });
+  menu.appendChild(cancel);
+  const rect = boardLayer.getBoundingClientRect();
+  menu.style.left = `${Math.max(8, clientX - rect.left)}px`;
+  menu.style.top = `${Math.max(8, clientY - rect.top)}px`;
+  menu.addEventListener('pointerdown', event => event.stopPropagation());
+  boardLayer.appendChild(menu);
+}
+
+async function applyActBoardFootageDropChoice(actKey, source, target, choice) {
+  const nodes = actBoardNodesForAct(actKey);
+  if (!nodes.includes(source) || !nodes.includes(target)) return;
+  const targetDuration = Math.max(0.5, Number(target.durationSeconds) || 1);
+  if (choice === 'split-time') {
+    const parent = attachActBoardFootageBefore(actKey, source, target);
+    const halfDuration = Math.max(0.5, Number((targetDuration / 2).toFixed(1)));
+    source.durationSeconds = halfDuration;
+    target.durationSeconds = halfDuration;
+    source.durationWasSuggested = false;
+    target.durationWasSuggested = false;
+    source.alignedToNarration = false;
+    target.alignedToNarration = false;
+    clearActBoardNarrationAlignment(parent);
+    recomputeActBoardTiming(parent);
+    saveDebugSession();
+    rerenderActBoard();
+    return;
+  }
+
+  const sourceLabel = footageNodeVisualSummary(source);
+  const targetLabel = footageNodeVisualSummary(target);
+  const parent = target.narrationNodeId
+    ? nodes.find(item => item.type === 'narration' && item.id === target.narrationNodeId) : null;
+  unlinkActBoardFootageNode(actKey, source);
+  target.durationSeconds = targetDuration;
+  target.durationWasSuggested = false;
+  target.alignedToNarration = false;
+  target.compositionMode = choice === 'split-screen' ? 'split-screen' : 'merged';
+  target.combinedConceptPrompt = `${targetLabel}; ${sourceLabel}`;
+  if (choice === 'split-screen') {
+    target.splitScreenNodeIds = Array.from(new Set([target.id, source.id]));
+    target.splitScreenLabels = [targetLabel, sourceLabel];
+    target.generationStatus = '';
+    target.generatedOptions = [];
+    target.results = target.results || [];
+    if (parent) {
+      clearActBoardNarrationAlignment(parent);
+      recomputeActBoardTiming(parent);
+    }
+    saveDebugSession();
+    rerenderActBoard();
+    return;
+  }
+
+  target.splitScreenNodeIds = [];
+  target.splitScreenLabels = [];
+  target.query = target.combinedConceptPrompt;
+  target.generationStatus = 'generating-images';
+  target.generationError = '';
+  target.generatedOptions = [];
+  target.results = [];
+  target.mediaUrl = '';
+  target.mediaThumbnailUrl = '';
+  target.mediaKind = '';
+  target.mediaOrigin = '';
+  if (parent) {
+    clearActBoardNarrationAlignment(parent);
+    recomputeActBoardTiming(parent);
+  }
+  saveDebugSession();
+  rerenderActBoard();
+  const act = currentArcSections.find(item => item.key === actKey);
+  if (act) await generateActBoardNodeExamples(actKey, act, target);
+}
+
+function connectActBoardNodes(actKey, sourceId, targetId, options = {}) {
+  if (!sourceId || !targetId || sourceId === targetId) return;
+  const nodes = actBoardNodesForAct(actKey);
+  const source = nodes.find(node => node.id === sourceId);
+  const target = nodes.find(node => node.id === targetId);
+  if (!source || !target) return;
+
+  // Narration -> footage creates the umbrella edge. A footage node belongs to
+  // one narration chain at a time, so reconnecting it removes the old edge.
+  if (source.type === 'narration' && target.type === 'footage') {
+    unlinkActBoardFootageNode(actKey, target);
+    source.footageNodeIds = Array.from(new Set([...(source.footageNodeIds || []), target.id]));
+    target.narrationNodeId = source.id;
+    target.actKey = actKey;
+    target.durationWasSuggested = true;
+    target.alignedToNarration = false;
+    clearActBoardNarrationAlignment(source);
+    recomputeActBoardTiming(source);
+    ensureActBoardPlaybackNode(actKey, source);
+  // Footage -> footage moves the source node into the target's chain directly
+  // before the target. This is the DAG-style way to change sequence order.
+  } else if (source.type === 'footage' && target.type === 'footage') {
+    const targetParent = nodes.find(node => node.type === 'narration'
+      && (node.footageNodeIds || []).includes(target.id));
+    if (!targetParent) return;
+    unlinkActBoardFootageNode(actKey, source);
+    const targetIndex = targetParent.footageNodeIds.indexOf(target.id);
+    targetParent.footageNodeIds.splice(Math.max(0, targetIndex), 0, source.id);
+    source.narrationNodeId = targetParent.id;
+    source.actKey = actKey;
+    source.durationWasSuggested = true;
+    source.alignedToNarration = false;
+    clearActBoardNarrationAlignment(targetParent);
+    recomputeActBoardTiming(targetParent);
+    ensureActBoardPlaybackNode(actKey, targetParent);
+  // Dropping a footage output onto a narration node appends it to that
+  // narration's umbrella chain.
+  } else if (source.type === 'footage' && target.type === 'narration') {
+    unlinkActBoardFootageNode(actKey, source);
+    target.footageNodeIds = Array.from(new Set([...(target.footageNodeIds || []), source.id]));
+    source.narrationNodeId = target.id;
+    source.actKey = actKey;
+    source.durationWasSuggested = true;
+    source.alignedToNarration = false;
+    clearActBoardNarrationAlignment(target);
+    recomputeActBoardTiming(target);
+    ensureActBoardPlaybackNode(actKey, target);
+  } else {
+    return;
+  }
+  saveDebugSession();
+  if (options.render !== false) rerenderActBoard();
+}
+
+function clearActBoardLinks(actKey, actLabel) {
+  const nodes = actBoardNodesForAct(actKey);
+  const hasLinks = nodes.some(node => (node.type === 'narration'
+    && Array.isArray(node.footageNodeIds) && node.footageNodeIds.length)
+    || (node.type === 'footage' && node.narrationNodeId));
+  if (!hasLinks) return;
+  if (typeof window !== 'undefined' && typeof window.confirm === 'function'
+    && !window.confirm(`Clear all links in ${actLabel || 'this act'}? The narration and footage nodes will stay on the board.`)) return;
+  nodes.forEach(node => {
+    if (node.type === 'narration') node.footageNodeIds = [];
+    if (node.type === 'footage' && node.narrationNodeId) {
+      node.narrationNodeId = null;
+      node.sequenceIndex = null;
+      node.startSeconds = 0;
+      node.durationWasSuggested = true;
+      node.alignedToNarration = false;
+    }
+  });
+  nodes.filter(node => node.type === 'narration' && !(node.footageNodeIds || []).length)
+    .forEach(node => removeActBoardPlaybackNode(actKey, node.id));
+  saveDebugSession();
+  rerenderActBoard();
+}
+
+function clearActBoard() {
+  const hasNodes = Object.values(actBoardNodes || {})
+    .some(nodes => Array.isArray(nodes) && nodes.length);
+  if (!hasNodes) return;
+  if (typeof window !== 'undefined' && typeof window.confirm === 'function'
+    && !window.confirm('Clear the entire act board? This removes board nodes and links but keeps your scenes, source material, recordings, and timeline.')) return;
+  actBoardNodes = Object.create(null);
+  saveDebugSession();
+  rerenderActBoard();
+}
+
+function spawnActBoardNodeAt(actKey, type, x, y) {
+  if (type === 'narration') {
+    const act = currentArcSections.find(item => item.key === actKey);
+    if (act) {
+      suggestActBoardNarration(actKey, act, null, { x, y });
+      return;
+    }
+  }
+  const node = type === 'narration'
+    ? {
+      id: createActBoardNodeId('narration'), type, actKey, status: 'draft', text: '',
+      footageFragments: [], footageNodeIds: [], footageStatus: '', error: '',
+    }
+    : {
+      id: createActBoardNodeId('footage'), type, actKey, status: 'ready',
+      fragment: 'New footage idea', query: '', results: [], generationStatus: '',
+      durationSeconds: 2, durationWasSuggested: true, sequenceIndex: null,
+    };
+  node.boardX = Math.max(0, Number(x) || 0);
+  node.boardY = Math.max(0, Number(y) || 0);
+  node.boardPositionMode = 'manual';
+  actBoardNodesForAct(actKey).push(node);
+  saveDebugSession();
+  rerenderActBoard();
+}
+
+const ACT_BOARD_PIXELS_PER_SECOND = 34;
+const ACT_BOARD_NODE_GAP = 24;
+const ACT_BOARD_FOOTAGE_GAP = 12;
+
+function actBoardNodeDuration(node) {
+  if (!node) return 1;
+  const duration = node.type === 'narration'
+    ? (Number(node.audioDurationSeconds) || Number(node.narrationAudioDurationSeconds)
+      || Number(node.durationSeconds) || estimateActBoardNarrationSeconds(node.text))
+    : Number(node.durationSeconds);
+  return Math.max(node.type === 'narration' ? 1 : 0.5, Number(duration) || 1);
+}
+
+function actBoardNodeDurationWidth(node) {
+  if (node.type === 'playback') return 320;
+  const minimum = node.type === 'narration' ? 300 : 120;
+  const maximum = node.type === 'narration' ? 1200 : 720;
+  return Math.round(Math.max(minimum,
+    Math.min(maximum, actBoardNodeDuration(node) * ACT_BOARD_PIXELS_PER_SECOND)));
+}
+
+function actBoardCanvasWidth(boardLayer) {
+  const column = boardLayer?.closest?.('.storyboard-act-board-column');
+  const canvas = boardLayer?.closest?.('.storyboard-act-board-canvas');
+  const canvasRectWidth = Number(canvas?.getBoundingClientRect?.().width);
+  const columnRectWidth = Number(column?.getBoundingClientRect?.().width);
+  return Math.max(240, canvasRectWidth || Number(canvas?.clientWidth)
+    || columnRectWidth || Number(column?.clientWidth) || Number(boardLayer?.clientWidth) || 720);
+}
+
+function actBoardNarrationMaxWidth(boardLayer) {
+  return Math.max(120, Math.floor(actBoardCanvasWidth(boardLayer) * 0.8));
+}
+
+function actBoardNarrationWidth(node, boardLayer) {
+  const natural = actBoardNodeDurationWidth(node);
+  return Math.min(natural, actBoardNarrationMaxWidth(boardLayer));
+}
+
+function actBoardAutoWidth(node, boardLayer) {
+  const width = node.type === 'narration'
+    ? actBoardNarrationWidth(node, boardLayer) : actBoardNodeDurationWidth(node);
+  // Existing explicit widths are user work. New and previously auto-sized
+  // nodes follow their narration/shot timing as durations change.
+  if (!Number.isFinite(Number(node.boardWidth)) || node.boardWidthMode === 'auto') {
+    node.boardWidth = width;
+    node.boardWidthMode = 'auto';
+  }
+  const explicitWidth = Number(node.boardWidth) > 0 ? Number(node.boardWidth) : width;
+  return node.type === 'narration' && boardLayer
+    ? Math.min(explicitWidth, actBoardNarrationMaxWidth(boardLayer)) : explicitWidth;
+}
+
+function layoutActBoardNodeGeometry(actKey, nodes) {
+  const source = Array.isArray(nodes) ? nodes : actBoardNodesForAct(actKey);
+  const narrations = source.filter(node => node.type === 'narration');
+  narrations.forEach((narration, narrationIndex) => {
+    const fallback = defaultActBoardNodePosition(narration, narrationIndex);
+    if (!Number.isFinite(Number(narration.boardX))) {
+      narration.boardX = fallback.x;
+      narration.boardPositionMode = 'auto';
+    }
+    if (!Number.isFinite(Number(narration.boardY))) {
+      narration.boardY = fallback.y;
+      narration.boardPositionMode = 'auto';
+    }
+    actBoardAutoWidth(narration);
+    const parentHeight = Number(narration.boardHeight) > 0
+      ? Number(narration.boardHeight) : 260;
+    let cursorX = Number(narration.boardX) || 0;
+    const childY = (Number(narration.boardY) || 0) + parentHeight + ACT_BOARD_NODE_GAP;
+    (narration.footageNodeIds || []).forEach(id => {
+      const footage = source.find(node => node.id === id);
+      if (!footage) return;
+      if (!Number.isFinite(Number(footage.boardX)) || footage.boardPositionMode === 'auto') {
+        footage.boardX = cursorX;
+        footage.boardPositionMode = 'auto';
+      }
+      if (!Number.isFinite(Number(footage.boardY)) || footage.boardPositionMode === 'auto') {
+        footage.boardY = childY;
+        footage.boardPositionMode = 'auto';
+      }
+      const width = actBoardAutoWidth(footage);
+      if (!Number.isFinite(Number(footage.boardHeight)) || footage.boardHeightMode === 'auto') {
+        footage.boardHeight = 154;
+        footage.boardHeightMode = 'auto';
+      }
+      cursorX += width + ACT_BOARD_FOOTAGE_GAP;
+    });
+  });
+}
+
+function refineActBoardRenderedGeometry(nodeStack, nodes) {
+  if (!nodeStack || !Array.isArray(nodes)) return;
+  const cards = new Map(Array.from(nodeStack.querySelectorAll('[data-node-id]'))
+    .map(card => [card.dataset.nodeId, card]));
+  const narrationNodes = nodes.filter(node => node.type === 'narration');
+  const longestNarrationWidth = Math.max(1,
+    ...narrationNodes.map(narration => actBoardNodeDurationWidth(narration)));
+  const responsiveNarrationWidth = actBoardNarrationMaxWidth(nodeStack);
+  const narrationWidthScale = responsiveNarrationWidth / longestNarrationWidth;
+  narrationNodes.forEach(narration => {
+    const narrationCard = cards.get(narration.id);
+    if (!narrationCard) return;
+    const preferredNarrationWidth = narration.boardWidthMode === 'manual'
+      && Number(narration.boardWidth) > 0
+      ? Number(narration.boardWidth)
+      : Math.round(actBoardNodeDurationWidth(narration) * narrationWidthScale);
+    const narrationWidth = Math.min(preferredNarrationWidth, actBoardNarrationMaxWidth(nodeStack));
+    narrationCard.style.width = `${narrationWidth}px`;
+    if (narration.boardWidthMode !== 'manual' || Number(narration.boardWidth) > narrationWidth) {
+      narration.boardWidth = narrationWidth;
+    }
+    const parentX = parseFloat(narrationCard.style.left) || Number(narration.boardX) || 0;
+    const parentY = parseFloat(narrationCard.style.top) || Number(narration.boardY) || 0;
+    const parentHeight = narrationCard.offsetHeight || Number(narration.boardHeight) || 260;
+    const childY = parentY + parentHeight + ACT_BOARD_NODE_GAP;
+    const linked = (narration.footageNodeIds || []).map(id => ({
+      node: nodes.find(item => item.id === id), card: cards.get(id),
+    })).filter(item => item.node && item.card);
+    let cursorX = parentX;
+    const defaultFootageWidth = Math.max(120, Math.round(narrationWidth * 0.2));
+    linked.forEach(({ node: footage, card: footageCard }) => {
+      const width = footage.boardWidthMode === 'manual' && Number(footage.boardWidth) > 0
+        ? Number(footage.boardWidth) : defaultFootageWidth;
+      if (footage.boardPositionMode === 'auto') {
+        footage.boardX = cursorX;
+        footage.boardY = childY;
+        footageCard.style.left = `${cursorX}px`;
+        footageCard.style.top = `${childY}px`;
+      }
+      if (footage.boardWidthMode !== 'manual') footage.boardWidth = width;
+      footageCard.style.width = `${width}px`;
+      cursorX += width + ACT_BOARD_FOOTAGE_GAP;
+    });
+  });
+  const maxBottom = nodes.reduce((max, node, index) => {
+    const card = cards.get(node.id);
+    const position = actBoardNodePosition(node, index);
+    const fallbackHeight = node.type === 'footage' ? 154 : 260;
+    const height = card?.offsetHeight || Number(node.boardHeight) || fallbackHeight;
+    return Math.max(max, position.y + height);
+  }, 0);
+  nodeStack.style.minHeight = `${Math.max(360, maxBottom + 24)}px`;
+}
+
+function defaultActBoardNodePosition(node, index) {
+  if (node.type === 'narration') {
+    return { x: 16, y: 16 + index * 230 };
+  }
+  const sequence = Number.isFinite(Number(node.sequenceIndex))
+    ? Number(node.sequenceIndex) : index;
+  return {
+    x: 210 + (sequence % 3) * 174,
+    y: 22 + Math.floor(sequence / 3) * 174,
+  };
+}
+
+function actBoardNodePosition(node, index) {
+  const fallback = defaultActBoardNodePosition(node, index);
+  return {
+    x: Number.isFinite(Number(node.boardX)) ? Number(node.boardX) : fallback.x,
+    y: Number.isFinite(Number(node.boardY)) ? Number(node.boardY) : fallback.y,
+  };
+}
+
+function wireActBoardNodeDragging(card, node, boardLayer, index) {
+  if (!boardLayer) return;
+  const startPosition = actBoardNodePosition(node, index);
+  card.style.left = `${startPosition.x}px`;
+  card.style.top = `${startPosition.y}px`;
+  card.title = 'Drag from blank space to reposition; double-click a node or track segment to link it.';
+  card.addEventListener('pointerdown', event => {
+    if (event.target.closest('button, input, audio, a, select, textarea, label, details, summary, .storyboard-act-board-node-fragment, .storyboard-act-board-node-fragment-title, .paper-section-open-slot')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const boardRect = boardLayer.getBoundingClientRect();
+    const origin = actBoardNodePosition(node, index);
+    const offsetX = event.clientX - boardRect.left - origin.x;
+    const offsetY = event.clientY - boardRect.top - origin.y;
+    const connectedDragGroup = node.type === 'narration'
+      ? (node.footageNodeIds || [])
+        .map(id => {
+          const childNode = actBoardNodesForAct(node.actKey).find(item => item.id === id);
+          const childCard = childNode && boardLayer.querySelector(`[data-node-id="${id}"]`);
+          if (!childNode || !childCard) return null;
+          return {
+            node: childNode,
+            card: childCard,
+            x: parseFloat(childCard.style.left) || Number(childNode.boardX) || 0,
+            y: parseFloat(childCard.style.top) || Number(childNode.boardY) || 0,
+          };
+        })
+        .filter(Boolean)
+      : [];
+    card.classList.add('dragging');
+    try { card.setPointerCapture(event.pointerId); } catch (err) { /* optional */ }
+    const move = moveEvent => {
+      const nextX = Math.max(0, moveEvent.clientX - boardRect.left - offsetX);
+      const nextY = Math.max(0, moveEvent.clientY - boardRect.top - offsetY);
+      card.style.left = `${nextX}px`;
+      card.style.top = `${nextY}px`;
+      if (node.type === 'narration') {
+        const deltaX = nextX - origin.x;
+        const deltaY = nextY - origin.y;
+        connectedDragGroup.forEach(({ card: childCard, x, y }) => {
+          childCard.style.left = `${Math.max(0, x + deltaX)}px`;
+          childCard.style.top = `${Math.max(0, y + deltaY)}px`;
+        });
+      }
+      if (node.type === 'footage') {
+        updateActBoardFootageDropHover(boardLayer, node, moveEvent.clientX, moveEvent.clientY);
+      }
+      refreshActBoardLinkPaths(boardLayer);
+    };
+    const finish = endEvent => {
+      card.removeEventListener('pointermove', move);
+      card.removeEventListener('pointerup', finish);
+      card.removeEventListener('pointercancel', finish);
+      card.classList.remove('dragging');
+      node.boardX = parseFloat(card.style.left) || 0;
+      node.boardY = parseFloat(card.style.top) || 0;
+      node.boardPositionMode = 'manual';
+      connectedDragGroup.forEach(({ node: childNode, card: childCard }) => {
+        childNode.boardX = parseFloat(childCard.style.left) || 0;
+        childNode.boardY = parseFloat(childCard.style.top) || 0;
+        childNode.boardPositionMode = 'manual';
+      });
+      const currentMinHeight = parseFloat(boardLayer.style.minHeight) || 0;
+      const draggedBottom = connectedDragGroup.reduce((max, { node: childNode, card: childCard }) =>
+        Math.max(max, childNode.boardY + childCard.offsetHeight), node.boardY + card.offsetHeight);
+      boardLayer.style.minHeight = `${Math.max(currentMinHeight, draggedBottom + 24)}px`;
+      refreshActBoardLinkPaths(boardLayer);
+      try { card.releasePointerCapture(event.pointerId); } catch (err) { /* optional */ }
+      saveDebugSession();
+      if (endEvent?.type === 'pointerup' && node.type === 'footage') {
+        const droppedElements = actBoardDropElementsAt(boardLayer, node,
+          endEvent.clientX, endEvent.clientY);
+        const droppedPath = droppedElements.map(element =>
+          element.closest?.('.storyboard-act-board-link-hit-area')).find(Boolean);
+        if (droppedPath && !node.narrationNodeId) {
+          const inserted = insertFreeFootageNodeOnActBoardPath(node.actKey, node,
+            droppedPath.dataset.sourceId, droppedPath.dataset.targetId);
+          clearActBoardFootageDropHover(boardLayer);
+          if (inserted) return;
+        }
+        const droppedCard = droppedElements.map(element =>
+          element.closest?.('[data-node-id]')).find(Boolean);
+        const droppedId = droppedCard?.dataset.nodeId;
+        const droppedNode = droppedId
+          ? actBoardNodesForAct(node.actKey).find(item => item.id === droppedId) : null;
+        if (droppedNode && droppedNode.type === 'footage' && droppedNode.id !== node.id) {
+          const hover = boardLayer._actBoardFootageDropHover;
+          clearActBoardFootageDropHover(boardLayer);
+          if (hover?.ready && hover.source?.id === node.id && hover.target?.id === droppedNode.id) {
+            const sourceCard = boardLayer.querySelector(`[data-node-id="${node.id}"]`);
+            const targetCard = boardLayer.querySelector(`[data-node-id="${droppedNode.id}"]`);
+            sourceCard?.classList.add('footage-drop-shaking');
+            targetCard?.classList.add('footage-drop-shaking');
+            setTimeout(() => {
+              sourceCard?.classList.remove('footage-drop-shaking');
+              targetCard?.classList.remove('footage-drop-shaking');
+              if (document.body.contains(boardLayer)) {
+                openActBoardFootageDropMenu(node.actKey, node, droppedNode, boardLayer,
+                  endEvent.clientX, endEvent.clientY);
+              }
+            }, 450);
+        } else {
+          clearActBoardFootageDropHover(boardLayer);
+        }
+        }
+      } else if (node.type === 'footage') {
+        clearActBoardFootageDropHover(boardLayer);
+      }
+    };
+    card.addEventListener('pointermove', move);
+    card.addEventListener('pointerup', finish);
+    card.addEventListener('pointercancel', finish);
+  });
+}
+
+function wireActBoardNodeResizing(card, node, boardLayer) {
+  if (!boardLayer) return;
+  const resizeHandle = document.createElement('span');
+  resizeHandle.className = 'storyboard-act-board-node-resize-handle';
+  resizeHandle.setAttribute('role', 'button');
+  resizeHandle.setAttribute('aria-label', 'Resize board node');
+  resizeHandle.title = 'Drag to resize this node';
+  card.appendChild(resizeHandle);
+  const savedWidth = Number(node.boardWidth);
+  const savedHeight = Number(node.boardHeight);
+  const narrationMaxWidth = node.type === 'narration' ? actBoardNarrationMaxWidth(boardLayer) : Infinity;
+  if (Number.isFinite(savedWidth) && savedWidth > 0) {
+    card.style.width = `${Math.min(savedWidth, narrationMaxWidth)}px`;
+  }
+  if (Number.isFinite(savedHeight) && savedHeight > 0
+    && (node.type !== 'footage' || node.boardHeightMode === 'manual')) {
+    card.style.height = `${savedHeight}px`;
+  }
+  resizeHandle.addEventListener('pointerdown', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    const startWidth = card.offsetWidth;
+    const startHeight = card.offsetHeight;
+    const canvasMaxWidth = node.type === 'narration' ? actBoardNarrationMaxWidth(boardLayer) : Infinity;
+    const minWidth = node.type === 'footage' ? 120 : Math.min(160, canvasMaxWidth);
+    const minHeight = node.type === 'footage' ? 120 : 120;
+    const maxWidth = node.type === 'footage'
+      ? Math.max(620, actBoardNodeDurationWidth(node))
+      : canvasMaxWidth;
+    const maxHeight = node.type === 'footage' ? 420 : 640;
+    // Once the presenter starts resizing, stop the responsive auto-layout from
+    // writing its preferred width back over the pointer's live width.
+    if (node.type === 'narration') {
+      node.boardWidthMode = 'manual';
+      node.boardWidth = startWidth;
+    }
+    resizeHandle.classList.add('dragging');
+    try { resizeHandle.setPointerCapture(event.pointerId); } catch (err) { /* optional */ }
+    const move = moveEvent => {
+      const liveMaxWidth = node.type === 'narration'
+        ? actBoardNarrationMaxWidth(boardLayer) : maxWidth;
+      const liveMinWidth = node.type === 'narration'
+        ? Math.min(160, liveMaxWidth) : minWidth;
+      const width = Math.max(liveMinWidth,
+        Math.min(liveMaxWidth, startWidth + moveEvent.clientX - event.clientX));
+      const height = Math.max(minHeight, Math.min(maxHeight, startHeight + moveEvent.clientY - event.clientY));
+      card.style.width = `${width}px`;
+      card.style.height = `${height}px`;
+      if (node.type === 'narration') {
+        node.boardWidth = width;
+        refineActBoardRenderedGeometry(boardLayer, actBoardNodesForAct(node.actKey));
+      }
+      refreshActBoardLinkPaths(boardLayer);
+    };
+    const finish = () => {
+      resizeHandle.removeEventListener('pointermove', move);
+      resizeHandle.removeEventListener('pointerup', finish);
+      resizeHandle.removeEventListener('pointercancel', finish);
+      resizeHandle.classList.remove('dragging');
+      node.boardWidth = card.offsetWidth;
+      node.boardHeight = card.offsetHeight;
+      node.boardWidthMode = 'manual';
+      node.boardHeightMode = 'manual';
+      const currentMinHeight = parseFloat(boardLayer.style.minHeight) || 0;
+      const top = parseFloat(card.style.top) || 0;
+      boardLayer.style.minHeight = `${Math.max(currentMinHeight, top + node.boardHeight + 24)}px`;
+      refreshActBoardLinkPaths(boardLayer);
+      try { resizeHandle.releasePointerCapture(event.pointerId); } catch (err) { /* optional */ }
+      saveDebugSession();
+    };
+    resizeHandle.addEventListener('pointermove', move);
+    resizeHandle.addEventListener('pointerup', finish);
+    resizeHandle.addEventListener('pointercancel', finish);
+  });
+}
+
+function actBoardLinkPoint(boardLayer, card, towardCard) {
+  const layerRect = boardLayer.getBoundingClientRect();
+  const rect = card.getBoundingClientRect();
+  const centerX = rect.left - layerRect.left + rect.width / 2;
+  const centerY = rect.top - layerRect.top + rect.height / 2;
+  const towardRect = towardCard && towardCard.getBoundingClientRect();
+  const towardX = towardRect ? towardRect.left - layerRect.left + towardRect.width / 2 : centerX + 1;
+  const right = towardX >= centerX;
+  return {
+    x: right ? rect.right - layerRect.left : rect.left - layerRect.left,
+    y: centerY,
+  };
+}
+
+function actBoardLinkPathD(from, to) {
+  const direction = to.x >= from.x ? 1 : -1;
+  const bend = Math.min(84, Math.max(28, Math.abs(to.x - from.x) * 0.35));
+  return `M ${from.x.toFixed(1)} ${from.y.toFixed(1)} C ${(from.x + bend * direction).toFixed(1)} ${from.y.toFixed(1)}, ${(to.x - bend * direction).toFixed(1)} ${to.y.toFixed(1)}, ${to.x.toFixed(1)} ${to.y.toFixed(1)}`;
+}
+
+function refreshActBoardLinkPaths(boardLayer, pointer) {
+  const state = boardLayer && boardLayer._actBoardLinkState;
+  if (!state) return;
+  const width = Math.max(boardLayer.clientWidth, 1);
+  const height = Math.max(boardLayer.clientHeight, 1);
+  state.svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  state.svg.setAttribute('width', String(width));
+  state.svg.setAttribute('height', String(height));
+  const cards = new Map(Array.from(boardLayer.querySelectorAll('[data-node-id]'))
+    .map(card => [card.dataset.nodeId, card]));
+  state.paths.forEach(link => {
+    const sourceCard = cards.get(link.sourceId);
+    const targetCard = cards.get(link.targetId);
+    if (!sourceCard || !targetCard) return;
+    const from = actBoardLinkPoint(boardLayer, sourceCard, targetCard);
+    const to = actBoardLinkPoint(boardLayer, targetCard, sourceCard);
+    const pathD = actBoardLinkPathD(from, to);
+    link.path.setAttribute('d', pathD);
+    link.hitPath?.setAttribute('d', pathD);
+  });
+  if (state.pendingPath && state.sourceId) {
+    const sourceCard = cards.get(state.sourceId);
+    if (!sourceCard) return;
+    const from = actBoardLinkPoint(boardLayer, sourceCard, null);
+    const to = pointer || { x: from.x + 80, y: from.y };
+    state.pendingPath.setAttribute('d', actBoardLinkPathD(from, to));
+  }
+}
+
+function clearActBoardPendingLink(boardLayer) {
+  const state = boardLayer && boardLayer._actBoardLinkState;
+  if (!state || !state.sourceId) return;
+  state.sourceId = null;
+  state.pendingPath?.remove();
+  state.pendingPath = null;
+  boardLayer.querySelectorAll('.storyboard-act-board-node.link-source')
+    .forEach(card => card.classList.remove('link-source'));
+  boardLayer.removeEventListener('pointermove', state.onPointerMove);
+}
+
+function removeActBoardLink(actKey, sourceId, targetId) {
+  const nodes = actBoardNodesForAct(actKey);
+  const target = nodes.find(node => node.id === targetId);
+  if (!target) return;
+  const parent = nodes.find(node => node.type === 'narration'
+    && (node.footageNodeIds || []).includes(target.id));
+  if (!parent) return;
+  parent.footageNodeIds = parent.footageNodeIds.filter(id => id !== target.id);
+  target.narrationNodeId = null;
+  target.sequenceIndex = null;
+  target.startSeconds = 0;
+  target.durationWasSuggested = true;
+  target.alignedToNarration = false;
+  clearActBoardNarrationAlignment(parent);
+  recomputeActBoardTiming(parent);
+  if (!(parent.footageNodeIds || []).length) removeActBoardPlaybackNode(actKey, parent.id);
+  saveDebugSession();
+  rerenderActBoard();
+}
+
+function wireActBoardNodeLinking(card, actKey, node, boardLayer) {
+  if (!boardLayer || node.type === 'playback') return;
+  card.addEventListener('dblclick', event => {
+    if (event.target.closest('button, input, audio, a, select, textarea, label, details, summary, .storyboard-act-board-node-resize-handle')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const state = boardLayer._actBoardLinkState;
+    if (state.sourceId) {
+      if (state.sourceId === node.id) {
+        clearActBoardPendingLink(boardLayer);
+        return;
+      }
+      const sourceId = state.sourceId;
+      clearActBoardPendingLink(boardLayer);
+      connectActBoardNodes(actKey, sourceId, node.id);
+      return;
+    }
+    state.sourceId = node.id;
+    card.classList.add('link-source');
+    state.pendingPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    state.pendingPath.classList.add('storyboard-act-board-link-path', 'pending');
+    state.pendingPath.setAttribute('marker-end', `url(#${state.pendingMarkerId})`);
+    state.svg.appendChild(state.pendingPath);
+    state.onPointerMove = moveEvent => {
+      const rect = boardLayer.getBoundingClientRect();
+      refreshActBoardLinkPaths(boardLayer, {
+        x: moveEvent.clientX - rect.left,
+        y: moveEvent.clientY - rect.top,
+      });
+    };
+    boardLayer.addEventListener('pointermove', state.onPointerMove);
+    boardLayer.tabIndex = 0;
+    boardLayer.focus({ preventScroll: true });
+    refreshActBoardLinkPaths(boardLayer);
+  });
+}
+
+function buildActBoardLinkLayer(boardLayer, nodes) {
+  const markerId = createActBoardNodeId('link-arrow');
+  const pendingMarkerId = `${markerId}-pending`;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.classList.add('storyboard-act-board-link-layer');
+  svg.setAttribute('aria-hidden', 'true');
+  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+  [[markerId, '#3d79a8'], [pendingMarkerId, '#d47700']].forEach(([id, color]) => {
+    const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+    marker.setAttribute('id', id);
+    marker.setAttribute('markerWidth', '5');
+    marker.setAttribute('markerHeight', '5');
+    marker.setAttribute('refX', '4.5');
+    marker.setAttribute('refY', '2.5');
+    marker.setAttribute('orient', 'auto');
+    const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    arrow.setAttribute('d', 'M 0 0 L 5 2.5 L 0 5 z');
+    arrow.setAttribute('fill', color);
+    marker.appendChild(arrow);
+    defs.appendChild(marker);
+  });
+  svg.appendChild(defs);
+  boardLayer.insertBefore(svg, boardLayer.firstChild);
+  const byId = new Map(nodes.map(node => [node.id, node]));
+  const paths = [];
+  nodes.filter(node => node.type === 'narration').forEach(narration => {
+    let previousId = narration.id;
+    (narration.footageNodeIds || []).forEach(targetId => {
+      if (!byId.has(targetId)) return;
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.classList.add('storyboard-act-board-link-path');
+      path.classList.add(previousId === narration.id ? 'narration-link' : 'footage-link');
+      path.setAttribute('marker-end', `url(#${markerId})`);
+      const selectLink = event => {
+        event.preventDefault();
+        event.stopPropagation();
+        const state = boardLayer._actBoardLinkState;
+        if (!state) return;
+        state.paths.forEach(item => item.path.classList.remove('selected'));
+        const selected = state.paths.find(item => item.path === path);
+        if (selected) {
+          path.classList.add('selected');
+          state.selectedPath = selected;
+          boardLayer.tabIndex = 0;
+          boardLayer.focus({ preventScroll: true });
+        }
+      };
+      path.addEventListener('click', selectLink);
+      const hitPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      hitPath.classList.add('storyboard-act-board-link-hit-area');
+      hitPath.dataset.sourceId = previousId;
+      hitPath.dataset.targetId = targetId;
+      hitPath.addEventListener('click', selectLink);
+      svg.appendChild(path);
+      svg.appendChild(hitPath);
+      paths.push({ sourceId: previousId, targetId, path, hitPath });
+      previousId = targetId;
+    });
+  });
+  boardLayer._actBoardLinkState = {
+    svg, paths, sourceId: null, pendingPath: null, onPointerMove: null,
+    pendingMarkerId, selectedPath: null,
+  };
+  boardLayer.addEventListener('keydown', event => {
+    if (event.key === 'Escape') clearActBoardPendingLink(boardLayer);
+    if ((event.key === 'Delete' || event.key === 'Backspace')
+      && boardLayer._actBoardLinkState?.selectedPath) {
+      event.preventDefault();
+      const selected = boardLayer._actBoardLinkState.selectedPath;
+      removeActBoardLink(boardLayer.closest('.storyboard-act-board-column')?.dataset.actKey,
+        selected.sourceId, selected.targetId);
+    }
+  });
+  refreshActBoardLinkPaths(boardLayer);
+}
+
+function wireActBoardNodeSpawn(nodeStack, actKey) {
+  const closeSpawnMenu = () => {
+    nodeStack.querySelector('.storyboard-act-board-node-spawn-menu')?.remove();
+  };
+  nodeStack.addEventListener('keydown', event => {
+    if (event.key !== 'Escape') return;
+    const menu = nodeStack.querySelector('.storyboard-act-board-node-spawn-menu');
+    if (!menu) return;
+    event.preventDefault();
+    event.stopPropagation();
+    menu.remove();
+  });
+  nodeStack.addEventListener('dblclick', event => {
+    if (event.target.closest('.storyboard-act-board-node, .storyboard-act-board-node-spawn-menu, .storyboard-act-board-footage-drop-menu')) return;
+    const rect = nodeStack.getBoundingClientRect();
+    const x = Math.max(0, event.clientX - rect.left);
+    const y = Math.max(0, event.clientY - rect.top);
+    closeSpawnMenu();
+    const menu = document.createElement('div');
+    menu.className = 'storyboard-act-board-node-spawn-menu';
+    menu.tabIndex = -1;
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
+    const label = document.createElement('span');
+    label.textContent = 'Add node';
+    menu.appendChild(label);
+    [['narration', 'Narration node'], ['footage', 'Footage node']].forEach(([type, text]) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = text;
+      button.addEventListener('click', buttonEvent => {
+        buttonEvent.preventDefault();
+        buttonEvent.stopPropagation();
+        spawnActBoardNodeAt(actKey, type, x, y);
+      });
+      menu.appendChild(button);
+    });
+    menu.addEventListener('click', menuEvent => menuEvent.stopPropagation());
+    menu.addEventListener('keydown', menuEvent => {
+      if (menuEvent.key === 'Escape') {
+        menuEvent.preventDefault();
+        menuEvent.stopPropagation();
+        menu.remove();
+      }
+    });
+    nodeStack.appendChild(menu);
+    menu.focus({ preventScroll: true });
+  });
+}
+
+function actBoardSourceSection(actKey) {
+  return actBoardSectionsForAct(actKey)[0] || null;
+}
+
+function actBoardGenerationContext(actKey, act, node) {
+  const source = actBoardSourceSection(actKey);
+  const narrationNode = actBoardNodesForAct(actKey).find(item =>
+    item.type === 'narration' && item.id === node.narrationNodeId);
+  const sequenceFragments = narrationNode
+    ? (narrationNode.footageNodeIds || [])
+      .map(id => actBoardNodesForAct(actKey).find(item => item.id === id))
+      .filter(Boolean)
+      .map(item => item.fragment || '')
+      .filter(Boolean)
+      .join(' → ')
+    : '';
+  return {
+    sectionIndex: source && Number.isInteger(source.index) ? source.index : 0,
+    title: `${act.label || 'Act'} · ${node.fragment || 'footage'}`,
+    sceneNotes: `${act.description || ''}\nFull narration context: ${narrationNode?.transcript || narrationNode?.text || ''}\nSpecific filmable phrase: ${node.fragment || ''}${sequenceFragments ? `\nCohesive linked shot sequence (avoid duplicating adjacent phrases): ${sequenceFragments}` : ''}${node.combinedConceptPrompt ? `\nCombine visual concepts: ${node.combinedConceptPrompt}` : ''}`.trim(),
+    narration: (() => {
+      const narrationNode = actBoardNodesForAct(actKey).find(item => item.id === node.narrationNodeId);
+      return narrationNode ? narrationNode.transcript || narrationNode.text || '' : '';
+    })(),
+    actTitle: act.label || '',
+    source,
+  };
+}
+
+async function generateActBoardNodeExamples(actKey, act, node) {
+  const context = actBoardGenerationContext(actKey, act, node);
+  node.generationStatus = 'generating-images';
+  node.generationError = '';
+  saveDebugSession();
+  rerenderActBoard();
+  try {
+    const result = await fetchGenerateShotExamples({
+      sectionIndex: context.sectionIndex,
+      title: context.title,
+      sceneNotes: context.sceneNotes,
+      narration: context.narration,
+      actTitle: context.actTitle,
+      documentaryMode: selectedDocumentaryMode,
+      techniques: context.source ? sceneTechniques(context.source) : [],
+      moodboard: moodboardProfilesForGeneration(),
+      count: 1,
+      video: false,
+      projectId: premiereProjectId,
+      abstract: findAbstractText(),
+      role: 'B-roll',
+      referenceSubject: context.source ? context.source.footageSubject || '' : '',
+      referenceSketchUrl: context.source ? context.source.uploadedSketchPreviewUrl || '' : '',
+      referenceFigureDataUrl: context.source ? context.source.image || '' : '',
+      referenceVideoUrl: context.source ? context.source.uploadedFootagePreviewUrl || '' : '',
+      referenceVideoThumbnailUrl: context.source ? context.source.uploadedFootageThumbnailUrl || '' : '',
+    });
+    premiereProjectId = result.project_id;
+    node.generatedOptions = (result.examples || []).map(example => ({
+      url: example.preview_url,
+      thumbnail_url: example.thumbnail_url || example.preview_url,
+      kind: example.kind || 'image',
+      label: example.label || 'Generated example',
+      shot_size: example.shot_size || '',
+      movement: example.movement || '',
+      shotPlan: {
+        shot_size: example.shot_size || '',
+        movement: example.movement || '',
+        narrative_operation: example.narrative_operation || '',
+        purpose: example.purpose || '',
+        visual_description: example.visual_description || '',
+      },
+    }));
+    node.shotPlan = result.shot_plan || (node.generatedOptions[0] && node.generatedOptions[0].shotPlan) || {};
+    node.generationStatus = 'ready';
+    if (node.generatedOptions[0]) {
+      node.mediaUrl = node.generatedOptions[0].url;
+      node.mediaThumbnailUrl = node.generatedOptions[0].thumbnail_url;
+      node.mediaKind = node.generatedOptions[0].kind || 'image';
+      node.selectedGeneratedIndex = 0;
+      node.mediaOrigin = 'generated';
+    }
+    saveDebugSession();
+    rerenderActBoard();
+  } catch (err) {
+    node.generationStatus = 'error';
+    node.generationError = err.message;
+    saveDebugSession();
+    rerenderActBoard();
+  }
+}
+
+async function generateActBoardNodeVideo(actKey, act, node) {
+  const selected = node.generatedOptions && node.generatedOptions[node.selectedGeneratedIndex || 0];
+  const chosenImageUrl = selected && selected.kind !== 'video' ? selected.url : node.mediaKind === 'image' ? node.mediaUrl : '';
+  if (!chosenImageUrl) return;
+  const context = actBoardGenerationContext(actKey, act, node);
+  node.generationStatus = 'generating-video';
+  node.generationError = '';
+  saveDebugSession();
+  rerenderActBoard();
+  try {
+    const result = await fetchGenerateShotVideo({
+      sectionIndex: context.sectionIndex,
+      chosenImageUrl,
+      sceneNotes: context.sceneNotes,
+      documentaryMode: selectedDocumentaryMode,
+      techniques: context.source ? sceneTechniques(context.source) : [],
+      projectId: premiereProjectId,
+      shotPlan: node.shotPlan || (selected && selected.shotPlan) || {},
+      referenceSubject: context.source ? context.source.footageSubject || '' : '',
+      referenceVideoUrl: context.source ? context.source.uploadedFootagePreviewUrl || '' : '',
+      referenceVideoThumbnailUrl: context.source ? context.source.uploadedFootageThumbnailUrl || '' : '',
+    });
+    premiereProjectId = result.project_id;
+    const video = {
+      url: result.preview_url,
+      thumbnail_url: result.thumbnail_url || chosenImageUrl,
+      kind: 'video',
+      label: 'Generated video',
+      shot_size: (result.shot_plan && result.shot_plan.shot_size) || (node.shotPlan && node.shotPlan.shot_size) || '',
+      movement: (result.shot_plan && result.shot_plan.movement) || (node.shotPlan && node.shotPlan.movement) || '',
+      shotPlan: result.shot_plan || node.shotPlan || {},
+    };
+    node.generatedOptions = [...(node.generatedOptions || []), video];
+    node.selectedGeneratedIndex = node.generatedOptions.length - 1;
+    node.mediaUrl = video.url;
+    node.mediaThumbnailUrl = video.thumbnail_url;
+    node.mediaKind = 'video';
+    node.mediaOrigin = 'generated';
+    node.shotPlan = video.shotPlan;
+    node.generationStatus = 'ready';
+    saveDebugSession();
+    rerenderActBoard();
+  } catch (err) {
+    node.generationStatus = 'error';
+    node.generationError = err.message;
+    saveDebugSession();
+    rerenderActBoard();
+  }
+}
+
+function actBoardSectionsForAct(actKey) {
+  return currentSections.filter(section =>
+    isSceneActive(section) && currentAssignments[section.index] === actKey);
+}
+
+function actBoardNarrationAudioSource(actKey, narrationNode) {
+  if (narrationNode.audioPreviewUrl) return narrationNode;
+  const section = actBoardSectionsForAct(actKey).find(item =>
+    migrateNarrationClips(item).some(clip => clip.previewUrl || clip._nativePreviewUrl));
+  if (!section) return null;
+  return migrateNarrationClips(section)
+    .find(clip => clip.previewUrl || clip._nativePreviewUrl) || null;
+}
+
+function stopActBoardPlayback() {
+  const state = actBoardPlaybackState;
+  if (!state) return;
+  state.audio?.pause();
+  if (state.audio) state.audio.currentTime = 0;
+  if (actBoardNativeAudioElement === state.audio) actBoardNativeAudioElement = null;
+  state.video?.pause();
+  state.playing = false;
+  state.activeCards?.forEach(card => card.classList.remove('act-board-playback-active'));
+  if (state.playButton) state.playButton.textContent = 'Play linked sequence';
+  if (state.stopButton) state.stopButton.disabled = true;
+  if (state.status && !state.error) state.status.textContent = '';
+  if (state.stage) state.stage.classList.remove('playing');
+  actBoardPlaybackState = null;
+}
+
+function actBoardSelectedFootageMedia(footage) {
+  if (!footage) return { url: '', kind: 'image', thumbnailUrl: '' };
+  const selectedKey = String(footage.selectedVisualKey || '');
+  const generated = selectedKey.startsWith('generated-') && Array.isArray(footage.generatedOptions)
+    ? footage.generatedOptions[footage.selectedGeneratedIndex || 0]
+    : null;
+  const result = selectedKey.startsWith('result-') && Array.isArray(footage.results)
+    ? footage.results[footage.selectedResultIndex || 0]
+    : null;
+  const url = footage.mediaUrl
+    || generated?.url
+    || result?.localPreviewUrl
+    || result?.video_url
+    || '';
+  const kind = footage.mediaKind || generated?.kind || (result ? 'video' : 'image');
+  const thumbnailUrl = footage.mediaThumbnailUrl
+    || generated?.thumbnail_url
+    || result?.thumbnail_url
+    || '';
+  return { url, kind, thumbnailUrl };
+}
+
+function orderedActBoardLinkedFootage(actKey, narrationNode) {
+  const nodes = actBoardNodesForAct(actKey);
+  const order = new Map((narrationNode.footageNodeIds || []).map((id, index) => [id, index]));
+  return (narrationNode.footageNodeIds || [])
+    .map(id => nodes.find(item => item.id === id))
+    .filter(item => item && item.type === 'footage')
+    .sort((a, b) => {
+      const aStart = Number(a.startSeconds);
+      const bStart = Number(b.startSeconds);
+      if (Number.isFinite(aStart) && Number.isFinite(bStart) && Math.abs(aStart - bStart) > 0.001) {
+        return aStart - bStart;
+      }
+      const aSequence = Number(a.sequenceIndex);
+      const bSequence = Number(b.sequenceIndex);
+      if (Number.isFinite(aSequence) && Number.isFinite(bSequence) && aSequence !== bSequence) {
+        return aSequence - bSequence;
+      }
+      return (order.get(a.id) || 0) - (order.get(b.id) || 0);
+    });
+}
+
+function buildActBoardNarrationPlayback(actKey, node, boardLayer) {
+  const linked = orderedActBoardLinkedFootage(actKey, node);
+  if (!linked.length) return null;
+  const panel = document.createElement('div');
+  panel.className = 'storyboard-act-board-playback';
+  const controls = document.createElement('div');
+  controls.className = 'storyboard-act-board-playback-controls';
+  const playButton = document.createElement('button');
+  playButton.type = 'button';
+  playButton.className = 'btn-secondary storyboard-act-board-node-action';
+  playButton.textContent = 'Play linked sequence';
+  const stopButton = document.createElement('button');
+  stopButton.type = 'button';
+  stopButton.className = 'btn-secondary storyboard-act-board-node-action';
+  stopButton.textContent = 'Stop';
+  stopButton.disabled = true;
+  const status = document.createElement('span');
+  status.className = 'storyboard-act-board-playback-status';
+  controls.append(playButton, stopButton, status);
+  panel.appendChild(controls);
+  const stage = document.createElement('div');
+  stage.className = 'storyboard-act-board-playback-stage';
+  const stageLabel = document.createElement('span');
+  stageLabel.textContent = 'Linked footage preview';
+  stage.appendChild(stageLabel);
+  panel.appendChild(stage);
+  const audio = document.createElement('audio');
+  audio.controls = true;
+  audio.preload = 'metadata';
+  audio.className = 'storyboard-act-board-playback-audio';
+  wireActBoardAudioExclusivity(audio);
+  audio.addEventListener('click', event => event.stopPropagation());
+  panel.appendChild(audio);
+  const audioSource = actBoardNarrationAudioSource(actKey, node);
+  if (audioSource) {
+    attachNativeAudioSource(audio, audioSource._nativePreviewUrl || audioSource._nativeAudioUrl
+      || audioSource.previewUrl, audioSource);
+  } else {
+    audio.hidden = true;
+    status.textContent = 'Record narration to preview this linked sequence.';
+    playButton.disabled = true;
+  }
+
+  const syncVideoToNarration = (footage, nowSeconds, forceSeek = false) => {
+    if (!state.video || !footage) return;
+    const start = Math.max(0, Number(footage.startSeconds) || 0);
+    const localSeconds = Math.max(0, nowSeconds - start);
+    if (Number.isFinite(state.video.duration) && state.video.duration > 0) {
+      const target = localSeconds % state.video.duration;
+      // Seeking on every audio timeupdate makes a CDN clip visibly flicker.
+      // Only seek when entering a shot or when the user explicitly scrubs.
+      if (forceSeek && Math.abs(state.video.currentTime - target) > 0.08) {
+        state.video.currentTime = target;
+      }
+    }
+    if (state.playing) state.video.play().catch(() => {});
+  };
+
+  const setStage = (footage, nowSeconds = Number(audio.currentTime) || 0, forceSeek = false) => {
+    if (!footage) {
+      stage.replaceChildren();
+      state.currentFootageId = null;
+      const empty = document.createElement('span');
+      empty.textContent = 'No linked footage';
+      stage.appendChild(empty);
+      return;
+    }
+    // Do not rebuild the DOM while the narration clock advances within the
+    // same shot. Replacing a Pexels <video> on every `timeupdate` restarts its
+    // decoder and presents as a visible flicker/black flash.
+    if (state.currentFootageId === footage.id) {
+      syncVideoToNarration(footage, nowSeconds, forceSeek);
+      return;
+    }
+    stage.replaceChildren();
+    state.video?.pause();
+    state.currentFootageId = footage.id;
+    const { url, kind, thumbnailUrl } = actBoardSelectedFootageMedia(footage);
+    if (url && kind === 'video') {
+      const video = document.createElement('video');
+      video.src = url;
+      video.poster = thumbnailUrl;
+      video.muted = true;
+      video.playsInline = true;
+      video.loop = true;
+      video.preload = 'auto';
+      video.addEventListener('loadedmetadata', () => syncVideoToNarration(footage, Number(audio.currentTime) || 0, true));
+      video.addEventListener('loadeddata', () => syncVideoToNarration(footage, Number(audio.currentTime) || 0, true));
+      video.addEventListener('error', () => {
+        if (state.status) state.status.textContent = 'This footage could not be loaded from its source.';
+      });
+      stage.appendChild(video);
+      state.video = video;
+    } else if (url) {
+      const image = document.createElement('img');
+      image.src = footage.mediaThumbnailUrl || url;
+      image.alt = footage.fragment || 'Linked footage';
+      stage.appendChild(image);
+      state.video = null;
+    } else {
+      const empty = document.createElement('span');
+      empty.textContent = 'This linked shot has no media yet.';
+      stage.appendChild(empty);
+      state.video = null;
+    }
+    const caption = document.createElement('small');
+    caption.textContent = footage.fragment || 'Linked footage';
+    stage.appendChild(caption);
+    syncVideoToNarration(footage, nowSeconds, true);
+  };
+
+  const state = {
+    audio, video: null, stage, playButton, stopButton, status,
+    activeCards: [], currentFootageId: null, playing: false,
+    error: false, node, boardLayer, setStage,
+  };
+  // Show the first selected shot immediately, even before narration playback
+  // begins. Native audio controls and the custom Play button share this state.
+  setStage(linked[0]);
+  const updateAtTime = () => {
+    const now = Number(audio.currentTime) || 0;
+    const current = linked.find(footage => {
+      const start = Number(footage.startSeconds) || 0;
+      const duration = Number(footage.durationSeconds) || 1;
+      return now >= start && now < start + duration;
+    }) || linked.slice().reverse().find(footage =>
+      now >= (Number(footage.startSeconds) || 0)) || linked[0];
+    state.activeCards.forEach(card => card.classList.remove('act-board-playback-active'));
+    state.activeCards = [];
+    if (!current) return;
+    const card = boardLayer.querySelector(`[data-node-id="${current.id}"]`);
+    if (card) {
+      card.classList.add('act-board-playback-active');
+      state.activeCards.push(card);
+    }
+    setStage(current, now);
+  };
+  audio.addEventListener('timeupdate', updateAtTime);
+  audio.addEventListener('seeking', updateAtTime);
+  audio.addEventListener('seeked', () => {
+    const now = Number(audio.currentTime) || 0;
+    const current = linked.slice().reverse().find(footage =>
+      now >= (Number(footage.startSeconds) || 0)) || linked[0];
+    setStage(current, now, true);
+  });
+  audio.addEventListener('play', () => {
+    state.playing = true;
+    updateAtTime();
+  });
+  audio.addEventListener('pause', () => {
+    state.playing = false;
+    state.video?.pause();
+  });
+  audio.addEventListener('ended', () => stopActBoardPlayback());
+  playButton.addEventListener('click', event => {
+    event.stopPropagation();
+    if (actBoardPlaybackState && actBoardPlaybackState !== state) stopActBoardPlayback();
+    actBoardPlaybackState = state;
+    state.error = false;
+    state.playing = true;
+    state.status.textContent = '';
+    state.playButton.textContent = 'Playing…';
+    state.stopButton.disabled = false;
+    state.stage.classList.add('playing');
+    updateAtTime();
+    const playWhenReady = () => {
+      if (!state.playing || actBoardPlaybackState !== state) return null;
+      return audio.play();
+    };
+    Promise.resolve(audio._narrationSourceReady)
+      .then(playWhenReady)
+      .catch(err => {
+        // A restored container can reject with AbortError while the native
+        // element is being replaced by the decoded WAV fallback. Retry once
+        // after that fallback has finished instead of permanently disabling
+        // the linked-sequence player.
+        if (err && (err.name === 'AbortError' || err.name === 'NotSupportedError')
+            && typeof audio._startNarrationFallback === 'function') {
+          return audio._startNarrationFallback().then(playWhenReady);
+        }
+        throw err;
+      })
+      .catch(err => {
+      state.error = true;
+      state.status.textContent = `Could not play narration: ${err.message}`;
+      stopActBoardPlayback();
+      });
+  });
+  stopButton.addEventListener('click', event => {
+    event.stopPropagation();
+    if (actBoardPlaybackState === state) stopActBoardPlayback();
+    else {
+      state.playing = false;
+      audio.pause();
+      audio.currentTime = 0;
+    }
+  });
+  return panel;
+}
+
+function highlightActBoardFootageNode(boardLayer, footageNodeId) {
+  if (!boardLayer || !footageNodeId) return;
+  boardLayer.querySelectorAll('[data-footage-node-id]').forEach(segment => {
+    segment.classList.toggle('selected', segment.dataset.footageNodeId === footageNodeId);
+  });
+  boardLayer.querySelectorAll('.storyboard-act-board-node-footage').forEach(card => {
+    const selected = card.dataset.nodeId === footageNodeId;
+    card.classList.toggle('act-board-footage-selected', selected);
+    if (selected) {
+      card.style.zIndex = '35';
+    } else if (!card.classList.contains('dragging')) {
+      card.style.zIndex = '';
+    }
+  });
+}
+
+function buildActBoardFootageTrack(actKey, narrationNode, boardLayer) {
+  const linked = orderedActBoardLinkedFootage(actKey, narrationNode);
+  if (!linked.length) return null;
+  const track = document.createElement('div');
+  track.className = 'storyboard-act-board-footage-track';
+  const label = document.createElement('div');
+  label.className = 'storyboard-act-board-footage-track-label';
+  label.textContent = 'Footage track';
+  track.appendChild(label);
+  const strip = document.createElement('div');
+  strip.className = 'storyboard-act-board-footage-track-strip';
+  const total = Math.max(0.001, linked.reduce((sum, node) =>
+    sum + Math.max(0.5, Number(node.durationSeconds) || 1), 0));
+  linked.forEach((footage, index) => {
+    const segment = document.createElement('button');
+    segment.type = 'button';
+    segment.className = 'storyboard-act-board-footage-track-segment';
+    segment.dataset.footageNodeId = footage.id;
+    segment.style.width = `${Math.max(5, (Math.max(0.5, Number(footage.durationSeconds) || 1) / total) * 100)}%`;
+    segment.title = `${footage.fragment || 'Footage'} · ${Number(footage.durationSeconds || 0).toFixed(1)}s · double-click to link`;
+    segment.textContent = `${index + 1} · ${Number(footage.durationSeconds || 0).toFixed(1)}s`;
+    segment.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      highlightActBoardFootageNode(boardLayer, footage.id);
+    });
+    segment.addEventListener('dblclick', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      const card = boardLayer.querySelector(`[data-node-id="${footage.id}"]`);
+      card?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, view: window }));
+    });
+    strip.appendChild(segment);
+  });
+  track.appendChild(strip);
+  return track;
+}
+
+function actBoardNarrationContext(actKey, act) {
+  const scenes = actBoardSectionsForAct(actKey);
+  const source = scenes.map((section, index) => {
+    const narration = effectiveSectionNarration(section);
+    const notes = sectionCompositionNotes(section);
+    return `Scene ${index + 1}: ${section.title || 'Untitled scene'}\n${narration || notes}`;
+  }).join('\n\n');
+  return source.slice(0, 12000) || `${act.label || 'This act'}: ${act.description || ''}`;
+}
+
+function rerenderActBoard() {
+  stopActBoardPlayback();
+  stopActBoardNativeAudio();
+  const remaining = currentSections.filter(section => !section.removed);
+  renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+}
+
+function actBoardAssetSectionIndex(node) {
+  // The stock-download endpoint keeps its historical integer section_index
+  // field; hash the node id into a stable positive integer for per-node files.
+  let hash = 2166136261;
+  for (const char of String(node?.id || 'act-board-footage')) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return Math.abs(hash >>> 0) || 1;
+}
+
+async function findActBoardFootageNode(actKey, act, narrationNode, footageNode, shouldRerender = true) {
+  if (!act || !narrationNode || !footageNode) return;
+  const narrationText = String(narrationNode.transcript || narrationNode.text || '').trim();
+  footageNode.status = 'generating';
+  footageNode.error = '';
+  if (shouldRerender) {
+    saveDebugSession();
+    rerenderActBoard();
+  }
+  try {
+    const result = await fetchMediaQueries({
+      title: `Footage for ${footageNode.fragment}`,
+      act: act.label || '',
+      scene_notes: `${act.description || ''}\nFilmable narration fragment: ${footageNode.fragment}`.trim(),
+      footage_fragment: footageNode.fragment,
+      narration: narrationText,
+      narration_entities: [],
+      reference_footage_description: '',
+      reference_footage_entities: [],
+      abstract: findAbstractText(),
+      documentary_mode: selectedDocumentaryMode,
+    });
+    footageNode.query = (result.video_query || footageNode.fragment).trim();
+    try {
+      const minimumDuration = Math.max(1, Number(footageNode.durationSeconds) || 1);
+      const options = await fetchVideoOptions(footageNode.query, minimumDuration);
+      footageNode.results = (options.videos || []).slice(0, 3).map(video => ({
+        id: video.id || '',
+        video_url: video.video_url,
+        thumbnail_url: video.thumbnail_url || '',
+        source_url: video.source_url || '',
+        source: video.source || '',
+        duration_seconds: Number(video.duration_seconds || video.duration) || 0,
+      }));
+      const first = footageNode.results[0];
+      if (first) {
+        // Keep the upload prompt selected until a result is explicitly picked.
+        // A remote CDN URL is not stable enough to use as the default playback
+        // or export source; the selected result is downloaded and remuxed below.
+        footageNode.mediaUrl = '';
+        footageNode.mediaThumbnailUrl = '';
+        footageNode.mediaKind = '';
+        footageNode.mediaOrigin = '';
+        footageNode.selectedVisualKey = null;
+        footageNode.selectedResultIndex = 0;
+      }
+    } catch (err) {
+      footageNode.error = `Search unavailable: ${err.message}`;
+    }
+    footageNode.status = 'ready';
+  } catch (err) {
+    footageNode.query = footageNode.fragment;
+    footageNode.status = 'ready';
+    footageNode.error = err.message;
+  }
+  saveDebugSession();
+  if (shouldRerender) rerenderActBoard();
+  if (footageNode.status === 'ready') {
+    await generateActBoardNodeExamples(actKey, act, footageNode);
+  }
+}
+
+async function suggestActBoardFootage(actKey, act, narrationNode, sourceText) {
+  const narrationText = String(sourceText || narrationNode.text || '').trim();
+  const fragments = actBoardNarrationFragments(narrationText);
+  if (!fragments.length) {
+    const oldIds = new Set((narrationNode.footageNodeIds || []).map(String));
+    actBoardNodes[actKey] = actBoardNodesForAct(actKey)
+      .filter(node => !oldIds.has(String(node.id)));
+    narrationNode.footageNodeIds = [];
+    removeActBoardPlaybackNode(actKey, narrationNode.id);
+    narrationNode.footageFragments = [];
+    narrationNode.footageStatus = 'No filmable narration fragments found';
+    saveDebugSession();
+    rerenderActBoard();
+    return;
+  }
+
+  const nodes = actBoardNodesForAct(actKey);
+  const oldIds = new Set((narrationNode.footageNodeIds || []).map(String));
+  actBoardNodes[actKey] = nodes.filter(node => !oldIds.has(String(node.id)));
+  const footageNodes = fragments.map(fragment => ({
+    id: createActBoardNodeId('footage'),
+    type: 'footage',
+    actKey,
+    narrationNodeId: narrationNode.id,
+    fragment,
+    query: '',
+    results: [],
+    status: 'generating',
+    error: '',
+  }));
+  actBoardNodes[actKey].push(...footageNodes);
+  narrationNode.footageNodeIds = footageNodes.map(node => node.id);
+  narrationNode.footageFragments = fragments;
+  ensureActBoardPlaybackNode(actKey, narrationNode);
+  if (narrationNode.transcript && narrationText === narrationNode.transcript) {
+    alignActBoardNarrationFragments(narrationNode);
+  } else {
+    recomputeActBoardTiming(narrationNode);
+  }
+  narrationNode.footageStatus = `Finding footage for ${footageNodes.length} narration fragment${footageNodes.length === 1 ? '' : 's'}...`;
+  saveDebugSession();
+  rerenderActBoard();
+
+  await Promise.all(footageNodes.map(node =>
+    findActBoardFootageNode(actKey, act, narrationNode, node, false)));
+  narrationNode.footageStatus = ``; // Suggested ${footageNodes.length} footage node${footageNodes.length === 1 ? '' : 's'} from narration fragments
+  saveDebugSession();
+  rerenderActBoard();
+}
+
+async function suggestActBoardNarration(actKey, act, button, position) {
+  const nodes = actBoardNodesForAct(actKey);
+  const node = {
+    id: createActBoardNodeId('narration'),
+    type: 'narration',
+    actKey,
+    status: 'generating',
+    text: '',
+    footageFragments: [],
+    footageNodeIds: [],
+    footageStatus: '',
+    error: '',
+  };
+  if (position) {
+    node.boardX = Math.max(0, Number(position.x) || 0);
+    node.boardY = Math.max(0, Number(position.y) || 0);
+    node.boardPositionMode = 'manual';
+  }
+  nodes.push(node);
+  if (button) button.disabled = true;
+  saveDebugSession();
+  rerenderActBoard();
+  try {
+    const result = await fetchSuggestNarration({
+      sectionTitle: `${act.label || 'Act'} narration`,
+      sectionText: actBoardNarrationContext(actKey, act),
+      actTitle: act.label || '',
+      actDescription: act.description || '',
+      abstract: findAbstractText(),
+      documentaryMode: selectedDocumentaryMode,
+    });
+    node.text = (result.narration || '').trim();
+    if (!node.text) throw new Error('The narration suggestion was empty.');
+    node.status = 'ready';
+    saveDebugSession();
+    rerenderActBoard();
+  } catch (err) {
+    node.status = 'error';
+    node.error = err.message;
+    saveDebugSession();
+    rerenderActBoard();
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function resuggestActBoardNarration(actKey, act, narrationNode, button) {
+  if (!narrationNode || narrationNode.status === 'generating') return;
+  narrationNode.status = 'generating';
+  narrationNode.error = '';
+  if (button) button.disabled = true;
+  saveDebugSession();
+  rerenderActBoard();
+  try {
+    const currentNarration = [
+      narrationNode.text ? `Suggested draft:\n${narrationNode.text}` : '',
+      narrationNode.transcript ? `Recorded transcript:\n${narrationNode.transcript}` : '',
+      narrationNode.footageFragments?.length
+        ? `Edited filmable phrases:\n${narrationNode.footageFragments.join('\n')}` : '',
+    ].filter(Boolean).join('\n\n');
+    const result = await fetchSuggestNarration({
+      sectionTitle: `${act.label || 'Act'} narration`,
+      // Put the edited material first: the backend applies a hard section-text
+      // limit, so appending this after a long paper context could silently
+      // truncate the phrases the presenter just changed.
+      sectionText: `Current narration and edited phrases:\n${currentNarration}\n\nPaper section context:\n${actBoardNarrationContext(actKey, act)}`.trim(),
+      actTitle: act.label || '',
+      actDescription: act.description || '',
+      abstract: findAbstractText(),
+      documentaryMode: selectedDocumentaryMode,
+    });
+    narrationNode.text = (result.narration || '').trim();
+    if (!narrationNode.text) throw new Error('The narration suggestion was empty.');
+    narrationNode.status = 'ready';
+    narrationNode.footageFragments = actBoardNarrationFragments(
+      narrationNode.transcript || narrationNode.text || '');
+    narrationNode.footageStatus = 'Narration updated — press Suggest footage to refresh the linked footage.';
+    saveDebugSession();
+    rerenderActBoard();
+  } catch (err) {
+    narrationNode.status = 'error';
+    narrationNode.error = err.message;
+    saveDebugSession();
+    rerenderActBoard();
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
+  const card = document.createElement('article');
+  card.className = `storyboard-act-board-node storyboard-act-board-node-${node.type}`;
+  card.dataset.nodeId = node.id;
+  wireActBoardNodeDragging(card, node, boardLayer, nodeIndex);
+  card.style.width = `${actBoardAutoWidth(node, boardLayer)}px`;
+  wireActBoardNodeLinking(card, actKey, node, boardLayer);
+
+  const top = document.createElement('div');
+  top.className = 'storyboard-act-board-node-top';
+  const type = document.createElement('span');
+  type.className = 'storyboard-act-board-node-type';
+  type.textContent = node.type === 'narration' ? 'Narration'
+    : node.type === 'playback' ? 'Linked sequence playback' : 'Footage';
+  top.appendChild(type);
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'storyboard-act-board-node-remove';
+  remove.textContent = '×';
+  remove.title = 'Remove this board node';
+  remove.addEventListener('click', event => {
+    event.stopPropagation();
+    const removeIds = new Set([node.id, ...(node.footageNodeIds || [])]);
+    if (node.type === 'narration') {
+      actBoardNodesForAct(actKey)
+        .filter(item => item.type === 'playback' && item.narrationNodeId === node.id)
+        .forEach(item => removeIds.add(item.id));
+    }
+    actBoardNodes[actKey] = actBoardNodesForAct(actKey)
+      .filter(item => !removeIds.has(item.id));
+    saveDebugSession();
+    rerenderActBoard();
+  });
+  top.appendChild(remove);
+  card.appendChild(top);
+
+  if (node.type === 'playback') {
+    const narrationNode = actBoardNodesForAct(actKey)
+      .find(item => item.type === 'narration' && item.id === node.narrationNodeId);
+    const playback = narrationNode
+      ? buildActBoardNarrationPlayback(actKey, narrationNode, boardLayer) : null;
+    if (playback) {
+      card.appendChild(playback);
+    } else {
+      const empty = document.createElement('div');
+      empty.className = 'storyboard-act-board-node-status';
+      empty.textContent = 'Link footage to its narration to enable playback.';
+      card.appendChild(empty);
+    }
+  } else if (node.type === 'narration') {
+    const suggestedView = document.createElement('div');
+    suggestedView.className = 'storyboard-act-board-node-view storyboard-act-board-node-view-suggested';
+    if (node.transcript) suggestedView.classList.add('has-recorded-narration');
+    card.appendChild(suggestedView);
+    const fragments = Array.isArray(node.footageFragments) && node.footageFragments.length
+      ? node.footageFragments
+      : actBoardNarrationFragments(node.transcript || node.text || '');
+    const recordControls = document.createElement('div');
+    recordControls.className = 'storyboard-act-board-node-record-controls';
+    const recordActionRow = document.createElement('div');
+    recordActionRow.className = 'storyboard-act-board-node-action-row';
+    const recordButton = document.createElement('button');
+    recordButton.type = 'button';
+    recordButton.className = 'btn-secondary storyboard-act-board-node-action';
+    recordButton.textContent = node.recordingStatus === 'recording'
+      ? 'Stop recording' : (node.audioPreviewUrl ? 'Record again' : 'Record narration');
+    const resuggestButton = document.createElement('button');
+    resuggestButton.type = 'button';
+    resuggestButton.className = 'btn-secondary storyboard-act-board-node-action storyboard-act-board-resuggest-narration-btn';
+    resuggestButton.textContent = 'Suggest narration';
+    resuggestButton.disabled = node.status === 'generating' || !(node.transcript || node.text || fragments.length);
+    resuggestButton.addEventListener('click', event => {
+      event.stopPropagation();
+      resuggestActBoardNarration(actKey, act, node, resuggestButton);
+    });
+    const suggestFootageBtn = document.createElement('button');
+    suggestFootageBtn.type = 'button';
+    suggestFootageBtn.className = 'btn-secondary storyboard-act-board-node-action';
+    suggestFootageBtn.textContent = 'Suggest footage';
+    suggestFootageBtn.disabled = node.status !== 'ready' || !fragments.length;
+    suggestFootageBtn.addEventListener('click', event => {
+      event.stopPropagation();
+      suggestActBoardFootage(actKey, act, node, node.transcript || node.text);
+    });
+    recordActionRow.append(recordButton, resuggestButton, suggestFootageBtn);
+    const recordStatus = document.createElement('span');
+    recordStatus.className = 'storyboard-act-board-node-record-status';
+    recordStatus.textContent = node.recordingStatus === 'recording'
+      ? 'Recording…' : (node.recordingStatus === 'error' ? (node.recordingError || 'Recording failed') : '');
+    if (node.recordingStatus === 'error') recordStatus.classList.add('error');
+    recordControls.append(recordActionRow, recordStatus);
+    suggestedView.appendChild(recordControls);
+    const recordedNarrationGrid = node.transcript ? document.createElement('div') : null;
+    if (recordedNarrationGrid) {
+      recordedNarrationGrid.className = 'storyboard-act-board-recorded-grid';
+      suggestedView.appendChild(recordedNarrationGrid);
+    }
+    let recordingAudio = null;
+    let recordingTimings = null;
+    let recordingAlignment = null;
+    if (node.transcript) {
+      recordedNarrationGrid.appendChild(buildActBoardSuggestedNarrationText(
+        node.transcript, fragments,
+        (original, replacement) => editActBoardNarrationPhrase(node, original, replacement, 'transcript'),
+        'Recorded narration: '));
+    } else if (node.text) {
+      suggestedView.appendChild(buildActBoardSuggestedNarrationText(
+        node.text, fragments,
+        (original, replacement) => editActBoardNarrationPhrase(node, original, replacement, 'text')));
+    } else {
+      const text = document.createElement('p');
+      text.className = 'storyboard-act-board-node-text';
+      const label = document.createElement('strong');
+      label.textContent = 'Suggested narration: ';
+      text.appendChild(label);
+      text.appendChild(document.createTextNode(node.status === 'generating'
+        ? 'Drafting suggested narration…' : 'No narration draft yet.'));
+      suggestedView.appendChild(text);
+    }
+    if (node.error) {
+      const error = document.createElement('div');
+      error.className = 'storyboard-act-board-node-error';
+      error.textContent = node.error;
+      suggestedView.appendChild(error);
+    }
+    if (node.audioPreviewUrl) {
+      const audio = document.createElement('audio');
+      audio.className = 'storyboard-act-board-node-audio';
+      audio.controls = true;
+      audio.preload = 'metadata';
+      wireActBoardAudioExclusivity(audio);
+      attachNativeAudioSource(audio, node._nativePreviewUrl || node.audioPreviewUrl, node);
+      audio.addEventListener('click', event => event.stopPropagation());
+      audio.addEventListener('loadedmetadata', () => {
+        if (!(Number(audio.duration) > 0)
+          || Math.abs(Number(node.audioDurationSeconds || 0) - audio.duration) < 0.05) return;
+        node.audioDurationSeconds = audio.duration;
+        alignActBoardNarrationFragments(node);
+        saveDebugSession();
+      });
+      recordingAudio = audio;
+    }
+
+    if (node.transcript) {
+      if (node.alignmentSource) {
+        const alignment = document.createElement('div');
+        alignment.className = 'storyboard-act-board-node-alignment-source';
+        alignment.textContent = `Footage timing: ${node.alignmentSource}`;
+        recordingAlignment = alignment;
+      }
+      if (Array.isArray(node.fragmentTimings) && node.fragmentTimings.length) {
+        const timings = document.createElement('div');
+        timings.className = 'storyboard-act-board-node-fragment-timings';
+        node.fragmentTimings.forEach(timing => {
+          const row = document.createElement('div');
+          row.className = 'storyboard-act-board-node-fragment-timing';
+          const phrase = document.createElement('span');
+          phrase.textContent = timing.fragment;
+          const range = document.createElement('span');
+          range.textContent = `${Number(timing.startSeconds || 0).toFixed(1)}–${Number(timing.endSeconds || 0).toFixed(1)}s`;
+          row.appendChild(phrase);
+          row.appendChild(range);
+          timings.appendChild(row);
+        });
+        recordingTimings = timings;
+      }
+      if (node.text) {
+        const suggestedAside = document.createElement('details');
+        suggestedAside.className = 'storyboard-act-board-suggested-side-panel';
+        suggestedAside.open = false;
+        const asideSummary = document.createElement('summary');
+        asideSummary.textContent = 'Suggested narration';
+        asideSummary.addEventListener('click', event => event.stopPropagation());
+        suggestedAside.addEventListener('click', event => event.stopPropagation());
+        suggestedAside.addEventListener('toggle', () => {
+          const stack = card.closest('.storyboard-act-board-node-stack');
+          if (!stack) return;
+          refineActBoardRenderedGeometry(stack, actBoardNodesForAct(actKey));
+          refreshActBoardLinkPaths(stack);
+        });
+        suggestedAside.appendChild(asideSummary);
+        suggestedAside.appendChild(buildActBoardSuggestedNarrationText(
+          node.text, fragments,
+          (original, replacement) => editActBoardNarrationPhrase(node, original, replacement, 'text')));
+        recordedNarrationGrid.appendChild(suggestedAside);
+      }
+    }
+    if (recordingAudio) {
+      const audioTarget = recordedNarrationGrid || suggestedView;
+      audioTarget.appendChild(recordingAudio);
+    }
+    if (recordingAlignment) suggestedView.appendChild(recordingAlignment);
+
+    let recorder = null;
+    let recorderStream = null;
+    recordButton.addEventListener('click', async event => {
+      event.stopPropagation();
+      if (recorder && recorder.state === 'recording') {
+        recorder.stop();
+        return;
+      }
+      stopActBoardNativeAudio();
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined') {
+        recordStatus.textContent = 'This browser does not support microphone recording.';
+        recordStatus.classList.add('error');
+        return;
+      }
+      try {
+        try {
+          recorderStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              channelCount: { ideal: 1 },
+              echoCancellation: { ideal: true },
+              noiseSuppression: { ideal: true },
+              autoGainControl: { ideal: true },
+            },
+          });
+        } catch (constraintError) {
+          // Older browsers may reject one of the optional audio constraints;
+          // retain recording support with the browser's default mic profile.
+          recorderStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        }
+        const preferredMime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
+          .find(type => typeof MediaRecorder.isTypeSupported !== 'function'
+            || MediaRecorder.isTypeSupported(type)) || '';
+        recorder = preferredMime ? new MediaRecorder(recorderStream, { mimeType: preferredMime })
+          : new MediaRecorder(recorderStream);
+        const chunks = [];
+        recorder.addEventListener('dataavailable', recordingEvent => {
+          if (recordingEvent.data && recordingEvent.data.size) chunks.push(recordingEvent.data);
+        });
+        recorder.addEventListener('stop', () => {
+          recorderStream?.getTracks().forEach(track => track.stop());
+          recorderStream = null;
+          const mime = recorder.mimeType || preferredMime || 'audio/webm';
+          const extension = mime.includes('mp4') ? 'm4a' : 'webm';
+          const blob = new Blob(chunks, { type: mime });
+          node.recordingStatus = 'processing';
+          recordButton.disabled = true;
+          recordStatus.classList.remove('error');
+          recordStatus.textContent = 'Preparing recording…';
+          recordActBoardNarration(node, blob, `act-board-${actKey}-${Date.now()}.${extension}`, recordStatus)
+            .finally(() => { recordButton.disabled = false; });
+        }, { once: true });
+        node.recordingStatus = 'recording';
+        recordButton.textContent = 'Stop recording';
+        recordStatus.classList.remove('error');
+        recordStatus.textContent = 'Recording…';
+        recorder.start();
+      } catch (err) {
+        recorderStream?.getTracks().forEach(track => track.stop());
+        recorderStream = null;
+        recordStatus.textContent = `Could not start recording: ${err.message}`;
+        recordStatus.classList.add('error');
+      }
+    });
+    if (recordingTimings) suggestedView.appendChild(recordingTimings);
+    if (node.footageNodeIds && node.footageNodeIds.length) {
+      const umbrella = document.createElement('div');
+      umbrella.className = 'storyboard-act-board-node-umbrella';
+      umbrella.textContent = `Umbrella narration over ${node.footageNodeIds.length} linked shot${node.footageNodeIds.length === 1 ? '' : 's'} · ${Number(node.durationSeconds || 0).toFixed(1)}s`;
+      suggestedView.appendChild(umbrella);
+      const footageTrack = buildActBoardFootageTrack(actKey, node, boardLayer);
+      if (footageTrack) suggestedView.appendChild(footageTrack);
+    }
+  } else {
+    const sequence = document.createElement('div');
+    // sequence.className = 'storyboard-act-board-node-sequence';
+    // sequence.textContent = node.narrationNodeId
+    //   ? `Linked to narration · shot ${Number(node.sequenceIndex || 0) + 1}`
+    //   : 'Unlinked footage';
+    // card.appendChild(sequence);
+    const timing = document.createElement('div');
+    timing.className = 'storyboard-act-board-node-timing';
+    timing.textContent = `Length ${Number(node.durationSeconds || 1).toFixed(1)}s starts ${Number(node.startSeconds || 0).toFixed(1)}s`;
+    card.appendChild(timing);
+    const visualOptions = [
+      ...(Array.isArray(node.generatedOptions) ? node.generatedOptions.map((option, index) => ({
+        key: `generated-${index}`,
+        kind: option.kind || 'image',
+        url: option.url || '',
+        thumbnailUrl: option.thumbnail_url || option.url || '',
+        hasThumbnail: Boolean(option.thumbnail_url),
+        label: option.label || `Generated option ${index + 1}`,
+        generatedIndex: index,
+        shotSize: option.shot_size || '',
+        movement: option.movement || '',
+        shotPlan: option.shotPlan || {},
+      })) : []),
+      ...(Array.isArray(node.results) ? node.results.map((video, index) => ({
+        key: `result-${index}`,
+        kind: 'video',
+        url: video.localPreviewUrl || video.video_url || '',
+        thumbnailUrl: video.thumbnail_url || video.localPreviewUrl || video.video_url || '',
+        hasThumbnail: Boolean(video.thumbnail_url),
+        label: `${node.fragment || 'Suggested footage'} ${index + 1}`,
+        resultIndex: index,
+        sourceUrl: video.source_url || '',
+        durationSeconds: Number(video.duration_seconds) || 0,
+      })) : []),
+    ].filter(option => option.url || option.thumbnailUrl);
+    const selectedGenerated = node.generatedOptions
+      && node.generatedOptions[node.selectedGeneratedIndex || 0];
+    const selectedVisual = node.selectedVisualKey && node.selectedVisualKey !== 'upload'
+      ? visualOptions.find(option => option.key === node.selectedVisualKey) || null
+      : null;
+    const visualGallery = document.createElement('div');
+    visualGallery.className = 'storyboard-act-board-footage-gallery';
+    const featured = document.createElement('div');
+    featured.className = 'storyboard-act-board-footage-featured';
+    const appendFeaturedVisual = (container, visual, label) => {
+      if (visual && (visual.url || visual.thumbnailUrl)) {
+        if (visual.kind === 'video' && visual.url && !visual.hasThumbnail) {
+          const video = document.createElement('video');
+          video.src = visual.url;
+          video.muted = true;
+          video.playsInline = true;
+          video.preload = 'metadata';
+          container.appendChild(video);
+        } else {
+          const image = document.createElement('img');
+          image.src = visual.thumbnailUrl || visual.url;
+          image.alt = visual.label || label || node.fragment || 'Selected footage';
+          image.loading = 'lazy';
+          container.appendChild(image);
+        }
+      } else {
+        const empty = document.createElement('div');
+        empty.className = 'storyboard-act-board-footage-empty';
+        empty.textContent = 'No footage thumbnail yet.';
+        container.appendChild(empty);
+      }
+    };
+    const splitSourceNode = node.compositionMode === 'split-screen'
+      ? actBoardNodesForAct(actKey).find(item => item.type === 'footage'
+        && (node.splitScreenNodeIds || []).includes(item.id) && item.id !== node.id)
+      : null;
+    // An act can temporarily have no assigned scene while the board is being
+    // edited. Keep the picker usable in that state by falling back to the
+    // first active scene as the upload anchor.
+    const sourceSection = actBoardSourceSection(actKey)
+      || currentSections.find(section => isSceneActive(section))
+      || null;
+    const createUploadPicker = () => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.mp4,video/mp4,video/quicktime,video/webm,image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp';
+      input.className = 'storyboard-act-board-footage-upload-input';
+      input.disabled = !sourceSection;
+      input.addEventListener('click', event => event.stopPropagation());
+      const status = document.createElement('small');
+      status.className = 'storyboard-act-board-footage-upload-status';
+      input.addEventListener('change', () => {
+        const file = input.files?.[0];
+        if (!file || !sourceSection) return;
+        node.selectedVisualKey = 'upload';
+        saveDebugSession();
+        const looksLikeImage = (file.type && file.type.startsWith('image/'))
+          || /\.(png|jpe?g|webp)$/i.test(file.name || '');
+        if (looksLikeImage) runUploadSketch(sourceSection, file, status, input);
+        else runUploadFootage(sourceSection, file, status, input);
+      });
+      const openPicker = event => {
+        event?.preventDefault();
+        event?.stopPropagation();
+        if (input.disabled) return;
+        input.value = '';
+        input.click();
+      };
+      return { input, status, openPicker };
+    };
+    const appendUploadPrompt = container => {
+      const slot = document.createElement('div');
+      slot.className = 'paper-section-open-slot';
+      slot.setAttribute('role', 'button');
+      slot.tabIndex = sourceSection ? 0 : -1;
+      slot.setAttribute('aria-label', 'Upload a sketch or footage');
+      const icon = document.createElement('div');
+      icon.className = 'paper-section-open-slot-icon';
+      icon.textContent = '🎥';
+      slot.appendChild(icon);
+
+      const prompt = document.createElement('div');
+      prompt.className = 'open-slot-text';
+      prompt.textContent = 'Upload your footage or sketch';
+      slot.appendChild(prompt);
+
+      const picker = createUploadPicker();
+      slot.appendChild(picker.input);
+      slot.addEventListener('click', picker.openPicker);
+      slot.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') picker.openPicker(event);
+      });
+      slot.appendChild(picker.status);
+      container.appendChild(slot);
+    };
+    if (splitSourceNode) {
+      featured.classList.add('split-screen');
+      const splitVisuals = [
+        { node: node, visual: selectedVisual },
+        {
+          node: splitSourceNode,
+          visual: {
+            kind: splitSourceNode.mediaKind || 'image',
+            url: splitSourceNode.mediaUrl || splitSourceNode.results?.[0]?.video_url || '',
+            thumbnailUrl: splitSourceNode.mediaThumbnailUrl || splitSourceNode.results?.[0]?.thumbnail_url || splitSourceNode.mediaUrl || '',
+            hasThumbnail: Boolean(splitSourceNode.mediaThumbnailUrl || splitSourceNode.results?.[0]?.thumbnail_url),
+            label: footageNodeVisualSummary(splitSourceNode),
+          },
+        },
+      ];
+      splitVisuals.forEach(({ node: splitNode, visual }) => {
+        const pane = document.createElement('div');
+        pane.className = 'storyboard-act-board-footage-split-pane';
+        appendFeaturedVisual(pane, visual, footageNodeVisualSummary(splitNode));
+        const paneLabel = document.createElement('small');
+        paneLabel.textContent = footageNodeVisualSummary(splitNode);
+        pane.appendChild(paneLabel);
+        featured.appendChild(pane);
+      });
+    } else if (selectedVisual && (selectedVisual.url || selectedVisual.thumbnailUrl)) {
+      appendFeaturedVisual(featured, selectedVisual, node.fragment);
+      const replacePicker = createUploadPicker();
+      const replaceButton = document.createElement('button');
+      replaceButton.type = 'button';
+      replaceButton.className = 'btn-secondary storyboard-act-board-footage-replace-btn';
+      replaceButton.textContent = 'Replace';
+      replaceButton.title = 'Replace the selected image or footage with your own upload';
+      replaceButton.disabled = replacePicker.input.disabled;
+      replaceButton.addEventListener('click', replacePicker.openPicker);
+      featured.appendChild(replacePicker.input);
+      featured.appendChild(replacePicker.status);
+      featured.appendChild(replaceButton);
+    } else {
+      appendUploadPrompt(featured);
+    }
+    const selectedLabel = document.createElement('span');
+    selectedLabel.className = 'storyboard-act-board-footage-featured-label';
+    selectedLabel.textContent = 'Selected';
+    featured.appendChild(selectedLabel);
+    visualGallery.appendChild(featured);
+    const thumbRail = document.createElement('div');
+    thumbRail.className = 'storyboard-act-board-footage-thumb-rail';
+    if (node.status === 'generating') {
+      const stockPlaceholder = document.createElement('div');
+      stockPlaceholder.className = 'storyboard-act-board-footage-generating-placeholder stock-footage';
+      stockPlaceholder.setAttribute('aria-live', 'polite');
+      stockPlaceholder.textContent = 'Stock footage searching…';
+      thumbRail.appendChild(stockPlaceholder);
+    }
+    if (node.generationStatus === 'generating-images') {
+      const generatingPlaceholder = document.createElement('div');
+      generatingPlaceholder.className = 'storyboard-act-board-footage-generating-placeholder';
+      generatingPlaceholder.setAttribute('aria-live', 'polite');
+      generatingPlaceholder.textContent = 'Image generating…';
+      thumbRail.appendChild(generatingPlaceholder);
+    }
+    const alternateVisualOptions = visualOptions.filter(option =>
+      !selectedVisual || option.key !== selectedVisual.key);
+    alternateVisualOptions.forEach(option => {
+      const optionButton = document.createElement('button');
+      optionButton.type = 'button';
+      optionButton.className = 'storyboard-act-board-footage-thumb';
+      optionButton.disabled = node.downloadStatus === 'downloading';
+      optionButton.classList.toggle('selected', selectedVisual && option.key === selectedVisual.key);
+      optionButton.title = option.label;
+      if (option.kind === 'video' && option.url && !option.hasThumbnail) {
+        const video = document.createElement('video');
+        video.src = option.url;
+        video.muted = true;
+        video.playsInline = true;
+        video.preload = 'metadata';
+        optionButton.appendChild(video);
+      } else if (option.thumbnailUrl || option.url) {
+        const image = document.createElement('img');
+        image.src = option.thumbnailUrl || option.url;
+        image.alt = option.label;
+        image.loading = 'lazy';
+        optionButton.appendChild(image);
+      }
+      optionButton.addEventListener('click', async event => {
+        event.stopPropagation();
+        if (option.generatedIndex != null) {
+          const generated = node.generatedOptions[option.generatedIndex];
+          node.selectedVisualKey = option.key;
+          node.selectedGeneratedIndex = option.generatedIndex;
+          node.mediaUrl = generated.url || '';
+          node.mediaThumbnailUrl = generated.thumbnail_url || generated.url || '';
+          node.mediaKind = generated.kind || 'image';
+          node.mediaOrigin = 'generated';
+          node.shotPlan = generated.shotPlan || node.shotPlan || {};
+        } else if (option.resultIndex != null) {
+          const result = node.results[option.resultIndex];
+          if (!result?.video_url) return;
+          optionButton.disabled = true;
+          // Downloading a selected result is not a new stock search. Keep the
+          // ready state so the stock-search placeholder does not reappear.
+          node.downloadStatus = 'downloading';
+          node.error = '';
+          saveDebugSession();
+          rerenderActBoard();
+          try {
+            const downloaded = await fetchDownloadStockMedia(
+              actBoardAssetSectionIndex(node),
+              'video',
+              result.video_url,
+              premiereProjectId,
+              Math.max(1, Number(node.durationSeconds) || 1),
+              result.id || node.id,
+            );
+            premiereProjectId = downloaded.project_id || premiereProjectId;
+            result.localPreviewUrl = downloaded.preview_url || '';
+            result.thumbnail_url = downloaded.thumbnail_url || result.thumbnail_url || '';
+            node.selectedVisualKey = option.key;
+            node.selectedResultIndex = option.resultIndex;
+            node.mediaUrl = result.localPreviewUrl;
+            node.mediaThumbnailUrl = result.thumbnail_url || result.localPreviewUrl;
+            node.mediaKind = 'video';
+            node.mediaOrigin = 'suggested';
+          } catch (err) {
+            node.error = `Could not download footage: ${err.message}`;
+          }
+          node.downloadStatus = '';
+        }
+        saveDebugSession();
+        rerenderActBoard();
+      });
+      thumbRail.appendChild(optionButton);
+    });
+    if (alternateVisualOptions.length || node.status === 'generating'
+      || node.generationStatus === 'generating-images') {
+      visualGallery.appendChild(thumbRail);
+    }
+    card.appendChild(visualGallery);
+    const fragment = document.createElement('div');
+    fragment.className = 'storyboard-act-board-node-fragment-title';
+    fragment.textContent = node.fragment || 'Unnamed narration fragment';
+    if (node.fragment) {
+      fragment.title = 'Double-click to edit this narration phrase';
+      fragment.addEventListener('dblclick', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        makeActBoardInlinePhraseEditor(
+          fragment,
+          fragment.textContent,
+          replacement => editActBoardFootagePhrase(node, replacement)
+        );
+      });
+    }
+    card.appendChild(fragment);
+    const footageSearchPanel = document.createElement('details');
+    footageSearchPanel.className = 'storyboard-act-board-suggested-side-panel storyboard-act-board-footage-search-panel';
+    footageSearchPanel.open = node.status === 'generating'
+      || node.generationStatus === 'generating-images'
+      || node.generationStatus === 'generating-video';
+    footageSearchPanel.addEventListener('click', event => event.stopPropagation());
+    const footageSearchSummary = document.createElement('summary');
+    footageSearchSummary.textContent = node.status === 'generating' ? 'Finding footage…'
+      : node.generationStatus === 'generating-images' ? 'Generating image…'
+        : node.generationStatus === 'generating-video' ? 'Generating video…' : 'Find footage';
+    footageSearchPanel.appendChild(footageSearchSummary);
+    const footageSearchLabel = document.createElement('div');
+    footageSearchLabel.className = 'storyboard-act-board-footage-search-label';
+    footageSearchLabel.textContent = `Find footage for “${node.fragment || 'this narration segment'}”`;
+    footageSearchPanel.appendChild(footageSearchLabel);
+    const findFootageButton = document.createElement('button');
+    findFootageButton.type = 'button';
+    findFootageButton.className = 'btn-secondary storyboard-act-board-node-action storyboard-act-board-find-footage-btn';
+    findFootageButton.textContent = node.status === 'generating' ? 'Finding footage…' : 'Find footage';
+    findFootageButton.disabled = node.status === 'generating';
+    findFootageButton.addEventListener('click', event => {
+      event.stopPropagation();
+      const narrationNode = actBoardNodesForAct(actKey)
+        .find(item => item.type === 'narration' && item.id === node.narrationNodeId);
+      findActBoardFootageNode(actKey, act, narrationNode, node);
+    });
+    footageSearchPanel.appendChild(findFootageButton);
+    card.appendChild(footageSearchPanel);
+    if (node.compositionMode) {
+      const composition = document.createElement('div');
+      composition.className = 'storyboard-act-board-node-composition-mode';
+      composition.textContent = node.compositionMode === 'split-screen'
+        ? 'Split screen · full shot duration'
+        : 'Merged generative concept';
+      card.appendChild(composition);
+    }
+    const query = document.createElement('div');
+    query.className = 'storyboard-act-board-node-query';
+    query.textContent = node.query ? `Search: “${node.query}”` : node.status === 'generating' ? 'Generating a broad footage search…' : 'No search query yet.';
+    footageSearchPanel.appendChild(query);
+    const generationControls = document.createElement('div');
+    generationControls.className = 'storyboard-act-board-node-generation-controls';
+    const generateExamplesBtn = document.createElement('button');
+    generateExamplesBtn.type = 'button';
+    generateExamplesBtn.className = 'btn-secondary storyboard-act-board-node-action';
+    generateExamplesBtn.textContent = node.generationStatus === 'generating-images'
+      ? 'Generating image…' : 'Generate image example';
+    generateExamplesBtn.disabled = node.generationStatus === 'generating-images' || node.generationStatus === 'generating-video';
+    generateExamplesBtn.addEventListener('click', event => {
+      event.stopPropagation();
+      generateActBoardNodeExamples(actKey, act, node);
+    });
+    generationControls.appendChild(generateExamplesBtn);
+    const generateVideoBtn = document.createElement('button');
+    generateVideoBtn.type = 'button';
+    generateVideoBtn.className = 'btn-secondary storyboard-act-board-node-action';
+    generateVideoBtn.textContent = node.generationStatus === 'generating-video'
+      ? 'Generating video…' : 'Generate video from image';
+    generateVideoBtn.disabled = (!selectedGenerated && node.mediaKind !== 'image')
+      || node.generationStatus === 'generating-images' || node.generationStatus === 'generating-video';
+    generateVideoBtn.addEventListener('click', event => {
+      event.stopPropagation();
+      generateActBoardNodeVideo(actKey, act, node);
+    });
+    generationControls.appendChild(generateVideoBtn);
+    footageSearchPanel.appendChild(generationControls);
+    if (node.generationError) {
+      const generationError = document.createElement('div');
+      generationError.className = 'storyboard-act-board-node-error';
+      generationError.textContent = node.generationError;
+      footageSearchPanel.appendChild(generationError);
+    }
+    if (node.error) {
+      const error = document.createElement('div');
+      error.className = 'storyboard-act-board-node-error';
+      error.textContent = node.error;
+      card.appendChild(error);
+    }
+  }
+  if (node.type === 'footage') {
+    card.addEventListener('click', event => {
+      if (event.target.closest('button, input, audio, a, select, textarea, label, details, summary, .storyboard-act-board-node-resize-handle')) return;
+      highlightActBoardFootageNode(boardLayer, node.id);
+    });
+  }
+  wireActBoardNodeResizing(card, node, boardLayer);
+  return card;
+}
+
+function buildActBoardView(sections, assignmentsByIndex) {
+  const board = document.createElement('div');
+  board.className = 'storyboard-act-board-view';
+
+  const clearBoardBtn = document.createElement('button');
+  clearBoardBtn.type = 'button';
+  clearBoardBtn.className = 'btn-secondary storyboard-act-board-clear-board-btn';
+  clearBoardBtn.textContent = 'Clear board';
+  clearBoardBtn.title = 'Remove all act-board nodes and links while keeping scenes and source material';
+  const hasBoardNodes = Object.values(actBoardNodes || {})
+    .some(nodes => Array.isArray(nodes) && nodes.length);
+  clearBoardBtn.disabled = !hasBoardNodes;
+  clearBoardBtn.addEventListener('click', event => {
+    event.stopPropagation();
+    clearActBoard();
+  });
+
+  const canvas = document.createElement('div');
+  canvas.className = 'storyboard-act-board-canvas';
+  const boardLinkLayers = [];
+
+  const truncate = (value, max) => {
+    const text = String(value || '').trim();
+    return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+  };
+
+  currentArcSections.forEach((act, actIndex) => {
+    const column = document.createElement('section');
+    column.className = 'storyboard-act-board-column';
+    column.dataset.actKey = act.key;
+
+    const columnHeader = document.createElement('div');
+    columnHeader.className = 'storyboard-act-board-column-header';
+    const columnTitle = document.createElement('h4');
+    columnTitle.textContent = `Act ${actIndex + 1}: ${act.label}`;
+    const count = document.createElement('span');
+    const actSections = sections.filter(section => assignmentsByIndex[section.index] === act.key);
+    count.textContent = `${actSections.length} scene${actSections.length === 1 ? '' : 's'}`;
+    columnHeader.appendChild(columnTitle);
+    columnHeader.appendChild(count);
+    column.appendChild(columnHeader);
+
+    const nodeHeader = document.createElement('div');
+    nodeHeader.className = 'storyboard-act-board-node-header';
+    const nodeTitle = document.createElement('strong');
+    nodeTitle.textContent = 'Act nodes';
+    nodeHeader.appendChild(nodeTitle);
+    const nodeHeaderActions = document.createElement('div');
+    nodeHeaderActions.className = 'storyboard-act-board-node-header-actions';
+    if (actIndex === 0) nodeHeaderActions.appendChild(clearBoardBtn);
+    const clearLinksBtn = document.createElement('button');
+    clearLinksBtn.type = 'button';
+    clearLinksBtn.className = 'btn-secondary storyboard-act-board-clear-links-btn';
+    clearLinksBtn.textContent = 'Clear links';
+    clearLinksBtn.title = 'Disconnect this act’s narration and footage nodes without deleting them';
+    const hasLinks = actBoardNodesForAct(act.key).some(node => (node.type === 'narration'
+      && Array.isArray(node.footageNodeIds) && node.footageNodeIds.length)
+      || (node.type === 'footage' && node.narrationNodeId));
+    clearLinksBtn.disabled = !hasLinks;
+    clearLinksBtn.addEventListener('click', event => {
+      event.stopPropagation();
+      clearActBoardLinks(act.key, `Act ${actIndex + 1}`);
+    });
+    nodeHeaderActions.appendChild(clearLinksBtn);
+    nodeHeader.appendChild(nodeHeaderActions);
+    column.appendChild(nodeHeader);
+
+    const linkingGuide = document.createElement('div');
+    linkingGuide.className = 'storyboard-act-board-linking-guide';
+    linkingGuide.innerHTML = '<b>Board:</b> double-click blank space to add a narration or footage node. Double-click a source node, follow the temporary path, then double-click a destination node. Narration → footage attaches a shot; footage → footage changes shot order. Click a link path, then press Delete/Backspace to remove it. Drop one footage card onto another to split time, create a split screen, or merge the concepts generatively. Move cards by their blank area; drag the striped corner to resize. Press Esc to cancel.';
+    column.appendChild(linkingGuide);
+
+    const nodeStack = document.createElement('div');
+    nodeStack.className = 'storyboard-act-board-node-stack';
+    actBoardNodesForAct(act.key)
+      .filter(node => node.type === 'narration' && (node.footageNodeIds || []).length)
+      .forEach(node => ensureActBoardPlaybackNode(act.key, node));
+    const nodes = actBoardNodesForAct(act.key);
+    if (!nodes.length) {
+      const nodeEmpty = document.createElement('div');
+      nodeEmpty.className = 'storyboard-act-board-node-empty';
+      nodeEmpty.textContent = 'Add a narration node to start';
+      nodeStack.appendChild(nodeEmpty);
+    } else {
+      const ordered = orderedActBoardNodes(act.key, nodes);
+      layoutActBoardNodeGeometry(act.key, ordered);
+      ordered.forEach((node, nodeIndex) => {
+        nodeStack.appendChild(buildActBoardNode(act.key, act, node, nodeStack, nodeIndex));
+      });
+      refineActBoardRenderedGeometry(nodeStack, ordered);
+      const maxNodeY = ordered.reduce((max, node, nodeIndex) =>
+        Math.max(max, actBoardNodePosition(node, nodeIndex).y
+          + (Number(node.boardHeight) > 0 ? Number(node.boardHeight) : (node.type === 'footage' ? 154 : 180))), 0);
+      nodeStack.style.minHeight = `${Math.max(360, maxNodeY + 24)}px`;
+    }
+    column.appendChild(nodeStack);
+    wireActBoardNodeSpawn(nodeStack, act.key);
+
+    const stack = document.createElement('div');
+    stack.className = 'storyboard-act-board-stack';
+    stack.dataset.actKey = act.key;
+    const allowDrop = event => {
+      if (!event.dataTransfer.types.includes('application/x-storyboard-board-scene')) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      column.classList.add('drop-over');
+    };
+    const clearDrop = () => column.classList.remove('drop-over');
+    const dropOnAct = event => {
+      if (!event.dataTransfer.types.includes('application/x-storyboard-board-scene')) return;
+      event.preventDefault();
+      event.stopPropagation();
+      clearDrop();
+      const sourceIndex = parseInt(event.dataTransfer.getData('application/x-storyboard-board-scene'), 10);
+      if (!Number.isNaN(sourceIndex)) moveSceneOnActBoard(sourceIndex, null, act.key);
+    };
+    column.addEventListener('dragover', allowDrop);
+    column.addEventListener('dragleave', clearDrop);
+    column.addEventListener('drop', dropOnAct);
+
+    if (actSections.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'storyboard-act-board-empty';
+      empty.textContent = 'Drop a scene here';
+      stack.appendChild(empty);
+    }
+
+    actSections.forEach(section => {
+      const card = document.createElement('article');
+      card.className = 'storyboard-act-board-card';
+      card.draggable = true;
+      card.dataset.sectionIndex = String(section.index);
+      card.title = 'Drag to reorder or move this scene; click to open its full scene card';
+
+      const cardTop = document.createElement('div');
+      cardTop.className = 'storyboard-act-board-card-top';
+      const cardTitle = document.createElement('h5');
+      cardTitle.textContent = section.title || 'Untitled scene';
+      const cardIndex = document.createElement('span');
+      cardIndex.textContent = `#${section.index}`;
+      cardTop.appendChild(cardTitle);
+      cardTop.appendChild(cardIndex);
+      card.appendChild(cardTop);
+
+      const meta = document.createElement('div');
+      meta.className = 'storyboard-act-board-card-meta';
+      const role = getSceneRole(section);
+      meta.textContent = `${SCENE_ROLE_LABELS[role] || role} · ${getSceneDuration(section).toFixed(1)}s`;
+      card.appendChild(meta);
+
+      const notes = section.sceneNotes || section.text || '';
+      if (notes) {
+        const notesEl = document.createElement('p');
+        notesEl.className = 'storyboard-act-board-card-notes';
+        notesEl.textContent = truncate(notes, 180);
+        card.appendChild(notesEl);
+      }
+      const narration = effectiveSectionNarration(section);
+      if (narration) {
+        const narrationEl = document.createElement('p');
+        narrationEl.className = 'storyboard-act-board-card-narration';
+        narrationEl.textContent = truncate(narration, 150);
+        card.appendChild(narrationEl);
+      }
+
+      card.addEventListener('dragstart', event => {
+        event.dataTransfer.setData('application/x-storyboard-board-scene', String(section.index));
+        event.dataTransfer.effectAllowed = 'move';
+        card.classList.add('dragging');
+      });
+      card.addEventListener('dragend', () => card.classList.remove('dragging'));
+      card.addEventListener('dragover', event => {
+        if (!event.dataTransfer.types.includes('application/x-storyboard-board-scene')) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.dataTransfer.dropEffect = 'move';
+        card.classList.add('drop-target');
+      });
+      card.addEventListener('dragleave', () => card.classList.remove('drop-target'));
+      card.addEventListener('drop', event => {
+        if (!event.dataTransfer.types.includes('application/x-storyboard-board-scene')) return;
+        event.preventDefault();
+        event.stopPropagation();
+        card.classList.remove('drop-target');
+        const sourceIndex = parseInt(event.dataTransfer.getData('application/x-storyboard-board-scene'), 10);
+        if (!Number.isNaN(sourceIndex) && sourceIndex !== section.index) {
+          moveSceneOnActBoard(sourceIndex, section.index, act.key);
+        }
+      });
+      card.addEventListener('click', () => {
+        storyboardView = 'timeline';
+        const timelineLayout = document.querySelector('.narrative-arc-layout');
+        const boardContainer = document.querySelector('.storyboard-act-board-container');
+        if (timelineLayout) timelineLayout.style.display = '';
+        if (boardContainer) boardContainer.style.display = 'none';
+        document.querySelectorAll('.storyboard-view-toggle-btn').forEach(button => {
+          const isTimeline = button.dataset.view === 'timeline';
+          button.classList.toggle('active', isTimeline);
+          button.setAttribute('aria-pressed', String(isTimeline));
+        });
+        const target = document.querySelector(`.paper-section-block[data-section-index="${section.index}"]`);
+        scrollSceneBelowStickyChrome(target);
+      });
+      stack.appendChild(card);
+    });
+
+    column.appendChild(stack);
+    canvas.appendChild(column);
+    if (nodes.length) boardLinkLayers.push({ nodeStack, nodes });
+  });
+  board.appendChild(canvas);
+  const renderBoardLinks = () => boardLinkLayers.forEach(({ nodeStack, nodes }) => {
+    if (!nodeStack._actBoardLinkState) buildActBoardLinkLayer(nodeStack, nodes);
+  });
+  const refreshBoardGeometry = () => board.querySelectorAll('.storyboard-act-board-node-stack')
+    .forEach(nodeStack => {
+      const actKey = nodeStack.closest('.storyboard-act-board-column')?.dataset.actKey;
+      if (!actKey) return;
+      const nodes = orderedActBoardNodes(actKey, actBoardNodesForAct(actKey));
+      layoutActBoardNodeGeometry(actKey, nodes);
+      refineActBoardRenderedGeometry(nodeStack, nodes);
+      if (nodeStack._actBoardLinkState) refreshActBoardLinkPaths(nodeStack);
+    });
+  if (typeof ResizeObserver === 'function') {
+    const resizeObserver = new ResizeObserver(refreshBoardGeometry);
+    resizeObserver.observe(canvas);
+    board._actBoardResizeObserver = resizeObserver;
+  }
+  if (typeof window !== 'undefined') {
+    if (activeActBoardResizeHandler) {
+      window.removeEventListener('resize', activeActBoardResizeHandler);
+    }
+    activeActBoardResizeHandler = () => {
+      if (document.body.contains(board)) refreshBoardGeometry();
+    };
+    window.addEventListener('resize', activeActBoardResizeHandler);
+  }
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(renderBoardLinks);
+  else setTimeout(renderBoardLinks, 0);
+  return board;
 }
 
 // The current render's window scroll listener for highlighting the
@@ -2646,6 +9132,24 @@ function renderSourceMaterialList() {
     title.textContent = section.title;
     item.appendChild(title);
 
+    // Delete this source section (moves it to the "Deleted source and scenes"
+    // module, where it can be restored). Same removed-flag mechanism scenes use.
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'source-material-item-remove';
+    removeBtn.textContent = '✕';
+    removeBtn.title = 'Delete this source section (move to Deleted source and scenes)';
+    removeBtn.addEventListener('click', event => {
+      event.stopPropagation();
+      section.removed = true;
+      saveDebugSession();
+      // renderMovieEditor's tail re-renders both the source and deleted lists.
+      const remaining = currentSections.filter(s => !s.removed);
+      renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+      updateComposeStoryboardVisibility();
+    });
+    item.appendChild(removeBtn);
+
     if (section.text) {
       const excerpt = document.createElement('div');
       excerpt.className = 'source-material-item-excerpt';
@@ -2661,13 +9165,15 @@ function renderSourceMaterialList() {
 // - the scenes deleted from the arranged view (see buildSectionBlock's remove
 // button, which in the arranged view drops a scene from the timeline and its
 // arc row entirely rather than dimming it in place). Each lists a Restore
-// button that puts the scene back. The whole module hides itself when nothing
-// is deleted, so it doesn't sit empty in the sidebar. A no-op on index.html,
-// which has no such module.
+// button that puts the item back. Source deletion (`removed`) is deliberately
+// distinct from timeline deletion (`sceneRemoved`) so clearing the storyboard
+// never empties the source-material library. The whole module hides itself
+// when nothing is deleted, so it doesn't sit empty in the sidebar. A no-op on
+// index.html, which has no such module.
 function renderDeletedScenesList() {
   if (!deletedScenesListEl) return;
   deletedScenesListEl.innerHTML = '';
-  const deleted = currentSections.filter(section => section.removed);
+  const deleted = currentSections.filter(section => section.removed || section.sceneRemoved);
   if (deletedScenesModuleEl) deletedScenesModuleEl.style.display = deleted.length ? '' : 'none';
 
   deleted.forEach(section => {
@@ -2685,6 +9191,7 @@ function renderDeletedScenesList() {
     restoreBtn.textContent = 'Restore';
     restoreBtn.addEventListener('click', () => {
       section.removed = false;
+      section.sceneRemoved = false;
       saveDebugSession();
       // renderMovieEditor re-renders this list from its own tail call, so the
       // restored scene reappears in its arc row/timeline and leaves here.
@@ -2698,113 +9205,75 @@ function renderDeletedScenesList() {
   });
 }
 
-// A compact, collapsible "How it fits together" explainer at the top of the
-// arranged view - the workflow (Arc / Mode / Techniques) is hard to read for
-// non-experts, so this names each layer in plain language with one concrete
-// example, and spells out that A-roll/B-roll are planning lanes and Render MP4
-// IS the preview (there's no separate one). Collapse state persists in
-// localStorage so a returning user isn't re-shown it every render.
-const HOW_IT_FITS_STORAGE_KEY = 'howItFitsCollapsed';
-
-function buildHowItFitsPanel() {
-  const collapsed = (() => {
-    try { return localStorage.getItem(HOW_IT_FITS_STORAGE_KEY) === '1'; } catch (e) { return false; }
-  })();
-
-  const panel = document.createElement('div');
-  panel.className = 'module-card how-it-fits' + (collapsed ? ' collapsed' : '');
-
-  const header = document.createElement('button');
-  header.type = 'button';
-  header.className = 'how-it-fits-header';
-  header.setAttribute('aria-expanded', String(!collapsed));
-  const title = document.createElement('span');
-  title.className = 'how-it-fits-title';
-  title.textContent = 'How it fits together';
-  const toggle = document.createElement('span');
-  toggle.className = 'how-it-fits-toggle';
-  toggle.textContent = collapsed ? 'Show' : 'Hide';
-  header.appendChild(title);
-  header.appendChild(toggle);
-  panel.appendChild(header);
-
-  const body = document.createElement('div');
-  body.className = 'how-it-fits-body';
-  const rows = [
-    ['Arc = chapters', 'The overall structure of your film — e.g. Puzzle → Findings → Implications. Each paper section is placed into one chapter.'],
-    ['Mode = how a chapter is shot', 'Drag a mode onto a chapter to scaffold its scenes and visual style — e.g. Expository = one voice-of-god narration with B-roll cutaways.'],
-    ['Techniques = shot-level direction', 'Select techniques to bias every generated shot toward that style, or drag one onto a scene’s Scene Notes for shot-specific direction.'],
-    ['A-roll / B-roll are planning lanes', 'They organize your scenes; they are not a separate video step. Your documentary is the scenes in order — click Render MP4 to watch and hear the actual film. That is the preview.'],
-  ];
-  rows.forEach(([term, desc]) => {
-    const row = document.createElement('div');
-    row.className = 'how-it-fits-row';
-    const t = document.createElement('span');
-    t.className = 'how-it-fits-term';
-    t.textContent = term;
-    const d = document.createElement('span');
-    d.className = 'how-it-fits-desc';
-    d.textContent = desc;
-    row.appendChild(t);
-    row.appendChild(d);
-    body.appendChild(row);
-  });
-  panel.appendChild(body);
-
-  header.addEventListener('click', () => {
-    const nowCollapsed = !panel.classList.contains('collapsed');
-    panel.classList.toggle('collapsed', nowCollapsed);
-    toggle.textContent = nowCollapsed ? 'Show' : 'Hide';
-    header.setAttribute('aria-expanded', String(!nowCollapsed));
-    try { localStorage.setItem(HOW_IT_FITS_STORAGE_KEY, nowCollapsed ? '1' : '0'); } catch (e) { /* ignore */ }
-  });
-
-  return panel;
-}
-
 function renderMovieEditor(container, label, sections, assignmentsByIndex) {
+  // Rebuilding scene timing invalidates every scheduled Web Audio source.
+  // Stop the transport before replacing its layout so no old mix continues
+  // invisibly against the newly-rendered timeline.
+  stopSfxPreview(true);
+  activeSfxLayout = null;
+  activeSfxSectionIndex = null;
   container.innerHTML = '';
 
   // Prune any selected index no longer present (excluded/removed) - no more
   // default "select the first section" fallback, since there's no preview
   // left to seed; an empty selection is a perfectly normal starting state.
   selectedSectionIndices.forEach(index => {
-    if (!sections.some(s => s.index === index)) selectedSectionIndices.delete(index);
+    if (!sections.some(s => s.index === index && !s.sceneRemoved)) selectedSectionIndices.delete(index);
   });
 
   const selectionCount = selectedSectionIndices.size;
-  const arranged = sections.filter(s => assignmentsByIndex[s.index]);
+  const arranged = sections.filter(s => !s.sceneRemoved && assignmentsByIndex[s.index]);
   const target = selectionCount > 0 ? arranged.filter(s => selectedSectionIndices.has(s.index)) : arranged;
 
   // Heading row: the title on the left, action buttons pinned to the far
   // right (see .storyboard-heading-row / .storyboard-heading-actions) - "Clear
-  // all scenes" then "Render MP4", shown only when something's arranged. The
-  // h2 reuses #paper-sections h2's existing styling. Clear all empties the
-  // whole timeline in one go (every arranged scene moves to the "Deleted
-  // scenes" sidebar module, restorable there, so it's reversible - confirmed
-  // first). Render MP4 (built here now, not a fixed panel) kicks off the
-  // ffmpeg render; its status shows inline and the result is opened directly
-  // from premiere_exports/<id>/documentary.mp4 (no in-app preview).
+  // all scenes" then one combined export. Keep the action row mounted for an
+  // accepted storyboard even when its timeline is empty: clearing scenes must
+  // not make the surrounding controls disappear. Actions that require an
+  // active scene are disabled until one is restored or added.
   renderMovieBtn = null;
   renderMovieStatusEl = null;
+  renderMovieDownloadEl = null;
+  renderMovieOutputUrl = '';
   const headingRow = document.createElement('div');
   headingRow.className = 'storyboard-heading-row';
   const heading = document.createElement('h2');
   heading.textContent = 'Your documentary storyboard';
   headingRow.appendChild(heading);
-  if (arranged.length > 0) {
+  if (currentArcSections.length > 0) {
     const actions = document.createElement('div');
     actions.className = 'storyboard-heading-actions';
+
+    // "Preview All" - generate bold shot examples for every arranged scene
+    // that doesn't have a visual yet (see runPreviewAllShots). Sits to the LEFT
+    // of Clear all scenes.
+    const previewAllBtn = document.createElement('button');
+    previewAllBtn.type = 'button';
+    previewAllBtn.id = 'preview-all-btn';
+    previewAllBtn.className = 'btn-secondary preview-all-btn';
+    previewAllBtn.textContent = 'Generate All';
+    previewAllBtn.title = 'Generate shot examples for every arranged scene that has no visual yet';
+    previewAllBtn.addEventListener('click', runPreviewAllShots);
+    previewAllBtn.disabled = generatingAllShots || arranged.length === 0;
+    if (arranged.length === 0) previewAllBtn.title = 'Restore or add a scene before generating previews';
+    actions.appendChild(previewAllBtn);
+    const previewAllStatus = document.createElement('span');
+    previewAllStatus.className = 'status-line preview-all-status';
+    actions.appendChild(previewAllStatus);
 
     const clearAllBtn = document.createElement('button');
     clearAllBtn.type = 'button';
     clearAllBtn.className = 'btn-secondary clear-all-scenes-btn';
     clearAllBtn.textContent = 'Clear all scenes';
-    clearAllBtn.title = 'Move every scene to Deleted scenes (restorable there)';
+    clearAllBtn.title = 'Move every scene to Deleted scenes while keeping source material';
+    clearAllBtn.disabled = arranged.length === 0;
     clearAllBtn.addEventListener('click', () => {
-      if (!window.confirm("Clear all scenes from the timeline? They'll move to Deleted scenes, where you can restore them.")) return;
+      if (!window.confirm("Clear all scenes from the timeline? They'll move to Deleted scenes, where you can restore them. Your source material will stay available.")) return;
       currentSections.forEach(s => {
-        if (currentAssignments[s.index] && !s.removed) s.removed = true;
+        if (currentAssignments[s.index] && !s.removed) {
+          cancelSceneGeneration(s);
+          s.sceneRemoved = true;
+        }
       });
       selectedSectionIndices.clear();
       saveDebugSession();
@@ -2816,19 +9285,31 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
     renderMovieBtn = document.createElement('button');
     renderMovieBtn.type = 'button';
     renderMovieBtn.className = 'btn-primary render-movie-btn';
-    renderMovieBtn.textContent = 'Render MP4';
-    renderMovieBtn.title = 'Assemble the scenes into an MP4 with narration and sound effects';
-    renderMovieBtn.addEventListener('click', runRenderMovie);
+    renderMovieBtn.textContent = 'Export Premiere + MP4';
+    renderMovieBtn.title = 'Write a Premiere edit plan and render the documentary as an MP4, including linked act-board sequences';
+    renderMovieBtn.disabled = arranged.length === 0 && !hasActBoardLinkedSequence();
+    renderMovieBtn.addEventListener('click', runCombinedExport);
     actions.appendChild(renderMovieBtn);
 
     renderMovieStatusEl = document.createElement('span');
     renderMovieStatusEl.className = 'status-line render-movie-status';
     actions.appendChild(renderMovieStatusEl);
 
+    // The MP4 is produced asynchronously. Keep a real download control next
+    // to the status instead of making the user copy a server path out of the
+    // status text once the render is finished.
+    renderMovieDownloadEl = document.createElement('a');
+    renderMovieDownloadEl.className = 'render-movie-download';
+    renderMovieDownloadEl.textContent = 'Download MP4';
+    renderMovieDownloadEl.setAttribute('download', 'documentary.mp4');
+    renderMovieDownloadEl.target = '_blank';
+    renderMovieDownloadEl.rel = 'noopener';
+    renderMovieDownloadEl.hidden = true;
+    actions.appendChild(renderMovieDownloadEl);
+
     headingRow.appendChild(actions);
   }
   container.appendChild(headingRow);
-  container.appendChild(buildHowItFitsPanel());
 
   const actionBar = document.createElement('div');
   actionBar.className = 'action-bar';
@@ -2889,6 +9370,22 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
   actionBar.appendChild(topRow);
   container.appendChild(actionBar);
 
+  const storyboardViewToggle = document.createElement('div');
+  storyboardViewToggle.className = 'storyboard-view-toggle';
+  const timelineViewBtn = document.createElement('button');
+  timelineViewBtn.type = 'button';
+  timelineViewBtn.className = 'storyboard-view-toggle-btn';
+  timelineViewBtn.dataset.view = 'timeline';
+  timelineViewBtn.textContent = 'Timeline + scenes';
+  const boardViewBtn = document.createElement('button');
+  boardViewBtn.type = 'button';
+  boardViewBtn.className = 'storyboard-view-toggle-btn';
+  boardViewBtn.dataset.view = 'board';
+  boardViewBtn.textContent = 'Act board';
+  storyboardViewToggle.appendChild(timelineViewBtn);
+  storyboardViewToggle.appendChild(boardViewBtn);
+  container.appendChild(storyboardViewToggle);
+
   // Premiere-style A-roll/B-roll timeline (see buildNarrativeTimeline) -
   // sits above the rows, one act-sized group per arc part with individual
   // clips per section - replaces the old vertical .narrative-arc-outline
@@ -2899,10 +9396,22 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
   // the possibly-incomplete one from before the loop runs.
   const arcLayout = document.createElement('div');
   arcLayout.className = 'narrative-arc-layout';
+  const boardView = document.createElement('div');
+  boardView.className = 'storyboard-act-board-container';
 
   const timelineEl = document.createElement('div');
   timelineEl.className = 'premiere-timeline';
   arcLayout.appendChild(timelineEl);
+
+  const updateHeight = () => {
+    document.documentElement.style.setProperty(
+      '--header-height',
+      `${timelineEl.offsetHeight}px`
+    );
+  };
+
+  updateHeight();
+  new ResizeObserver(updateHeight).observe(timelineEl);
 
   // Below the timeline: a sidebar (Documentary techniques) beside the rows.
   const innerLayout = document.createElement('div');
@@ -2924,7 +9433,7 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
 
   const modesTitle = document.createElement('span');
   modesTitle.className = 'documentary-modes-bar-title';
-  modesTitle.textContent = 'Documentary modes';
+  modesTitle.textContent = 'Documentary layouts';
   modesBlock.appendChild(modesTitle);
 
   const modesRow = document.createElement('div');
@@ -2964,70 +9473,156 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
 
   const modesHint = document.createElement('span');
   modesHint.className = 'documentary-modes-bar-hint';
-  modesHint.textContent = 'Drag onto an act to scaffold its scenes, or click to set the overall mode.';
+  modesHint.textContent = 'Drag onto an act to scaffold its scenes.';
   modesBlock.appendChild(modesHint);
 
-  // Toggleable technique chips - see DOCUMENTARY_TECHNIQUES above for what
-  // these are/aren't. Back in its own sidebar (see innerLayout above),
-  // same .narrative-arc-techniques styling as when it lived in the old
-  // .narrative-arc-outline sidebar.
+  // Standard filmmaking techniques and moodboard-distilled suggestions are
+  // separate toggleable views so the provenance of a technique is always
+  // clear. The moodboard view is intentionally first/default.
   const techniquesBlock = document.createElement('div');
   techniquesBlock.className = 'narrative-arc-techniques';
 
-  const techniquesTitle = document.createElement('h3');
+  const techniquesTitle = document.createElement('span');
   techniquesTitle.textContent = 'Documentary techniques';
   techniquesBlock.appendChild(techniquesTitle);
 
-  // Same kind of instruction the Documentary modes strip carries - tells the
-  // presenter these chips are draggable (see the chip dragstart / the
-  // scene-notes drop handler in buildSectionBlock).
+  const techniqueViewToggle = document.createElement('div');
+  techniqueViewToggle.className = 'technique-view-toggle';
+  const moodboardViewBtn = document.createElement('button');
+  moodboardViewBtn.type = 'button';
+  moodboardViewBtn.className = 'technique-view-toggle-btn';
+  moodboardViewBtn.setAttribute('aria-label', 'Show moodboard-distilled techniques');
+  moodboardViewBtn.title = 'Moodboard distilled techniques';
+  const standardViewBtn = document.createElement('button');
+  standardViewBtn.type = 'button';
+  standardViewBtn.className = 'technique-view-toggle-btn';
+  standardViewBtn.setAttribute('aria-label', 'Show standard filmmaking toolkit');
+  standardViewBtn.title = 'Standard filmmaking toolkit';
+  techniqueViewToggle.appendChild(moodboardViewBtn);
+  techniqueViewToggle.appendChild(standardViewBtn);
+  techniquesBlock.appendChild(techniqueViewToggle);
+
+  const moodboardView = document.createElement('div');
+  moodboardView.className = 'technique-view technique-view-moodboard';
+  const standardView = document.createElement('div');
+  standardView.className = 'technique-view technique-view-standard';
+  // Moodboard distilled is appended first so it remains the first view for
+  // keyboard navigation and for narrow layouts.
+  techniquesBlock.appendChild(moodboardView);
+  techniquesBlock.appendChild(standardView);
+
+  const updateTechniqueView = () => {
+    const moodboardActive = techniquePanelView === 'moodboard';
+    moodboardView.style.display = moodboardActive ? '' : 'none';
+    standardView.style.display = moodboardActive ? 'none' : '';
+    moodboardViewBtn.classList.toggle('active', moodboardActive);
+    standardViewBtn.classList.toggle('active', !moodboardActive);
+    moodboardViewBtn.setAttribute('aria-selected', String(moodboardActive));
+    standardViewBtn.setAttribute('aria-selected', String(!moodboardActive));
+    moodboardViewBtn.setAttribute('aria-pressed', String(moodboardActive));
+    standardViewBtn.setAttribute('aria-pressed', String(!moodboardActive));
+  };
+  moodboardViewBtn.addEventListener('click', () => {
+    techniquePanelView = 'moodboard';
+    updateTechniqueView();
+  });
+  standardViewBtn.addEventListener('click', () => {
+    techniquePanelView = 'standard';
+    updateTechniqueView();
+  });
+
+  const standardHeading = document.createElement('div');
+  standardHeading.className = 'technique-source-label standard';
+  standardHeading.textContent = 'Standard filmmaking toolkit';
+  standardView.appendChild(standardHeading);
+  const standardHint = document.createElement('div');
+  standardHint.className = 'chip-row-caption';
+  standardHint.textContent = 'Common composition, movement, and lighting choices. Drag onto scenes to apply.';
+  standardView.appendChild(standardHint);
+
+  STANDARD_TECHNIQUE_GROUPS.forEach(group => {
+    const catLabel = document.createElement('div');
+    catLabel.className = 'technique-category-label';
+    catLabel.textContent = group.label;
+    standardView.appendChild(catLabel);
+    const row = document.createElement('div');
+    row.className = 'chip-row';
+    group.techniques.forEach(technique => row.appendChild(buildTechniqueChip(technique, {
+      selectable: false,
+      standard: true,
+      moodboardDerived: selectedTechniques.has(technique),
+    })));
+    standardView.appendChild(row);
+  });
+
+  const moodboardHeading = document.createElement('div');
+  moodboardHeading.className = 'technique-source-label moodboard';
+  moodboardHeading.textContent = 'Distilled from your moodboard';
+  moodboardView.appendChild(moodboardHeading);
   const techniquesHint = document.createElement('div');
   techniquesHint.className = 'chip-row-caption';
-  techniquesHint.textContent = 'Selected techniques bias every generated shot toward that style. You can also drag one onto a scene\'s Scene Notes for shot-specific direction.';
-  techniquesBlock.appendChild(techniquesHint);
+  techniquesHint.textContent = 'Moodboard-specific suggestions. Click to include/exclude, or drag onto scenes.';
+  moodboardView.appendChild(techniquesHint);
 
-  const techniquesRow = document.createElement('div');
-  techniquesRow.className = 'chip-row';
-  DOCUMENTARY_TECHNIQUES.forEach(technique => {
-    const chip = document.createElement('button');
-    chip.type = 'button';
-    chip.className = 'chip suggested chip-draggable';
-    chip.classList.toggle('selected', selectedTechniques.has(technique));
-    chip.textContent = technique;
-    chip.addEventListener('click', () => {
-      if (selectedTechniques.has(technique)) selectedTechniques.delete(technique);
-      else selectedTechniques.add(technique);
-      chip.classList.toggle('selected', selectedTechniques.has(technique));
-      saveDebugSession();
+  // Keep the complete distilled set in its own view, including techniques that
+  // also appear in the standard toolkit. The standard view separately marks
+  // those overlaps so their provenance remains visible in either view.
+  const selectedByCategory = new Map();
+  Array.from(selectedTechniques)
+    .forEach(technique => {
+    const cat = TECHNIQUE_CATEGORY[technique] || 'other';
+    if (!selectedByCategory.has(cat)) selectedByCategory.set(cat, []);
+    selectedByCategory.get(cat).push(technique);
     });
-    // Also draggable onto a section's text field (see buildSectionBlock's
-    // drop handler) - a quick way to drop a reminder of this technique
-    // right into the shot's own working text.
-    chip.draggable = true;
-    chip.addEventListener('dragstart', event => {
-      event.dataTransfer.setData('application/x-technique', technique);
-      event.dataTransfer.effectAllowed = 'copy';
-    });
-    techniquesRow.appendChild(chip);
+  [...TECHNIQUE_CATEGORY_ORDER, { key: 'other', label: 'Other' }].forEach(({ key, label }) => {
+    const items = selectedByCategory.get(key);
+    if (!items || !items.length) return;
+    const catLabel = document.createElement('div');
+    catLabel.className = 'technique-category-label';
+    catLabel.textContent = label;
+    moodboardView.appendChild(catLabel);
+    const row = document.createElement('div');
+    row.className = 'chip-row';
+    items.forEach(technique => row.appendChild(buildTechniqueChip(technique)));
+    moodboardView.appendChild(row);
   });
-  techniquesBlock.appendChild(techniquesRow);
+  if (!selectedTechniques.size) {
+    const emptyMoodboard = document.createElement('div');
+    emptyMoodboard.className = 'technique-source-empty';
+    emptyMoodboard.textContent = 'Add a moodboard reference to see distilled techniques here.';
+    moodboardView.appendChild(emptyMoodboard);
+  }
+  // Keep the distilled moodboard rationale with the techniques it explains,
+  // rather than placing it in the timeline's layout strip.
+  if (distilledStyleRationale) {
+    const rationaleEl = document.createElement('div');
+    rationaleEl.className = 'distilled-style-rationale llm-generated';
+    const rationaleLabel = document.createElement('strong');
+    rationaleLabel.textContent = 'Moodboard styles:';
+    rationaleEl.appendChild(rationaleLabel);
+    rationaleEl.appendChild(document.createTextNode(` ${distilledStyleRationale}`));
+    moodboardView.appendChild(rationaleEl);
+  }
+  updateTechniqueView();
   sidePanel.appendChild(techniquesBlock);
+
+  // "Preview All" (generates shot examples for every empty scene) lives in the
+  // storyboard heading actions now - see the heading row above.
 
   const arcRows = document.createElement('div');
   arcRows.className = 'narrative-arc-rows';
   innerLayout.appendChild(arcRows);
 
-  currentArcSections.forEach(act => {
-    let rowSections = sections.filter(s => assignmentsByIndex[s.index] === act.key);
+  currentArcSections.forEach((act, actIdx) => {
+    let rowSections = sections.filter(s => !s.sceneRemoved && assignmentsByIndex[s.index] === act.key);
+    const actHasDeletedScenes = currentSections.some(s =>
+      assignmentsByIndex[s.index] === act.key && (s.removed || s.sceneRemoved));
 
-    // Every act always has at least one real, fully-functional section to
-    // work with - Record Webcam/Record Narration/Find Footage/etc. only
-    // ever render for a real section object (see buildSectionBlock), not a
-    // decorative stand-in - so an empty row gets one auto-created here
-    // (same shape "+ Add Section" below creates manually) rather than
-    // showing a placeholder with no controls at all. Runs at most once per
-    // row per render, since rowSections is never empty again afterward.
-    if (rowSections.length === 0) {
+    // A never-populated act gets one functional starter scene. If the act is
+    // empty because its scenes were deliberately deleted, leave it empty;
+    // recreating a blank here would make Clear all scenes undo itself and
+    // would trigger narration autofill again after a refresh.
+    if (rowSections.length === 0 && !actHasDeletedScenes) {
       const blank = insertSection(-1, 'New Scene', '', act.key, true);
       sections.push(blank);
       rowSections = [blank];
@@ -3045,7 +9640,7 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
     heading.className = 'narrative-act-heading';
     const actTitle = document.createElement('div');
     actTitle.className = 'narrative-act-title';
-    actTitle.textContent = act.label;
+    actTitle.textContent = `Act ${actIdx + 1}: ${act.label}`;
     heading.appendChild(actTitle);
     // The arc part's description moved into each scene's narration line (the
     // narration instructions - see buildSectionBlock), so it's no longer
@@ -3054,15 +9649,26 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
 
     const row = document.createElement('div');
     row.className = 'narrative-act-row';
-    row.addEventListener('dragover', event => {
-      event.preventDefault();
-      row.classList.add('drag-over');
-    });
-    row.addEventListener('dragleave', () => {
-      row.classList.remove('drag-over');
-    });
+    // preventDefault so a drop is allowed, but deliberately NO drag-over
+    // outline on the row itself (the presenter found the row-level highlight
+    // noisy - the scene cards / notes still highlight on their own).
+    row.addEventListener('dragover', event => { event.preventDefault(); });
     row.addEventListener('drop', event => {
-      row.classList.remove('drag-over');
+      // A paper section dragged from the Source material module onto an act
+      // feeds its text into that act's FIRST scene's Scene Notes, rather than
+      // becoming its own scene (see appendSectionTextToFirstScene). Everything
+      // else (a scene chip being reordered/reassigned) goes to handleChipDrop.
+      const sourceIdxRaw = event.dataTransfer.getData('application/x-source-material-index');
+      if (sourceIdxRaw !== '') {
+        event.preventDefault();
+        const src = currentSections.find(s => s.index === parseInt(sourceIdxRaw, 10));
+        if (src && appendSectionTextToFirstScene(act.key, src)) {
+          saveDebugSession();
+          const remaining = currentSections.filter(s => !s.removed);
+          renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+        }
+        return;
+      }
       handleChipDrop(event, act.key);
     });
     rowGroup.appendChild(row);
@@ -3100,14 +9706,60 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
 
   // Now that every act's row has its final section list (including any
   // just-auto-populated blanks above), build the timeline against it.
-  const clipsBySectionIndex = buildNarrativeTimeline(timelineEl, sections, assignmentsByIndex);
+  const timelineBuild = buildNarrativeTimeline(
+    timelineEl,
+    sections.filter(section => !section.sceneRemoved),
+    assignmentsByIndex
+  );
+  const clipsBySectionIndex = timelineBuild.clipsBySectionIndex;
+  const timelineLayout = timelineBuild.layout;
+
+  boardView.appendChild(buildActBoardView(
+    sections.filter(section => !section.sceneRemoved),
+    assignmentsByIndex
+  ));
+
+  const updateStoryboardView = () => {
+    const boardActive = storyboardView === 'board';
+    arcLayout.style.display = boardActive ? 'none' : '';
+    boardView.style.display = boardActive ? '' : 'none';
+    timelineViewBtn.classList.toggle('active', !boardActive);
+    boardViewBtn.classList.toggle('active', boardActive);
+    timelineViewBtn.setAttribute('aria-pressed', String(!boardActive));
+    boardViewBtn.setAttribute('aria-pressed', String(boardActive));
+    if (boardActive) {
+      const refreshVisibleBoardLinks = () => boardView.querySelectorAll('.storyboard-act-board-node-stack')
+        .forEach(stack => {
+          const actKey = stack.closest('.storyboard-act-board-column')?.dataset.actKey;
+          if (actKey) {
+            const nodes = orderedActBoardNodes(actKey, actBoardNodesForAct(actKey));
+            layoutActBoardNodeGeometry(actKey, nodes);
+            refineActBoardRenderedGeometry(stack, nodes);
+          }
+          if (stack._actBoardLinkState) refreshActBoardLinkPaths(stack);
+        });
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(refreshVisibleBoardLinks);
+      else setTimeout(refreshVisibleBoardLinks, 0);
+    }
+  };
+  timelineViewBtn.addEventListener('click', () => {
+    storyboardView = 'timeline';
+    updateStoryboardView();
+  });
+  boardViewBtn.addEventListener('click', () => {
+    storyboardView = 'board';
+    updateStoryboardView();
+  });
+  updateStoryboardView();
 
   // The Documentary modes strip lives INSIDE the timeline, above its ruler/
   // tracks - inserted here (not earlier) because buildNarrativeTimeline clears
   // timelineEl's contents when it (re)builds the ruler and tracks.
-  timelineEl.insertBefore(modesBlock, timelineEl.firstChild);
+  const timelineHeader = timelineEl.querySelector('.premiere-timeline-header');
+  timelineEl.insertBefore(modesBlock, timelineHeader ? timelineHeader.nextSibling : timelineEl.firstChild);
 
   container.appendChild(arcLayout);
+  container.appendChild(boardView);
 
   const selectedCard = container.querySelector('.narrative-act-row-cards .paper-section-block.selected');
   if (selectedCard) selectedCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -3142,6 +9794,18 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
         const isActive = entry === activeEntry;
         entry.clips.forEach(clip => clip.classList.toggle('active', isActive));
       });
+      const activeIndex = parseInt(activeEntry.block.dataset.sectionIndex, 10);
+      if (activeSfxSectionIndex !== activeIndex) {
+        activeSfxSectionIndex = activeIndex;
+        if (!sfxPreviewEnabled) {
+          timelinePreviewPausedTime = null;
+          timelinePreviewPausedSectionIndex = null;
+        }
+        const start = timelineLayout.sceneStartSeconds.get(activeIndex);
+        const autoFollowing = performance.now() < timelinePreviewProgrammaticScrollUntil;
+        if (sfxPreviewEnabled && start != null && !autoFollowing) startSfxPreviewAt(start);
+        else if (start != null) updateSfxPlayhead(start);
+      }
     };
     let ticking = false;
     activeOutlineScrollHandler = () => {
@@ -3199,24 +9863,29 @@ function ensureFootageQueries(section) {
     section.audioQuery = section.audioQuery || (section.title || '').trim() || 'ambience';
   };
 
-  const content = [section.text, section.narration].filter(part => part && part.trim()).join('\n\n').trim();
+  const content = [section.text, effectiveSectionNarration(section), section.footageSubject, findAbstractText()]
+    .filter(part => part && part.trim()).join('\n\n').trim();
   if (!content) {
     applyFallback();
     return Promise.resolve();
   }
 
-  const documentaryGoal = (documentaryIntentInput ? documentaryIntentInput.value : recordedTranscript).trim();
-  return fetchStoryboard(
-    [{ index: section.index, title: section.title, text: content, act: currentAssignments[section.index] }],
-    documentaryGoal, currentArcSections.map(s => s.label), selectedDocumentaryMode, Array.from(selectedTechniques)
-  )
-    .then(({ storyboard }) => {
-      const result = (storyboard || []).find(s => s.index === section.index);
-      if (result) {
-        section.videoQuery = section.videoQuery || result.video_query;
-        section.audioQuery = section.audioQuery || result.audio_query;
-        if (!(section.entities && section.entities.length)) section.entities = result.entities || [];
-      }
+  const act = currentArcSections.find(a => a.key === currentAssignments[section.index]);
+  return fetchMediaQueries({
+    title: section.title || 'Documentary scene',
+    act: act ? act.label : '',
+    scene_notes: sectionCompositionNotes(section),
+    techniques: sceneTechniques(section),
+    narration: effectiveSectionNarration(section),
+    narration_entities: section.entities || [],
+    reference_footage_description: section.footageSubject || '',
+    reference_footage_entities: section.footageEntities || [],
+    abstract: findAbstractText(),
+    documentary_mode: selectedDocumentaryMode,
+  })
+    .then(result => {
+      section.videoQuery = section.videoQuery || result.video_query;
+      section.audioQuery = section.audioQuery || result.audio_query;
       applyFallback();
       saveDebugSession();
     })
@@ -3229,7 +9898,7 @@ function ensureFootageQueries(section) {
 // left in place.
 const FIND_FOOTAGE_INCLUDE_AUDIO = false;
 
-function runFindFootage(section, resultsEl, statusEl, btn) {
+function runFindFootage(section, resultsEl, statusEl, btn, queryInput, pairedQueryInput) {
   btn.disabled = true;
   statusEl.textContent = section.videoQuery
     ? 'Searching for video options...'
@@ -3240,7 +9909,9 @@ function runFindFootage(section, resultsEl, statusEl, btn) {
   // how many of these run at once across a whole sweep. Derives search phrases
   // first if the scene doesn't have them yet (see ensureFootageQueries).
   return ensureFootageQueries(section).then(() => {
-    const fetches = [fetchVideoOptions(section.videoQuery)];
+    if (queryInput) queryInput.value = section.videoQuery || '';
+    if (pairedQueryInput) pairedQueryInput.value = section.audioQuery || '';
+    const fetches = [fetchVideoOptions(section.videoQuery, getSceneDuration(section))];
     if (FIND_FOOTAGE_INCLUDE_AUDIO) fetches.push(fetchAudioOptions(section.audioQuery));
     return Promise.allSettled(fetches);
   }).then((results) => {
@@ -3276,7 +9947,7 @@ function runFindFootage(section, resultsEl, statusEl, btn) {
 }
 
 // A picked documentary mode plus a drafted storyboard is enough context to
-// go looking for B-roll/SFX automatically, rather than making the
+// go looking for B-roll automatically, rather than making the
 // presenter click "Find footage" on every section by hand - fires from
 // both the mode-chip handler and runGenerateStoryboardForSections' success
 // callback (see their own call sites), since either one might complete
@@ -3293,11 +9964,10 @@ function triggerFindFootageSweep() {
   if (!selectedDocumentaryMode) return;
 
   const queue = currentSections.filter(section =>
-    !section.removed &&
+    isSceneActive(section) &&
     currentAssignments[section.index] &&
     section.videoQuery &&
-    !section.selectedVideo &&
-    !section.selectedAudio
+    !section.selectedVideo
   );
   if (queue.length === 0) return;
 
@@ -3320,24 +9990,79 @@ function triggerFindFootageSweep() {
   for (let i = 0; i < FIND_FOOTAGE_SWEEP_CONCURRENCY; i++) runNext();
 }
 
+// Uploading a visual reference is itself a request for shot possibilities.
+// Re-find the freshly rendered controls because the upload success path
+// rebuilds the scene card and the old button/status elements are detached.
+function autoGenerateExamplesAfterUpload(section) {
+  if (!isSceneActive(section) || !currentAssignments[section.index]) return;
+  const block = resultsEl && resultsEl.querySelector(
+    `.paper-section-block[data-section-index="${section.index}"]`);
+  const btn = block && block.querySelector('.generate-shot-examples-btn');
+  const statusEl = block && block.querySelector('.find-footage-status');
+  if (!btn || !statusEl || btn.disabled) return;
+  runGenerateShotExamples(section, btn, statusEl);
+}
+
+function resetGeneratedVisualsForReferenceUpload(section) {
+  // A new reference should not be masked by a previously selected example,
+  // shot frame, sketch, or animated preview. The next examples batch becomes
+  // the scene's visual-box content.
+  section.exampleShots = null;
+  section.selectedExample = null;
+  section.shots = null;
+  section.startFramePreviewUrl = null;
+  section.endFramePreviewUrl = null;
+  section.animatedSketchPreviewUrl = null;
+  section.animatedSketchThumbnailUrl = null;
+  section.sketchPreviewUrl = null;
+  section.visualSource = null;
+}
+
+// Modern examples/video selections replace the old generated start/end-frame
+// shot. Keep the legacy fields for genuinely legacy `runGenerateShot` output,
+// but clear them whenever the user enters the examples workflow so exports
+// and the visual-box fallback cannot accidentally resurrect shotFrames().
+function clearLegacyShotFrames(section) {
+  section.shots = null;
+  section.startFramePreviewUrl = null;
+  section.endFramePreviewUrl = null;
+  section.shotFramesGeneratedAt = null;
+}
+
 // --- Premiere Pro (UXP) file-based bridge: uploading a researcher's own
 // footage for a shot, and exporting the whole arc's edit plan - see
 // backend/premiere_bridge.py for why this is file-based rather than a
 // network call in both directions (macOS restricts plain http:// for a UXP
 // plugin's own outbound requests; local file access has no such restriction).
 function runUploadFootage(section, file, labelEl, inputEl) {
+  cancelSceneGeneration(section);
   inputEl.disabled = true;
   labelEl.textContent = `Uploading "${file.name}"...`;
   labelEl.classList.remove('error');
 
   fetchUploadFootage(file, section.index, premiereProjectId)
-    .then(({ project_id, footage_path, preview_url }) => {
+    .then(({ project_id, footage_path, preview_url, thumbnail_url, footage_subject }) => {
       premiereProjectId = project_id;
       section.uploadedFootagePath = footage_path;
+      // A one-sentence read of what the presenter filmed, so future generated
+      // shot examples/videos for this scene match that subject (see
+      // runGenerateShotExamples / runGenerateShot / runGenerateShotVideo).
+      // Always replace the cached anchor as well. Keeping the old description
+      // when analysis of replacement footage fails would make future previews
+      // depict the previous upload—the exact opposite of footage priority.
+      section.footageSubject = (footage_subject || '').trim();
       // Servable by the static file server (see backend/server.py's
       // /premiere/upload_footage) - lets buildVisualBox actually play back
       // whatever was just uploaded/recorded, not just show its filename.
       section.uploadedFootagePreviewUrl = preview_url || null;
+      section.uploadedFootageThumbnailUrl = thumbnail_url || null;
+      section.footageOrigin = 'upload';
+      // The shared upload box represents one active user reference. Replacing
+      // a sketch with footage removes the previous sketch reference.
+      section.uploadedSketchPath = null;
+      section.uploadedSketchPreviewUrl = null;
+      section.uploadedSketchUploadedAt = null;
+      resetGeneratedVisualsForReferenceUpload(section);
       // Recording/uploading footage is a deliberate choice - it should
       // always be what the visual box shows next, regardless of whatever
       // was picked/generated before it (see buildVisualBox's visualSource
@@ -3352,6 +10077,41 @@ function runUploadFootage(section, file, labelEl, inputEl) {
       } else {
         renderSectionFeed(resultsEl, currentLabel, currentSections);
       }
+      autoGenerateExamplesAfterUpload(section);
+    })
+    .catch(err => {
+      labelEl.textContent = err.message;
+      labelEl.classList.add('error');
+      inputEl.disabled = false;
+    });
+}
+
+function runUploadSketch(section, file, labelEl, inputEl) {
+  cancelSceneGeneration(section);
+  inputEl.disabled = true;
+  labelEl.textContent = `Uploading sketch "${file.name}"...`;
+  labelEl.classList.remove('error');
+  fetchUploadSketch(file, section.index, premiereProjectId)
+    .then(({ project_id, sketch_path, preview_url, sketch_subject, footage_subject }) => {
+      premiereProjectId = project_id;
+      section.uploadedSketchPath = sketch_path;
+      section.uploadedSketchPreviewUrl = preview_url;
+      section.uploadedSketchUploadedAt = Date.now();
+      // The shared upload box represents one active user reference. Replacing
+      // footage with a sketch removes the previous footage reference.
+      section.uploadedFootagePath = null;
+      section.uploadedFootagePreviewUrl = null;
+      section.uploadedFootageThumbnailUrl = null;
+      section.footageOrigin = 'upload';
+      // The sketch upload route now runs the same best-effort vision subject
+      // description as footage uploads. Keep it editable in the open slot.
+      section.footageSubject = (sketch_subject || footage_subject || '').trim();
+      resetGeneratedVisualsForReferenceUpload(section);
+      section.visualSource = 'uploadedSketch';
+      saveDebugSession();
+      const remaining = currentSections.filter(s => !s.removed);
+      renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+      autoGenerateExamplesAfterUpload(section);
     })
     .catch(err => {
       labelEl.textContent = err.message;
@@ -3423,9 +10183,9 @@ function addMediaBankItem(kind, label, file) {
   mediaBankStatusEl.textContent = `Uploading "${label}" ...`;
   mediaBankStatusEl.classList.remove('error');
   fetchUploadMediaBankItem(file, premiereProjectId)
-    .then(({ project_id, preview_url }) => {
+    .then(({ project_id, preview_url, file_path }) => {
       premiereProjectId = project_id;
-      mediaBankItems.push({ kind, label, previewUrl: preview_url });
+      mediaBankItems.push({ kind, label, previewUrl: preview_url, filePath: file_path || null });
       mediaBankStatusEl.textContent = '';
       renderMediaBankItems();
       saveDebugSession();
@@ -3473,7 +10233,7 @@ function runDraftVisualThenGenerate(section, btn, statusEl, draftedMessage, gene
   // this (see buildSectionBlock), but re-checked here too in case that
   // ever gets bypassed (e.g. section.text edited down to empty between
   // render and click).
-  const hasBasis = !!(section.text && section.text.trim()) || !!(section.narration && section.narration.trim());
+  const hasBasis = !!(section.text && section.text.trim()) || !!effectiveSectionNarration(section);
   if (!hasBasis) {
     statusEl.textContent = 'Add section text or narration first - there\'s nothing to base a visual on yet.';
     statusEl.classList.add('error');
@@ -3484,28 +10244,8 @@ function runDraftVisualThenGenerate(section, btn, statusEl, draftedMessage, gene
   statusEl.textContent = 'Drafting a visual (~5-10s)...';
   statusEl.classList.remove('error');
 
-  const documentaryGoal = (documentaryIntentInput ? documentaryIntentInput.value : recordedTranscript).trim();
-  const content = [section.text, section.narration].filter(part => part && part.trim()).join('\n\n');
-
-  fetchStoryboard(
-    [{ index: section.index, title: section.title, text: content, act: currentAssignments[section.index] }],
-    documentaryGoal, currentArcSections.map(s => s.label), selectedDocumentaryMode, Array.from(selectedTechniques)
-  )
-    .then(({ storyboard }) => {
-      const result = storyboard.find(s => s.index === section.index);
-      if (!result) throw new Error('No visual came back for this section - try again.');
-      section.visual = result.visual;
-      // Don't overwrite a real recorded/dragged narration (see
-      // finishAssigningNarrationAudio) with an LLM-invented line that no
-      // longer matches the actual audio.
-      if (!section.narrationAudioPreviewUrl) section.narration = result.narration;
-      section.entities = result.entities || [];
-      section.videoQuery = result.video_query;
-      section.audioQuery = result.audio_query;
-      saveDebugSession();
-
-      statusEl.textContent = draftedMessage;
-      return generateStep().catch(err => {
+  statusEl.textContent = draftedMessage;
+  Promise.resolve().then(generateStep).catch(err => {
         // The draft above (visual/narration/entities/videoQuery/
         // audioQuery) already succeeded and is still worth keeping/
         // showing - Find Footage only needs videoQuery, for instance, not
@@ -3514,19 +10254,188 @@ function runDraftVisualThenGenerate(section, btn, statusEl, draftedMessage, gene
         // in the .then below either way).
         statusEl.textContent = `Drafted a visual, but generation failed: ${err.message}`;
         statusEl.classList.add('error');
-      });
-    })
+      })
     .then(() => {
       const remaining = currentSections.filter(s => !s.removed);
       renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
-      editPlanActionEl.style.display = '';
-      premiereExportActionEl.style.display = '';
     })
     .catch(err => {
       statusEl.textContent = err.message;
       statusEl.classList.add('error');
       btn.disabled = false;
     });
+}
+
+// Generates a shot for every arranged scene that doesn't have one yet (a
+// start/end-frame shot, or - for expository scenes - cutaways). Image requests
+// run in parallel, matching Apply this arc/Generate all. Each request still
+// re-renders the whole editor on success, so the progress line + button are
+// re-found by class/id from the current DOM while the stable section objects
+// carry the work across those re-renders.
+let generatingAllShots = false;
+function runPreviewAllShots() {
+  if (generatingAllShots) return;
+  const setStatus = txt => { const el = document.querySelector('.preview-all-status'); if (el) el.textContent = txt; };
+  generatingAllShots = true;
+  const getPreviewBtn = () => document.getElementById('preview-all-btn');
+  const initialBtn = getPreviewBtn();
+  if (initialBtn) initialBtn.disabled = true;
+
+  // Mirror the first storyboard-generation pass: every active scene gets a
+  // stable subset of moodboard techniques, and its media-search inputs are
+  // filled before visual examples are requested. This applies to scenes that
+  // already have a visual too, so a later Preview All can complete missing
+  // scene metadata without regenerating an existing visual.
+  const arrangedScenes = () => currentSections.filter(s =>
+    isSceneActive(s) && currentAssignments[s.index]);
+  const scenes = arrangedScenes();
+  scenes.forEach(autoPopulateSceneTechniques);
+  if (scenes.length) {
+    const remaining = currentSections.filter(s => !s.removed);
+    renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+    saveDebugSession();
+  }
+
+  setStatus('Preparing scene techniques and narration …');
+  Promise.resolve(autoSuggestNarrationForStoryboard())
+    .then(() => {
+      const currentScenes = arrangedScenes();
+      // Ensure the same query context used by storyboard generation is ready,
+      // including narration drafts produced by the preceding step.
+      return Promise.all(currentScenes.map(scene => ensureFootageQueries(scene)))
+        .then(() => {
+          // Rebuild the controls from the newly generated query suggestions
+          // before the shot buttons are looked up below.
+          const remaining = currentSections.filter(s => !s.removed);
+          renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+          return currentScenes;
+        });
+    })
+    .then(currentScenes => {
+      const queue = currentScenes.filter(s =>
+        !(s.exampleShots && s.exampleShots.length)
+        && !s.startFramePreviewUrl && !(s.cutaways && s.cutaways.length)
+        && !s.uploadedFootagePreviewUrl && !s.selectedVideo);
+      const total = queue.length;
+      if (!total) {
+        generatingAllShots = false;
+        setStatus('Scene techniques and narration are ready. Every scene already has a preview.');
+        const activeBtn = getPreviewBtn();
+        if (activeBtn) activeBtn.disabled = false;
+        saveDebugSession();
+        return;
+      }
+
+      let completed = 0;
+      const jobs = queue.map(section => {
+        const block = resultsEl.querySelector(`.paper-section-block[data-section-index="${section.index}"]`);
+        const sBtn = (block && block.querySelector('.generate-shot-examples-btn')) || { disabled: false };
+        const sStatus = (block && block.querySelector('.find-footage-status'))
+          || { textContent: '', classList: { add() {}, remove() {} } };
+        setStatus(`Generating suggested shots in parallel … ${completed}/${total}`);
+        const request = runGenerateShotExamples(section, sBtn, sStatus);
+        return Promise.resolve(request).then(() => {
+          completed += 1;
+          setStatus(`Generating suggested shots in parallel … ${completed}/${total}`);
+        });
+      });
+      return Promise.all(jobs).then(() => {
+        generatingAllShots = false;
+        setStatus(`Prepared scenes and generated previews for ${completed}/${total} scenes.`);
+        const activeBtn = getPreviewBtn();
+        if (activeBtn) activeBtn.disabled = false;
+        saveDebugSession();
+      });
+    })
+    .catch(err => {
+      generatingAllShots = false;
+      setStatus(`Could not prepare previews: ${err.message}`);
+      const activeBtn = getPreviewBtn();
+      if (activeBtn) activeBtn.disabled = false;
+    });
+}
+
+// Seed an arranged scene with a small, varied subset of the moodboard's
+// distilled technique palette when the presenter runs storyboard generation.
+// Explicitly dragged techniques always win and are never overwritten.
+function autoPopulateSceneTechniques(section) {
+  if (Array.isArray(section.techniques) && section.techniques.length) return;
+  const distilled = selectedTechniques.size
+    ? Array.from(selectedTechniques)
+    : (lastDistillResult && lastDistillResult.suggested_techniques) || [];
+  const pool = sanitizeDocumentaryTechniques(distilled);
+  if (!pool.length) return;
+  const offset = Math.abs(Number(section.index) || 0) % pool.length;
+  const rotated = pool.slice(offset).concat(pool.slice(0, offset));
+  const picked = [];
+  const categories = new Set();
+  for (const technique of rotated) {
+    const category = TECHNIQUE_CATEGORY[technique] || technique;
+    if (categories.has(category) && picked.length < 2) continue;
+    picked.push(technique);
+    categories.add(category);
+    if (picked.length >= Math.min(3, pool.length)) break;
+  }
+  section.techniques = picked;
+}
+
+// Scene-level techniques are now the generation inputs. Before storyboard
+// generation, selectedTechniques is only the moodboard-derived suggestion
+// palette shown in the side panel.
+function sceneTechniques(section) {
+  return sanitizeDocumentaryTechniques(section.techniques);
+}
+
+// Apply a documentary technique to one scene (dragged onto its Scene Notes).
+// This updates the scene's generation inputs and re-renders the card, but does
+// not launch image/video generation. Generation remains an explicit action.
+function applyTechniqueToScene(section, technique) {
+  if (!isDocumentaryTechnique(technique)) return;
+  if (!Array.isArray(section.techniques)) section.techniques = [];
+  if (!section.techniques.includes(technique)) section.techniques.push(technique);
+  saveDebugSession();
+  const remaining = currentSections.filter(s => !s.removed);
+  renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+}
+
+// A row of the per-scene techniques (section.techniques - applied by dragging a
+// technique onto the scene notes/paper-section block, see
+// applyTechniqueToScene), each a chip with an ✕ to remove it. Returns null when
+// the scene has none. Removing a technique updates the scene for future
+// generations; it doesn't re-generate on its own.
+function buildSceneTechniquesRow(section) {
+  const techs = Array.isArray(section.techniques) ? section.techniques : [];
+  if (!techs.length) return null;
+
+  const row = document.createElement('div');
+  row.className = 'paper-section-techniques';
+  // const label = document.createElement('span');
+  // label.className = 'paper-section-techniques-label';
+  // label.textContent = 'Techniques:';
+  // row.appendChild(label);
+
+  techs.forEach(technique => {
+    const chip = document.createElement('span');
+    chip.className = 'paper-section-technique-chip';
+    const text = document.createElement('span');
+    text.textContent = technique;
+    chip.appendChild(text);
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'paper-section-technique-remove';
+    removeBtn.textContent = '✕';
+    removeBtn.title = `Remove "${technique}" from this scene`;
+    removeBtn.addEventListener('click', event => {
+      event.stopPropagation();
+      section.techniques = (section.techniques || []).filter(t => t !== technique);
+      saveDebugSession();
+      const remaining = currentSections.filter(s => !s.removed);
+      renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+    });
+    chip.appendChild(removeBtn);
+    row.appendChild(chip);
+  });
+  return row;
 }
 
 // Narration-driven shot design (backend/shot_plan_llm.py + /paper/generate_shot):
@@ -3541,55 +10450,265 @@ function runDraftVisualThenGenerate(section, btn, statusEl, draftedMessage, gene
 function runGenerateShot(section, btn, statusEl) {
   // An expository voice-of-god scene generates B-roll cutaways (inline in its
   // visual box) instead of a start/end-frame shot - see runGenerateCutaways.
-  if (section.shotKind === 'expositoryNarration') {
-    runGenerateCutaways(section, btn, statusEl);
-    return;
-  }
+  // Returned so callers that sweep scenes (runPreviewAllShots) can chain.
+
+  // One start/end shot PER dragged technique, in the order they were dropped
+  // (section.techniques) - so a scene with two techniques produces two shots,
+  // the first showing technique #1, the second showing technique #2. With no
+  // per-scene techniques, generate one shot with no technique constraint.
+  const perScene = Array.isArray(section.techniques) ? section.techniques : [];
+  const sequence = perScene.length ? perScene : [null];
+  const moodboard = moodboardProfilesForGeneration();
+  const act = currentArcSections.find(a => a.key === currentAssignments[section.index]);
+  const generationController = beginSceneGeneration(section);
 
   btn.disabled = true;
-  statusEl.textContent = 'Designing this shot (~30s: shot plan + start/end frames)...';
   statusEl.classList.remove('error');
+  const shots = [];
 
-  const act = currentArcSections.find(a => a.key === currentAssignments[section.index]);
-  fetchGenerateShot({
-    sectionIndex: section.index,
-    title: section.title,
-    sceneNotes: section.text,
-    narration: section.narration,
-    actTitle: act ? act.label : '',
-    abstract: findAbstractText(),
-    documentaryMode: selectedDocumentaryMode,
-    techniques: Array.from(selectedTechniques),
-    projectId: premiereProjectId,
-  })
-    .then(({ project_id, shot_plan, start_preview_url, end_preview_url }) => {
-      premiereProjectId = project_id;
-      section.shotPlan = shot_plan;
-      section.startFramePreviewUrl = start_preview_url;
-      section.endFramePreviewUrl = end_preview_url;
-      // The backend saves both frames for this section to the same filenames
-      // (see /paper/generate_shot) - a fresh cache-busting key each time so
-      // buildVisualBox's <img src> isn't served the browser's cached copy.
+  const runOne = i => {
+    if (i >= sequence.length) {
+      section.shots = shots;
+      // Legacy single-frame fields point at the first shot so the timeline and
+      // the MP4 render (which currently use one start/end pair per scene) keep
+      // working; section.shots holds the full sequence for the preview.
+      section.shotPlan = shots[0].shotPlan;
+      section.startFramePreviewUrl = shots[0].startFramePreviewUrl;
+      section.endFramePreviewUrl = shots[0].endFramePreviewUrl;
       section.shotFramesGeneratedAt = Date.now();
-      // Generating a shot is a deliberate choice - it wins the visualSource
-      // lookup in buildVisualBox (same reasoning as runUploadFootage's own).
       section.visualSource = 'shotFrames';
-      // The shot plan's duration drives both the timeline clip width
-      // (getSceneDuration) and the render (movie_render) - fold it into the
-      // section's edit plan, keeping any other edit-plan fields already set.
+      // Scene duration = sum of the sequence's shot durations.
+      const total = shots.reduce((sum, sh) => sum + ((sh.shotPlan && sh.shotPlan.duration_seconds) || DEFAULT_SCENE_SECONDS), 0);
       section.editPlan = {
         transitionIn: (section.editPlan && section.editPlan.transitionIn) || 'hard_cut',
-        durationSeconds: shot_plan.duration_seconds,
+        durationSeconds: total,
         kenBurns: (section.editPlan && section.editPlan.kenBurns) || { enabled: false, pan: null },
         textOverlay: (section.editPlan && section.editPlan.textOverlay) || null,
       };
       const remaining = currentSections.filter(s => !s.removed);
       renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
-      editPlanActionEl.style.display = '';
-      premiereExportActionEl.style.display = '';
       saveDebugSession();
+      finishSceneGeneration(section, generationController);
+      return Promise.resolve();
+    }
+
+    const technique = sequence[i];
+    const techniques = technique ? [technique] : [];
+    statusEl.textContent = sequence.length > 1
+      ? `Designing shot ${i + 1}/${sequence.length}${technique ? ` — ${technique}` : ''} …`
+      : 'Designing this shot (~30s: shot plan + start/end frames)...';
+
+    return fetchGenerateShot({
+      sectionIndex: section.index,
+      title: section.title,
+      sceneNotes: sectionCompositionNotes(section),
+      narration: effectiveSectionNarration(section),
+      actTitle: act ? act.label : '',
+      abstract: findAbstractText(),
+      role: SCENE_ROLE_LABELS[getSceneRole(section)] || '',
+      referenceSubject: section.footageSubject || '',
+      referenceSketchUrl: section.uploadedSketchPreviewUrl || '',
+      referenceFigureDataUrl: section.image || '',
+      referenceVideoUrl: section.uploadedFootagePreviewUrl || '',
+      referenceVideoThumbnailUrl: section.uploadedFootageThumbnailUrl || '',
+      documentaryMode: selectedDocumentaryMode,
+      techniques,
+      moodboard,
+      shotIndex: i,
+      projectId: premiereProjectId,
+      signal: generationController.signal,
+    }).then(({ project_id, shot_plan, start_preview_url, end_preview_url }) => {
+      premiereProjectId = project_id;
+      shots.push({
+        technique,
+        shotPlan: shot_plan,
+        startFramePreviewUrl: start_preview_url,
+        endFramePreviewUrl: end_preview_url,
+      });
+      return runOne(i + 1);  // sequential - respects the image model's rate limit
+    });
+  };
+
+  return runOne(0).catch(err => {
+    finishSceneGeneration(section, generationController);
+    if (isGenerationAbort(err)) return;
+    statusEl.textContent = err.message;
+    statusEl.classList.add('error');
+    btn.disabled = false;
+  });
+}
+
+// The VIDEO counterpart of runGenerateShot (see fetchGenerateShotVideo /
+// /paper/generate_shot_video) - animates the exact image the presenter chose
+// from the examples gallery, using that option's saved plan plus this scene's
+// notes and explicitly dragged techniques.
+function runGenerateShotVideo(section, btn, statusEl) {
+  const selectedExampleImageUrl = section.selectedExample && section.selectedExample.kind === 'video'
+    ? (section.selectedExample.source_image_url || section.selectedExample.thumbnail_url)
+    : (section.selectedExample && section.selectedExample.url);
+  const chosenImageUrl = selectedExampleImageUrl
+    || section.startFramePreviewUrl
+    || section.uploadedSketchPreviewUrl
+    || section.uploadedFootageThumbnailUrl;
+  if (!chosenImageUrl && !section.uploadedFootagePreviewUrl) {
+    statusEl.textContent = 'Upload a sketch, add footage, or choose an example image before previewing it as a video.';
+    statusEl.classList.add('error');
+    return Promise.resolve();
+  }
+
+  btn.disabled = true;
+  const generationController = beginSceneGeneration(section);
+  statusEl.textContent = 'Animating the chosen image (~60s)...';
+  statusEl.classList.remove('error');
+
+  return fetchGenerateShotVideo({
+    sectionIndex: section.index,
+    chosenImageUrl,
+    sceneNotes: sectionCompositionNotes(section),
+    referenceSubject: section.footageSubject || '',
+    documentaryMode: selectedDocumentaryMode,
+    techniques: sceneTechniques(section),
+    shotPlan: section.shotPlan || {},
+    referenceVideoUrl: section.uploadedFootagePreviewUrl || '',
+    referenceVideoThumbnailUrl: section.uploadedFootageThumbnailUrl || '',
+    projectId: premiereProjectId,
+    signal: generationController.signal,
+  })
+    .then(({ project_id, shot_plan, preview_url, thumbnail_url }) => {
+      premiereProjectId = project_id;
+      section.shotPlan = shot_plan;
+      // Reuse the animatedSketch renderer (plays an MP4) for the shot video.
+      section.animatedSketchPreviewUrl = preview_url;
+      section.animatedSketchThumbnailUrl = thumbnail_url || null;
+      section.animatedSketchGeneratedAt = Date.now();
+      section.animatedSketchIsGif = false;
+      const sourceShot = (section.exampleShots || []).find(shot => shot.url === chosenImageUrl)
+        || section.selectedExample || {};
+      const videoShot = {
+        url: preview_url,
+        thumbnail_url: thumbnail_url || chosenImageUrl,
+        kind: 'video',
+        label: sourceShot && sourceShot.label ? sourceShot.label : 'Generated video',
+        shot_size: sourceShot && sourceShot.shot_size,
+        movement: sourceShot.movement || (shot_plan && shot_plan.movement),
+        narrative_operation: shot_plan && shot_plan.narrative_operation,
+        purpose: shot_plan && shot_plan.purpose,
+        visual_description: shot_plan && shot_plan.visual_description,
+        source_image_url: chosenImageUrl,
+      };
+      clearLegacyShotFrames(section);
+      const selectedWasPinned = section.selectedExample && Array.isArray(section.pinnedExamples)
+        && section.pinnedExamples.some(item => item && item.url === section.selectedExample.url);
+      section.exampleShots = [...(section.exampleShots || []), videoShot];
+      // A pinned source remains the selected/featured card when a preview
+      // video is generated from it; the new video is added beside it instead
+      // of replacing the pinned choice.
+      if (!selectedWasPinned) {
+        section.selectedExample = {
+          url: preview_url,
+          kind: 'video',
+          thumbnail_url: thumbnail_url || chosenImageUrl,
+          source_image_url: chosenImageUrl,
+          label: videoShot.label,
+          shot_size: videoShot.shot_size,
+          movement: videoShot.movement,
+        };
+      }
+      section.visualSource = 'examples';
+      section.editPlan = {
+        transitionIn: (section.editPlan && section.editPlan.transitionIn) || 'hard_cut',
+        durationSeconds: 4,  // Veo clips are a fixed 4s (see animate_llm.SECONDS)
+        kenBurns: (section.editPlan && section.editPlan.kenBurns) || { enabled: false, pan: null },
+        textOverlay: (section.editPlan && section.editPlan.textOverlay) || null,
+      };
+      const remaining = currentSections.filter(s => !s.removed);
+      renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+      saveDebugSession();
+      finishSceneGeneration(section, generationController);
     })
     .catch(err => {
+      finishSceneGeneration(section, generationController);
+      if (isGenerationAbort(err)) return;
+      statusEl.textContent = err.message;
+      statusEl.classList.add('error');
+      // In a parallel batch this scene's status element may already have been
+      // detached by another completed request, so also surface the failure in
+      // the live storyboard status line.
+      setStoryboardStatus(`Could not generate examples for "${section.title}": ${err.message}`, true);
+      btn.disabled = false;
+    });
+}
+
+// Batch of example options for a shot (see fetchGenerateShotExamples /
+// /paper/generate_shot_examples): two cheap still frames, shown as
+// a selectable gallery (the `examples` renderer). Picking one commits it.
+function runGenerateShotExamples(section, btn, statusEl) {
+  btn.disabled = true;
+  statusEl.textContent = 'Generating two shot examples…';
+  statusEl.classList.remove('error');
+  const generationController = beginSceneGeneration(section);
+
+  const act = currentArcSections.find(a => a.key === currentAssignments[section.index]);
+  return fetchGenerateShotExamples({
+    sectionIndex: section.index,
+
+    sceneNotes: sectionCompositionNotes(section),
+    title: section.title,
+    actTitle: act ? act.label : '',
+
+    role: SCENE_ROLE_LABELS[getSceneRole(section)] || '', // Primary / Cutaway
+    documentaryMode: selectedDocumentaryMode,
+    techniques: sceneTechniques(section),
+
+    narration: effectiveSectionNarration(section),
+    abstract: findAbstractText(),                       // paper subject/content
+    referenceSubject: section.footageSubject || '',     // uploaded-footage subject
+    referenceSketchUrl: section.uploadedSketchPreviewUrl || '',
+    referenceFigureDataUrl: section.image || '',         // attached paper figure
+    referenceVideoUrl: section.uploadedFootagePreviewUrl || '',
+    referenceVideoThumbnailUrl: section.uploadedFootageThumbnailUrl || '',
+
+    moodboard: moodboardProfilesForGeneration(),
+    count: 2,
+    video: false,  // images-only batch (use "Generate video" once a frame is picked)
+    projectId: premiereProjectId,
+    signal: generationController.signal,
+  })
+    .then(({ project_id, shot_plan, examples }) => {
+      premiereProjectId = project_id;
+      section.shotPlan = shot_plan;
+      clearLegacyShotFrames(section);
+      // Each example carries its independently planned narrative operation,
+      // shot-size/movement pairing, purpose, and image description.
+      const generatedExamples = (examples || []).map(e => ({
+        url: e.preview_url, thumbnail_url: e.thumbnail_url || e.preview_url,
+        kind: e.kind || 'image', label: e.label,
+        shot_size: e.shot_size, movement: e.movement,
+        narrative_operation: e.narrative_operation, purpose: e.purpose,
+        visual_description: e.visual_description,
+      }));
+      const pinned = Array.isArray(section.pinnedExamples) ? section.pinnedExamples : [];
+      const generatedUrls = new Set(generatedExamples.map(shot => shot.url));
+      section.exampleShots = [
+        ...pinned.filter(shot => shot && shot.url && !generatedUrls.has(shot.url)),
+        ...generatedExamples,
+      ];
+      // A prior selection points at the old generation's URL and should not
+      // make the new gallery claim that an option is already selected, unless
+      // it was deliberately pinned and therefore remains in the merged rail.
+      const selectedWasPinned = section.selectedExample && Array.isArray(section.pinnedExamples)
+        && section.pinnedExamples.some(item => item && item.url === section.selectedExample.url);
+      if (!selectedWasPinned) section.selectedExample = null;
+      section.examplesGeneratedAt = Date.now();
+      section.visualSource = 'examples';
+      const remaining = currentSections.filter(s => !s.removed);
+      renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+      saveDebugSession();
+      finishSceneGeneration(section, generationController);
+    })
+    .catch(err => {
+      finishSceneGeneration(section, generationController);
+      if (isGenerationAbort(err)) return;
       statusEl.textContent = err.message;
       statusEl.classList.add('error');
       btn.disabled = false;
@@ -3608,15 +10727,16 @@ function runGenerateCutaways(section, btn, statusEl) {
   statusEl.classList.remove('error');
 
   const act = currentArcSections.find(a => a.key === currentAssignments[section.index]);
-  fetchGenerateCutaways({
+  return fetchGenerateCutaways({
     sectionIndex: section.index,
-    narration: section.narration,
+    narration: effectiveSectionNarration(section),
     title: section.title,
-    sceneNotes: section.text,
+    sceneNotes: sectionCompositionNotes(section),
     actTitle: act ? act.label : '',
     abstract: findAbstractText(),
+    referenceSubject: section.footageSubject || '',
     documentaryMode: selectedDocumentaryMode,
-    techniques: Array.from(selectedTechniques),
+    techniques: sceneTechniques(section),
     projectId: premiereProjectId,
   })
     .then(({ project_id, cutaways }) => {
@@ -3628,8 +10748,6 @@ function runGenerateCutaways(section, btn, statusEl) {
       section.visualSource = 'cutaways';
       const remaining = currentSections.filter(s => !s.removed);
       renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
-      editPlanActionEl.style.display = '';
-      premiereExportActionEl.style.display = '';
       saveDebugSession();
     })
     .catch(err => {
@@ -3768,7 +10886,7 @@ function runGenerateAnimatedSketch(section, technique, btn, statusEl) {
 function runGenerateStoryboardForSections(sectionsToUse, triggerBtn) {
   if (sectionsToUse.length === 0) {
     setStoryboardStatus('No arranged sections to build a storyboard from - arrange into a narrative arc first.', true);
-    return;
+    return Promise.resolve();
   }
 
   if (triggerBtn) triggerBtn.disabled = true;
@@ -3776,45 +10894,49 @@ function runGenerateStoryboardForSections(sectionsToUse, triggerBtn) {
     ? `Generating a storyboard for "${sectionsToUse[0].title}" ...`
     : 'Generating a loose storyboard ...');
 
-  const documentaryGoal = (documentaryIntentInput ? documentaryIntentInput.value : recordedTranscript).trim();
+  // Turn the moodboard distillation into scene-level direction at the moment
+  // the storyboard is created. This keeps the technique side panel as a
+  // palette, while every scene gets a few concrete techniques in its notes.
+  sectionsToUse.forEach(autoPopulateSceneTechniques);
 
-  // Combines text and narration rather than favoring one - see
-  // buildSectionBlock's Generate Sketch button/runGenerateSketch, which
-  // does the same for a single section; text may now hold anything from
-  // dragged-in technique reminders to source-material excerpts (see
-  // buildSectionBlock's drop handler), and narration is the actual spoken
-  // script, so both are meaningful context for what the shot should show.
-  // The backend only ever sees one "content" field per section either way.
-  fetchStoryboard(sectionsToUse.map(({ index, title, text, narration }) => ({
-    index, title, text: [text, narration].filter(part => part && part.trim()).join('\n\n'), act: currentAssignments[index],
-  })), documentaryGoal, currentArcSections.map(s => s.label), selectedDocumentaryMode, Array.from(selectedTechniques))
-    .then(({ storyboard }) => {
-      storyboard.forEach(({ index, visual, narration, entities, video_query, audio_query }) => {
-        const section = currentSections.find(s => s.index === index);
-        if (section) {
-          section.visual = visual;
-          // Don't overwrite a real recorded/dragged narration (see
-          // finishAssigningNarrationAudio) with an LLM-invented line that
-          // no longer matches the actual audio - only fill narration in
-          // when there's no voice recording backing it yet.
-          if (!section.narrationAudioPreviewUrl) section.narration = narration;
-          section.entities = entities || [];
-          section.videoQuery = video_query;
-          section.audioQuery = audio_query;
-        }
-      });
-
-      setStoryboardStatus(`Done. Generated a storyboard for ${sectionsToUse.length} section${sectionsToUse.length === 1 ? '' : 's'}.`);
-      const remaining = currentSections.filter(section => !section.removed && currentAssignments[section.index]);
+  return Promise.all(sectionsToUse.map(section => {
+    section.videoQuery = '';
+    section.audioQuery = '';
+    return ensureFootageQueries(section);
+  })).then(() => {
+      const remaining = currentSections.filter(section => isSceneActive(section) && currentAssignments[section.index]);
       renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
+      setStoryboardStatus(`Generating preview examples for ${sectionsToUse.length} scene${sectionsToUse.length === 1 ? '' : 's'} ...`);
+
+      // The cards must exist before we look up each scene's status line. Each
+      // scene generates independently; a result is kept even if another one
+      // fails, and pinned examples remain protected by the normal rail merge.
+      const exampleJobs = sectionsToUse.map(section => {
+        const block = resultsEl.querySelector(`.paper-section-block[data-section-index="${section.index}"]`);
+        const btn = (block && block.querySelector('.generate-shot-examples-btn')) || { disabled: false };
+        const status = (block && block.querySelector('.find-footage-status'))
+          || { textContent: '', classList: { add() {}, remove() {} } };
+        return Promise.resolve(runGenerateShotExamples(section, btn, status)).then(() => {
+          // Show this scene's gallery as soon as its request settles rather
+          // than waiting for the other parallel scenes to finish.
+          const progressiveRemaining = currentSections.filter(s => !s.removed);
+          renderMovieEditor(resultsEl, currentLabel, progressiveRemaining, currentAssignments);
+        });
+      });
+      return Promise.all(exampleJobs);
+    }).then(() => {
+      // Every example request re-renders independently. Render once more after
+      // the batch so the final galleries are guaranteed to be visible even if
+      // the last request completed while another render was replacing the DOM.
+      const finalRemaining = currentSections.filter(s => !s.removed);
+      renderMovieEditor(resultsEl, currentLabel, finalRemaining, currentAssignments);
+      setStoryboardStatus(`Done. Added techniques and preview examples for ${sectionsToUse.length} scene${sectionsToUse.length === 1 ? '' : 's'}.`);
       // The other half of triggerFindFootageSweep's precondition (alongside
       // a picked mode) - a no-op if no mode is selected yet. Needs to run
-      // after the render above, since it locates each section's Find
-      // Footage button/status/results by selector in the freshly-built DOM.
+      // after the render above, since it locates each section's Find Footage
+      // button/status/results by selector in the freshly-built DOM.
       triggerFindFootageSweep();
       if (triggerBtn) triggerBtn.disabled = false;
-      editPlanActionEl.style.display = '';
-      premiereExportActionEl.style.display = '';
       saveDebugSession();
     })
     .catch(err => {
@@ -3840,8 +10962,6 @@ function runGenerateEditPlanForSections(sectionsToUse, triggerBtn) {
   setEditPlanStatus(storyboarded.length === 1
     ? `Generating an edit plan for "${storyboarded[0].title}" ...`
     : 'Generating an edit plan ...');
-  editPlanOverallNotesEl.textContent = '';
-
   const documentaryGoal = (documentaryIntentInput ? documentaryIntentInput.value : recordedTranscript).trim();
 
   fetchEditPlan(storyboarded.map(({ index, title, text, visual, narration, image }) => ({
@@ -3858,9 +10978,11 @@ function runGenerateEditPlanForSections(sectionsToUse, triggerBtn) {
       });
       overallEditNotes = overall_notes || '';
 
-      setEditPlanStatus(`Done. Generated an edit plan for ${shots.length} shot${shots.length === 1 ? '' : 's'}.`);
-      if (overallEditNotes) editPlanOverallNotesEl.textContent = `Overall notes: ${overallEditNotes}`;
-      const remaining = currentSections.filter(section => !section.removed && currentAssignments[section.index]);
+      setEditPlanStatus(
+        `Done. Generated an edit plan for ${shots.length} shot${shots.length === 1 ? '' : 's'}.` +
+        (overallEditNotes ? ` Overall notes: ${overallEditNotes}` : '')
+      );
+      const remaining = currentSections.filter(section => isSceneActive(section) && currentAssignments[section.index]);
       renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
       if (triggerBtn) triggerBtn.disabled = false;
       saveDebugSession();
@@ -3873,77 +10995,111 @@ function runGenerateEditPlanForSections(sectionsToUse, triggerBtn) {
 //#endregion
 
 //#region --- EXPORT TO VIDEO
-function runExportForPremiere() {
-  const storyboarded = currentSections.filter(section => !section.removed && currentAssignments[section.index] && section.visual);
-  if (storyboarded.length === 0) {
-    setPremiereExportStatus('No storyboarded sections yet - generate a storyboard first.', true);
-    return;
-  }
-
-  exportPremiereBtn.disabled = true;
-  setPremiereExportStatus('Writing edit plan for Premiere ...');
-  premiereExportFolderEl.textContent = '';
-
-  const payload = storyboarded.map(section => ({
-    index: section.index,
-    title: section.title,
-    act: currentAssignments[section.index],
-    narration: section.narration,
-    narration_audio_path: section.narrationAudioPreviewUrl || null,
-    uploaded_footage_path: section.uploadedFootagePath || null,
-    selected_video: section.selectedVideo || null,
-    selected_audio: section.selectedAudio || null,
-    // snake_case to match every other key in this payload (and what
-    // premiere-plugin/main.js reads back out of edit_plan.json) - only
-    // section.editPlan itself is camelCase, for consistency with the rest
-    // of this file's JS state.
-    edit_plan: section.editPlan
-      ? {
-        transition_in: section.editPlan.transitionIn,
-        duration_seconds: section.editPlan.durationSeconds,
-        ken_burns: section.editPlan.kenBurns,
-        text_overlay: section.editPlan.textOverlay,
-      }
-      : null,
+function buildSoundEffectsExportPayload() {
+  if (!activeSfxLayout) return [];
+  return activeSfxLayout.sfxEvents.map(event => ({
+    section_index: event.sectionIndex,
+    name: event.name,
+    preview_url: event.previewUrl,
+    file_path: event.filePath,
+    start_seconds: event.startSeconds,
+    source_start_seconds: event.sourceStartSeconds || 0,
+    duration_seconds: event.durationSeconds,
+    lane: event.lane,
   }));
-
-  fetchPremiereExport(payload, premiereProjectId)
-    .then(({ project_id, folder_path }) => {
-      premiereProjectId = project_id;
-      setPremiereExportStatus(`Done. Wrote an edit plan for ${storyboarded.length} shot${storyboarded.length === 1 ? '' : 's'}.`);
-      premiereExportFolderEl.textContent = `Load this from the Premiere plugin: ${folder_path}`;
-      exportPremiereBtn.disabled = false;
-      saveDebugSession();
-    })
-    .catch(err => {
-      setPremiereExportStatus(err.message, true);
-      exportPremiereBtn.disabled = false;
-    });
 }
 
-function runCheckForPreview() {
-  if (!premiereProjectId) {
-    setPreviewStatus('Export for Premiere first, then load/apply/export the plan in the Premiere plugin.', true);
-    return;
+function buildNarrationsExportPayload() {
+  if (!activeSfxLayout) return [];
+  return activeSfxLayout.narrationEvents.map(event => ({
+    section_index: event.sectionIndex,
+    name: event.name,
+    preview_url: event.previewUrl,
+    file_path: event.filePath,
+    start_seconds: event.startSeconds,
+    source_start_seconds: event.sourceStartSeconds || 0,
+    duration_seconds: event.durationSeconds,
+    lane: event.lane,
+  }));
+}
+
+function runExportForPremiere() {
+  const storyboarded = currentSections.filter(section =>
+    isSceneActive(section) && currentAssignments[section.index] && sectionHasRenderableVisual(section));
+  if (storyboarded.length === 0) {
+    return Promise.resolve({ ok: false, error: 'No storyboarded sections yet.' });
   }
 
-  checkPreviewBtn.disabled = true;
-  setPreviewStatus('Checking ...');
-  previewVideoEl.style.display = 'none';
+  const payload = storyboarded.flatMap(section => {
+    const baseStart = activeSfxLayout && activeSfxLayout.sceneStartSeconds.get(section.index);
+    const base = {
+      index: section.index,
+      title: section.title,
+      act: currentAssignments[section.index],
+      role: getSceneRole(section),
+      start_seconds: Number.isFinite(baseStart) ? baseStart : null,
+      narration: effectiveSectionNarration(section),
+      narration_audio_path: null,
+      narration_duration_seconds: Number(section.narrationDurationSeconds) || getSceneDuration(section),
+      uploaded_footage_path: section.uploadedFootagePath || null,
+      selected_video: section.selectedVideo || null,
+      selected_audio: section.selectedAudio || null,
+    };
 
-  const previewUrl = `/premiere_exports/${premiereProjectId}/rough_cut.mp4?t=${Date.now()}`;
-  fetch(previewUrl, { method: 'HEAD' })
-    .then(response => {
-      if (!response.ok) throw new Error('not found');
-      previewVideoEl.src = previewUrl;
-      previewVideoEl.style.display = '';
-      setPreviewStatus('Loaded rough_cut.mp4.');
+    // Generated expository cutaways are real sequential picture edits in the
+    // web timeline, so expose each still as its own Premiere shot instead of
+    // flattening the scene back into an overlapping Primary clip.
+    if (section.cutaways && section.cutaways.length && section.visualSource === 'cutaways') {
+      let offset = 0;
+      return section.cutaways.map((cutaway, cutawayIndex) => {
+        const duration = getCutawayDuration(cutaway);
+        const shot = {
+          ...base,
+          index: section.index,
+          cutaway_index: cutawayIndex,
+          title: cutaway.caption || `${section.title} cutaway ${cutawayIndex + 1}`,
+          role: 'bRoll',
+          start_seconds: Number.isFinite(baseStart) ? baseStart + offset : null,
+          narration_audio_path: cutawayIndex === 0 ? base.narration_audio_path : null,
+          uploaded_footage_path: null,
+          visual_preview_url: cutaway.preview_url || null,
+          edit_plan: {
+            transition_in: 'hard_cut', duration_seconds: duration,
+            ken_burns: { enabled: false, pan: null }, text_overlay: null,
+          },
+        };
+        offset += duration;
+        return shot;
+      });
+    }
+
+    const hasShotFrames = hasLegacyShotFrames(section);
+    const resolved = hasShotFrames
+      ? { previewUrl: section.startFramePreviewUrl, figureDataUrl: null }
+      : resolveSectionVisualForRender(section);
+    return [{
+      ...base,
+      visual_preview_url: resolved.previewUrl,
+      figure_image_data_url: resolved.figureDataUrl,
+      edit_plan: section.editPlan
+        ? {
+          transition_in: section.editPlan.transitionIn,
+          duration_seconds: section.editPlan.durationSeconds,
+          ken_burns: section.editPlan.kenBurns,
+          text_overlay: section.editPlan.textOverlay,
+        }
+        : null,
+    }];
+  });
+
+  return fetchPremiereExport(payload, premiereProjectId, buildSoundEffectsExportPayload(), buildNarrationsExportPayload())
+    .then(({ project_id, folder_path }) => {
+      premiereProjectId = project_id;
+      saveDebugSession();
+      return { ok: true, folderPath: folder_path, shotCount: payload.length };
     })
-    .catch(() => {
-      setPreviewStatus('No rough_cut.mp4 yet - export it from the Premiere plugin first.', true);
-    })
-    .finally(() => {
-      checkPreviewBtn.disabled = false;
+    .catch(err => {
+      return { ok: false, error: err.message };
     });
 }
 
@@ -3957,38 +11113,204 @@ function runCheckForPreview() {
 // file-backed visual, or the paper figure as a data URL if that's all
 // there is, or neither.
 function resolveSectionVisualForRender(section) {
+  const selectedExample = section.selectedExample && section.selectedExample.url;
   const previewBySource = {
     // Expository cutaways are planning-only, but the scene still needs a
     // still under its narration - use the first cutaway's background image.
     cutaways: section.cutaways && section.cutaways.length && section.cutaways[0].preview_url,
     stockVideo: section.selectedVideo && section.selectedVideo.localPreviewUrl,
     video: section.uploadedFootagePreviewUrl,
+    uploadedSketch: section.uploadedSketchPreviewUrl,
+    // Modern example selections are the scene visual. Images and generated
+    // videos both arrive here as a URL; the video branch also keeps the
+    // animated preview fallback for older saved sessions without `kind`.
+    examples: selectedExample || null,
     animatedSketch: section.animatedSketchPreviewUrl,
     sketch: section.sketchPreviewUrl,
   };
-  for (const key of [section.visualSource, 'cutaways', 'stockVideo', 'video', 'animatedSketch', 'sketch']) {
+  for (const key of [section.visualSource, 'uploadedSketch', 'cutaways', 'stockVideo', 'video', 'examples', 'animatedSketch', 'sketch']) {
     if (key && previewBySource[key]) return { previewUrl: previewBySource[key], figureDataUrl: null };
   }
   if (section.image) return { previewUrl: null, figureDataUrl: section.image };
   return { previewUrl: null, figureDataUrl: null };
 }
 
+function hasLegacyShotFrames(section) {
+  // A modern examples selection (including a generated video card) owns the
+  // scene visual even if an older saved session still has frame fields.
+  const modernExampleActive = section.visualSource === 'examples'
+    || !!(section.selectedExample && section.selectedExample.url);
+  return !modernExampleActive
+    && !!(section.startFramePreviewUrl && section.endFramePreviewUrl);
+}
+
+function sectionHasRenderableVisual(section) {
+  if (hasLegacyShotFrames(section)) return true;
+  const resolved = resolveSectionVisualForRender(section);
+  return !!(resolved.previewUrl || resolved.figureDataUrl);
+}
+
 let renderPollTimer = null;
+let combinedPremiereExportResult = null;
+let renderMovieDownloadEl = null;
+let renderMovieOutputUrl = '';
+
+function runCombinedExport() {
+  if (renderMovieBtn) renderMovieBtn.disabled = true;
+  combinedPremiereExportResult = null;
+  setRenderMovieStatus('Writing Premiere plan ...');
+  return runExportForPremiere().then(result => {
+    combinedPremiereExportResult = result;
+    setRenderMovieStatus(result.ok
+      ? 'Premiere plan saved. Starting MP4 render ...'
+      : `Premiere plan failed (${result.error}). Trying MP4 render ...`, !result.ok);
+    return runRenderMovie();
+  });
+}
+
+function actBoardRenderMediaUrl(node) {
+  if (!node) return '';
+  const selectedKey = String(node.selectedVisualKey || '');
+  const selectedGenerated = selectedKey.startsWith('generated-') && Array.isArray(node.generatedOptions)
+    ? node.generatedOptions[node.selectedGeneratedIndex || 0]
+    : null;
+  const selectedResult = selectedKey.startsWith('result-') && Array.isArray(node.results)
+    ? node.results[node.selectedResultIndex || 0]
+    : null;
+  const url = selectedResult?.localPreviewUrl
+    || node.mediaUrl
+    || selectedGenerated?.url
+    || selectedResult?.video_url
+    || selectedResult?.url
+    || '';
+  // Browser-only object URLs cannot be read by the server-side ffmpeg
+  // process. Uploaded/generated media normally has a persisted preview URL;
+  // treating a stale blob URL as missing produces a useful render error.
+  return String(url).startsWith('blob:') ? '' : url;
+}
+
+function hasActBoardLinkedSequence() {
+  return currentArcSections.some(act => {
+    const nodes = actBoardNodesForAct(act.key);
+    return nodes.some(node => node.type === 'narration'
+      && (node.footageNodeIds || []).some(id =>
+        nodes.some(candidate => candidate.id === id && candidate.type === 'footage')));
+  });
+}
+
+function buildActBoardRenderPlan() {
+  const sequences = [];
+  const narrations = [];
+  let cursor = 0;
+  currentArcSections.forEach(act => {
+    const nodes = actBoardNodesForAct(act.key);
+    const narrationNodes = nodes.filter(node => node.type === 'narration');
+    // A fallback scene narration can represent the whole act when the user
+    // has not recorded an act-board narration. Use it once; separately
+    // recorded narration nodes each get their own timed umbrella track.
+    let fallbackNarrationUsed = false;
+    narrationNodes.forEach(narrationNode => {
+      const linked = orderedActBoardLinkedFootage(act.key, narrationNode);
+      if (!linked.length) return;
+      let umbrellaClip = null;
+      if (narrationNode.audioPreviewUrl) {
+        umbrellaClip = {
+          previewUrl: narrationNode.audioPreviewUrl,
+          _nativePreviewUrl: narrationNode._nativeAudioUrl || null,
+          trimStartSeconds: 0,
+          durationSeconds: Number(narrationNode.audioDurationSeconds) || 0,
+        };
+        narrationNode.narrationAudioDurationSeconds = Number(narrationNode.audioDurationSeconds) || 0;
+      } else if (!fallbackNarrationUsed) {
+        const audioSection = actBoardSectionsForAct(act.key).find(section => {
+          const clips = migrateNarrationClips(section);
+          return clips.some(clip => clip.previewUrl || clip._nativePreviewUrl);
+        });
+        if (!umbrellaClip && audioSection) {
+          umbrellaClip = migrateNarrationClips(audioSection)
+            .find(item => item.previewUrl || item._nativePreviewUrl) || null;
+          if (umbrellaClip) {
+            narrationNode.narrationAudioDurationSeconds = Number(umbrellaClip.durationSeconds) || 0;
+            fallbackNarrationUsed = true;
+          }
+        }
+      }
+      recomputeActBoardTiming(narrationNode);
+      const footage = linked.map(node => ({
+        node_id: node.id,
+        fragment: node.fragment || '',
+        media_url: actBoardRenderMediaUrl(node),
+        duration_seconds: Number(node.durationSeconds) > 0 ? Number(node.durationSeconds) : 1,
+        start_seconds: Number(node.startSeconds) || 0,
+      }));
+      if (!footage.length) return;
+      const sequenceDuration = Math.max(
+        footage.reduce((sum, item) => sum + item.duration_seconds, 0),
+        ...footage.map(item => (Number(item.start_seconds) || 0) + item.duration_seconds),
+        Number(umbrellaClip?.durationSeconds) || 0,
+      );
+      const sequence = {
+        act_key: act.key,
+        narration_node_id: narrationNode.id,
+        start_seconds: cursor,
+        duration_seconds: sequenceDuration,
+        footage,
+      };
+      sequences.push(sequence);
+
+      // Use one recorded narration clip from the act as the umbrella voice
+      // track when one exists. The suggested text itself remains planning
+      // metadata until the presenter records it.
+      if (umbrellaClip) {
+        const previewUrl = umbrellaClip.previewUrl || umbrellaClip._nativePreviewUrl;
+        // blob: URLs only exist in this browser and cannot be resolved by the
+        // render server. The persisted preview_url is the server-renderable
+        // source; skip the event if an older session has only a blob URL.
+        if (previewUrl && !String(previewUrl).startsWith('blob:')) {
+          narrations.push({
+            preview_url: previewUrl,
+            start_seconds: cursor,
+            source_start_seconds: Number(umbrellaClip.trimStartSeconds) || 0,
+            duration_seconds: sequenceDuration,
+          });
+        }
+      }
+      cursor += sequenceDuration;
+    });
+  });
+  return { sequences, narrations };
+}
 
 function runRenderMovie() {
   // Renderable = arranged and has some visual: a narration-driven shot (start
   // + end frames), a generated storyboard visual, a stock/uploaded clip, or
   // the paper figure. (Shot-frame scenes don't set section.visual, so this
   // can't just check that.)
+  const boardPlan = buildActBoardRenderPlan();
+  // Keep the established timeline + scenes export intact. The linked act
+  // board becomes the render source only when its separate Board view is
+  // active; switching back to Timeline renders the regular scene storyboard.
+  const useBoardPlan = storyboardView === 'board' && boardPlan.sequences.length > 0;
   const storyboarded = currentSections.filter(section =>
-    !section.removed && currentAssignments[section.index] && (
-      (section.startFramePreviewUrl && section.endFramePreviewUrl) ||
-      (section.cutaways && section.cutaways.length) ||
-      section.visual || section.selectedVideo || section.uploadedFootagePreviewUrl || section.image
-    ));
-  if (storyboarded.length === 0) {
+    isSceneActive(section) && currentAssignments[section.index] && sectionHasRenderableVisual(section));
+  if (!useBoardPlan && storyboarded.length === 0) {
     setRenderMovieStatus('No shots yet - generate a shot (or pick footage) for a scene first.', true);
-    return;
+    if (renderMovieBtn) renderMovieBtn.disabled = false;
+    return Promise.resolve(false);
+  }
+
+  if (useBoardPlan) {
+    const missing = boardPlan.sequences.flatMap(sequence =>
+      sequence.footage.filter(item => !item.media_url)
+        .map(item => item.fragment || item.node_id || 'an unlabelled footage node'));
+    if (missing.length) {
+      setRenderMovieStatus(
+        `The linked act-board sequence is missing media for: ${missing.join(', ')}. Upload or generate that footage, then try again.`,
+        true,
+      );
+      if (renderMovieBtn) renderMovieBtn.disabled = false;
+      return Promise.resolve(false);
+    }
   }
 
   // Build the payload up front, bailing (before touching the server) if any
@@ -3996,28 +11318,34 @@ function runRenderMovie() {
   // but naming the offending section here is friendlier than a generic
   // server error mid-render.
   const payload = [];
-  for (const section of storyboarded) {
+  for (const section of (useBoardPlan ? [] : storyboarded)) {
     // A narration-driven shot (start + end frames) takes priority - it
     // hard-cuts between the two frames in the render. Otherwise fall back to
     // the single resolved visual (stock/uploaded/sketch) or the paper figure.
-    const hasShotFrames = !!(section.startFramePreviewUrl && section.endFramePreviewUrl);
+    const hasShotFrames = hasLegacyShotFrames(section);
     let previewUrl = null;
     let figureDataUrl = null;
     if (!hasShotFrames) {
       ({ previewUrl, figureDataUrl } = resolveSectionVisualForRender(section));
       if (!previewUrl && !figureDataUrl) {
         setRenderMovieStatus(`"${section.title}" has no usable visual yet - generate a shot, pick footage, or use its figure image, then try again.`, true);
-        return;
+        if (renderMovieBtn) renderMovieBtn.disabled = false;
+        return Promise.resolve(false);
       }
     }
+    // Expository scenes render EVERY cutaway still in sequence under the
+    // narration (see movie_render.render_shot's cutaway branch), not just the
+    // first - send them all when cutaways are the scene's active visual.
+    const usingCutaways = !hasShotFrames && previewUrl && section.cutaways && section.cutaways.length
+      && previewUrl === section.cutaways[0].preview_url;
     payload.push({
       title: section.title,
       start_frame_preview_url: hasShotFrames ? section.startFramePreviewUrl : null,
       end_frame_preview_url: hasShotFrames ? section.endFramePreviewUrl : null,
       visual_preview_url: previewUrl,
+      cutaway_preview_urls: usingCutaways ? section.cutaways.map(c => c.preview_url).filter(Boolean) : null,
       figure_image_data_url: (previewUrl || hasShotFrames) ? null : figureDataUrl,
-      narration_audio_path: section.narrationAudioPreviewUrl || null,
-      stock_audio_preview_url: (section.selectedAudio && section.selectedAudio.localPreviewUrl) || null,
+      narration_audio_path: null,
       edit_plan: section.editPlan
         ? {
           transition_in: section.editPlan.transitionIn,
@@ -4030,27 +11358,47 @@ function runRenderMovie() {
   }
 
   if (renderMovieBtn) renderMovieBtn.disabled = true;
+  if (renderMovieDownloadEl) {
+    renderMovieDownloadEl.hidden = true;
+    renderMovieDownloadEl.removeAttribute('href');
+  }
+  renderMovieOutputUrl = '';
   setRenderMovieStatus('Starting render ...');
   if (renderPollTimer) { clearInterval(renderPollTimer); renderPollTimer = null; }
 
-  fetchRenderStart(payload, premiereProjectId)
-    .then(({ project_id }) => {
+  const narrations = useBoardPlan ? boardPlan.narrations : buildNarrationsExportPayload();
+  return fetchRenderStart(payload, premiereProjectId, buildSoundEffectsExportPayload(), narrations, boardPlan.sequences)
+    .then(({ project_id, preview_url }) => {
       premiereProjectId = project_id;
+      renderMovieOutputUrl = preview_url || `/premiere_exports/${encodeURIComponent(project_id)}/documentary.mp4`;
       saveDebugSession();
-      setRenderMovieStatus('Rendering ...');
+      setRenderMovieStatus(useBoardPlan
+        ? `Rendering ${boardPlan.sequences.length} linked sequence${boardPlan.sequences.length === 1 ? '' : 's'} across the act board ...`
+        : 'Rendering ...');
       pollRenderStatus();
+      return true;
     })
     .catch(err => {
-      setRenderMovieStatus(err.message, true);
-      renderMovieBtn.disabled = false;
+      const planNote = combinedPremiereExportResult && combinedPremiereExportResult.ok
+        ? ` Premiere plan was saved at ${combinedPremiereExportResult.folderPath}/edit_plan.json.` : '';
+      setRenderMovieStatus(`${err.message}${planNote}`, true);
+      if (renderMovieBtn) renderMovieBtn.disabled = false;
+      return false;
     });
 }
 
-// Self-clearing poll of /render/status to completion - justified here (over
-// the manual-click runCheckForPreview pattern) because, unlike the Premiere
-// round-trip, the backend itself performs and knows the render's state, so an
-// owned poll is strictly better. On done, the status just names the output
-// file; there's no in-app preview - the presenter opens the MP4 directly.
+function setRenderMovieDownload(projectId) {
+  if (!renderMovieDownloadEl || !projectId) return;
+  const baseUrl = renderMovieOutputUrl
+    || `/premiere_exports/${encodeURIComponent(projectId)}/documentary.mp4`;
+  const url = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}download=${Date.now()}`;
+  renderMovieDownloadEl.href = url;
+  renderMovieDownloadEl.hidden = false;
+}
+
+// Self-clearing poll of /render/status to completion. The backend performs and
+// knows the render's state, so an owned poll can report progress and completion.
+// On done, the status names both the MP4 and Premiere-plan outputs.
 function pollRenderStatus() {
   renderPollTimer = setInterval(() => {
     fetchRenderStatus(premiereProjectId)
@@ -4063,7 +11411,16 @@ function pollRenderStatus() {
         renderPollTimer = null;
         if (renderMovieBtn) renderMovieBtn.disabled = false;
         if (state === 'done') {
-          setRenderMovieStatus(`Done - premiere_exports/${premiereProjectId}/documentary.mp4`);
+          const mp4Path = `premiere_exports/${premiereProjectId}/documentary.mp4`;
+          setRenderMovieDownload(premiereProjectId);
+          if (combinedPremiereExportResult && combinedPremiereExportResult.ok) {
+            setRenderMovieStatus(
+              `Done — MP4: ${mp4Path} · Premiere plan: ${combinedPremiereExportResult.folderPath}/edit_plan.json`);
+          } else if (combinedPremiereExportResult && !combinedPremiereExportResult.ok) {
+            setRenderMovieStatus(`MP4 done: ${mp4Path} · Premiere plan failed: ${combinedPremiereExportResult.error}`, true);
+          } else {
+            setRenderMovieStatus(`Done - ${mp4Path}`);
+          }
         } else {
           setRenderMovieStatus(message || 'Render failed.', true);
         }
@@ -4083,11 +11440,12 @@ const fileInput = document.getElementById('paper-file-input');
 const extractBtn = document.getElementById('extract-paper-btn');
 const statusEl = document.getElementById('paper-status');
 const resultsEl = document.getElementById('paper-sections');
-const paperActionsEl = document.getElementById('paper-actions');
 const storyboardArcModuleEl = document.getElementById('storyboard-arc-module');
 const mediaBankModuleEl = document.getElementById('media-bank-module');
 const sourceMaterialModuleEl = document.getElementById('source-material-module');
 const deletedScenesModuleEl = document.getElementById('deleted-scenes-module');
+const moodboardSummaryModuleEl = document.getElementById('moodboard-summary-module');
+const moodboardSummaryListEl = document.getElementById('moodboard-summary-list');
 const deletedScenesListEl = document.getElementById('deleted-scenes-list');
 const sidebarStackEl = document.getElementById('storyboard-sidebar');
 const togglePanelsBtn = document.getElementById('toggle-panels-btn');
@@ -4098,20 +11456,11 @@ const uploadMediaInput = document.getElementById('upload-media-input');
 const mediaBankStatusEl = document.getElementById('media-bank-status');
 const mediaBankListEl = document.getElementById('media-bank-list');
 const sourceMaterialListEl = document.getElementById('source-material-list');
-const editPlanActionEl = document.getElementById('edit-plan-action');
-const editPlanOverallNotesEl = document.getElementById('edit-plan-overall-notes');
-const premiereExportActionEl = document.getElementById('premiere-export-action');
-const exportPremiereBtn = document.getElementById('export-premiere-btn');
-const premiereExportStatusEl = document.getElementById('premiere-export-status');
-const premiereExportFolderEl = document.getElementById('premiere-export-folder');
-const checkPreviewBtn = document.getElementById('check-preview-btn');
-const previewStatusEl = document.getElementById('preview-status');
-const previewVideoEl = document.getElementById('preview-video');
 // The "Render MP4" button + its status live in the storyboard heading row now
 // (built per-render in renderMovieEditor, next to "Clear all scenes"), not in
 // a fixed panel - so these are reassigned each render rather than queried once.
-// There's no in-app preview; the result is opened directly from
-// premiere_exports/<id>/documentary.mp4.
+// The finished file is served from premiere_exports/<id>/documentary.mp4 and
+// exposed as a Download MP4 link after the background render completes.
 let renderMovieBtn = null;
 let renderMovieStatusEl = null;
 
@@ -4249,29 +11598,15 @@ function setEditPlanStatus(message, isError) {
   }
 }
 
-function setPremiereExportStatus(message, isError) {
-  premiereExportStatusEl.textContent = message || '';
-  premiereExportStatusEl.classList.toggle('error', !!isError);
-}
-
-function setPreviewStatus(message, isError) {
-  previewStatusEl.textContent = message || '';
-  previewStatusEl.classList.toggle('error', !!isError);
-}
-
 function setRenderMovieStatus(message, isError) {
   if (!renderMovieStatusEl) return; // heading row not built (e.g. index.html)
   renderMovieStatusEl.textContent = message || '';
   renderMovieStatusEl.classList.toggle('error', !!isError);
 }
 
-// extractBtn only exists on index.html; exportPremiereBtn/checkPreviewBtn
-// only exist on storyboard.html - both index.html and storyboard.html load
-// this same shared script, so each wiring is guarded to be a no-op on the
-// page where its target doesn't exist.
+// extractBtn only exists on index.html, while both pages load this shared
+// script, so its wiring is guarded on storyboard.html.
 if (extractBtn) extractBtn.addEventListener('click', runExtraction);
-if (exportPremiereBtn) exportPremiereBtn.addEventListener('click', runExportForPremiere);
-if (checkPreviewBtn) checkPreviewBtn.addEventListener('click', runCheckForPreview);
 // The "Render MP4" button is built + wired per-render in the storyboard
 // heading row (see renderMovieEditor), so there's no fixed element to wire here.
 
@@ -4286,9 +11621,69 @@ if (checkPreviewBtn) checkPreviewBtn.addEventListener('click', runCheckForPrevie
 // to appendChild anyway, and moving a node to right before itself is a
 // harmless no-op, so this is safe to call again on every subsequent
 // accept/restore.
+function setupSidebarModuleCollapse(moduleEl) {
+  if (!moduleEl || moduleEl.dataset.sidebarCollapseReady === 'true') return;
+  // Use direct children rather than a selector rooted at :scope so this also
+  // works in the embedded browser used by the desktop app.
+  const heading = Array.from(moduleEl.children).find(child => child.tagName === 'H2');
+  if (!heading) return;
+
+  const moduleId = moduleEl.id || `sidebar-module-${Date.now()}`;
+  const header = document.createElement('div');
+  header.className = 'sidebar-module-header';
+  header.setAttribute('role', 'heading');
+  header.setAttribute('aria-level', '2');
+
+  const collapseBtn = document.createElement('button');
+  collapseBtn.type = 'button';
+  collapseBtn.className = 'premiere-timeline-collapse-btn sidebar-module-collapse-btn';
+  collapseBtn.addEventListener('click', () => {
+    sidebarModuleCollapsed[moduleId] = !sidebarModuleCollapsed[moduleId];
+    updateSidebarModuleCollapse(moduleEl, collapseBtn, heading);
+    saveDebugSession();
+    collapseBtn.blur();
+  });
+
+  heading.parentNode.insertBefore(header, heading);
+  header.appendChild(heading);
+  header.appendChild(collapseBtn);
+  // Put every other module child behind one explicit body element. Using the
+  // native `hidden` property makes collapse reliable even when a module's
+  // list renderer applies its own display/flex styles (as Source material and
+  // Deleted source and scenes do).
+  const body = document.createElement('div');
+  body.className = 'sidebar-module-body';
+  while (header.nextSibling) body.appendChild(header.nextSibling);
+  moduleEl.appendChild(body);
+  moduleEl._sidebarModuleBodyEl = body;
+  moduleEl.dataset.sidebarCollapseReady = 'true';
+  moduleEl.dataset.sidebarModuleId = moduleId;
+  updateSidebarModuleCollapse(moduleEl, collapseBtn, heading);
+}
+
+function setupAllSidebarModuleCollapses() {
+  if (!sidebarStackEl) return;
+  sidebarStackEl.querySelectorAll('.module-card--in-sidebar').forEach(setupSidebarModuleCollapse);
+}
+
+function updateSidebarModuleCollapse(moduleEl, collapseBtn, heading) {
+  if (!moduleEl || !collapseBtn) return;
+  const moduleId = moduleEl.dataset.sidebarModuleId || moduleEl.id;
+  const collapsed = !!sidebarModuleCollapsed[moduleId];
+  moduleEl.classList.toggle('sidebar-module-collapsed', collapsed);
+  if (moduleEl._sidebarModuleBodyEl) moduleEl._sidebarModuleBodyEl.hidden = collapsed;
+  const action = collapsed ? 'Expand' : 'Collapse';
+  const label = heading ? heading.textContent.trim() : 'panel';
+  collapseBtn.textContent = collapsed ? '▾' : '▴';
+  collapseBtn.title = `${action} ${label}`;
+  collapseBtn.setAttribute('aria-label', `${action} ${label}`);
+  collapseBtn.setAttribute('aria-expanded', String(!collapsed));
+}
+
 function relocateArcSuggestionToSidebar() {
   if (!sidebarStackEl || !storyboardArcModuleEl) return;
   storyboardArcModuleEl.classList.add('module-card--in-sidebar');
+  setupSidebarModuleCollapse(storyboardArcModuleEl);
   sidebarStackEl.insertBefore(storyboardArcModuleEl, sidebarStackEl.firstChild);
 }
 
@@ -4302,6 +11697,7 @@ function relocateArcSuggestionToSidebar() {
 function relocateMediaBankToSidebar() {
   if (!sidebarStackEl || !mediaBankModuleEl) return;
   mediaBankModuleEl.classList.add('module-card--in-sidebar');
+  setupSidebarModuleCollapse(mediaBankModuleEl);
   mediaBankModuleEl.style.display = '';
   sidebarStackEl.appendChild(mediaBankModuleEl);
 }
@@ -4309,6 +11705,7 @@ function relocateMediaBankToSidebar() {
 function relocateSourceMaterialToSidebar() {
   if (!sidebarStackEl || !sourceMaterialModuleEl) return;
   sourceMaterialModuleEl.classList.add('module-card--in-sidebar');
+  setupSidebarModuleCollapse(sourceMaterialModuleEl);
   sourceMaterialModuleEl.style.display = '';
   sidebarStackEl.appendChild(sourceMaterialModuleEl);
 }
@@ -4319,8 +11716,24 @@ function relocateSourceMaterialToSidebar() {
 function relocateDeletedScenesToSidebar() {
   if (!sidebarStackEl || !deletedScenesModuleEl) return;
   deletedScenesModuleEl.classList.add('module-card--in-sidebar');
+  setupSidebarModuleCollapse(deletedScenesModuleEl);
   sidebarStackEl.appendChild(deletedScenesModuleEl);
   renderDeletedScenesList();
+}
+
+// Read-only moodboard recap (see renderMoodboardSummaryList) - pinned to the
+// TOP of the sidebar stack (inserted before the first child, so it sits above
+// the arc panel and the other modules). Its own render toggles visibility
+// (hidden when nothing analyzed).
+function relocateMoodboardSummaryToSidebar() {
+  if (!sidebarStackEl || !moodboardSummaryModuleEl) return;
+  moodboardSummaryModuleEl.classList.add('module-card--in-sidebar');
+  setupSidebarModuleCollapse(moodboardSummaryModuleEl);
+  sidebarStackEl.insertBefore(moodboardSummaryModuleEl, sidebarStackEl.firstChild);
+  // Editable moodboard (add/remove references re-distills - see
+  // refreshSuggestionsFromMoodboard); renders the same cards index.html uses.
+  renderMoodboardList();
+  refreshMoodboardStatusLine();
 }
 
 // Runs all relocations together (both call sites always wanted them all
@@ -4332,7 +11745,12 @@ function relocateAllSidebarModules() {
   // revealed (see storyboard.html). The one recorded-intent clip it held
   // moved into #storyboard-arc-module.
   relocateSourceMaterialToSidebar();
+  relocateMoodboardSummaryToSidebar();
   relocateDeletedScenesToSidebar();
+  // Final scan keeps cards such as Source material and Deleted source and
+  // scenes wired even when their content was initially hidden or rendered
+  // after the first relocation pass.
+  setupAllSidebarModuleCollapses();
   if (togglePanelsBtn) togglePanelsBtn.style.display = '';
 }
 
@@ -4378,6 +11796,7 @@ if (uploadSidebarToggle) {
 // anymore, though it still doubles as that too (no server round-trip, no
 // attempt to reconcile with a paper re-uploaded in another tab).
 const DEBUG_SESSION_STORAGE_KEY = 'paperExtractDebugSession';
+const PAPER_SNAPSHOT_ID_STORAGE_KEY = 'paperExtractSnapshotId';
 
 // Set once "Clear saved session" is clicked, so the beforeunload handler
 // below doesn't immediately re-save the (still in-memory) old state right
@@ -4385,6 +11804,53 @@ const DEBUG_SESSION_STORAGE_KEY = 'paperExtractDebugSession';
 // bug: clearDebugSession() removed the key, but saveDebugSession() ran
 // again a moment later on unload and put it right back.
 let debugSessionCleared = false;
+
+function createPaperSnapshotId() {
+  const raw = (window.crypto && typeof window.crypto.randomUUID === 'function')
+    ? window.crypto.randomUUID().replaceAll('-', '')
+    : `paper${Date.now()}${Math.random().toString(36).slice(2, 12)}`;
+  return raw.slice(0, 100);
+}
+
+function ensurePaperSnapshotId() {
+  if (paperSnapshotId) return paperSnapshotId;
+  try {
+    paperSnapshotId = localStorage.getItem(PAPER_SNAPSHOT_ID_STORAGE_KEY) || null;
+  } catch (err) { /* private browsing/localStorage unavailable */ }
+  if (!paperSnapshotId) paperSnapshotId = createPaperSnapshotId();
+  try { localStorage.setItem(PAPER_SNAPSHOT_ID_STORAGE_KEY, paperSnapshotId); } catch (err) {}
+  return paperSnapshotId;
+}
+
+function rotatePaperSnapshotId() {
+  paperSnapshotId = createPaperSnapshotId();
+  try { localStorage.setItem(PAPER_SNAPSHOT_ID_STORAGE_KEY, paperSnapshotId); } catch (err) {}
+}
+
+function queuePaperSnapshotSave() {
+  if (debugSessionCleared) return;
+  const hasSource = currentSections.length > 0 || moodboardReferences.some(ref => ref.sourceUrl);
+  if (!hasSource) return;
+  clearTimeout(paperSnapshotSaveTimer);
+  paperSnapshotSaveTimer = setTimeout(() => {
+    const payload = {
+      snapshot_id: ensurePaperSnapshotId(),
+      label: currentLabel,
+      sections: currentSections.map(section => ({
+        index: section.index,
+        title: section.title,
+        text: section.text,
+        removed: !!section.removed,
+      })),
+      youtube_references: moodboardReferences
+        .filter(ref => ref.sourceKind === 'youtube' && ref.sourceUrl)
+        .map(ref => ({ title: ref.title, url: ref.sourceUrl })),
+    };
+    fetchSavePaperSnapshot(payload).catch(() => {
+      // LocalStorage remains the immediate fallback when the backend is down.
+    });
+  }, 350);
+}
 
 function saveDebugSession() {
   if (debugSessionCleared) return;
@@ -4394,7 +11860,17 @@ function saveDebugSession() {
       currentSections,
       currentAssignments,
       currentArcSections,
+      actBoardNodes,
+      sceneRemovalStateVersion: 1,
       recordedTranscript,
+      // Moodboard references (plain data only - no DOM); the disk-backed
+      // thumbnail_url/profile survive the index->storyboard navigation.
+      moodboardReferences: moodboardReferences.map(r => ({
+        refId: r.refId, sourceKind: r.sourceKind, title: r.title, sourceUrl: r.sourceUrl,
+        note: r.note, state: r.state, profile: r.profile, thumbnailUrl: r.thumbnailUrl,
+      })),
+      distilledStyleRationale,
+      lastDistillResult,
       selectedFocusStatements: Array.from(selectedFocusStatements),
       selectedTechniques: Array.from(selectedTechniques),
       selectedNarrationArc,
@@ -4402,6 +11878,9 @@ function saveDebugSession() {
       recordedNarrationExtension,
       persistedNarrationPreviewUrl,
       premiereProjectId,
+      premiereTimelineCollapsed,
+      sidebarModuleCollapsed: { ...sidebarModuleCollapsed },
+      paperSnapshotId,
       // mediaBankItems deliberately not persisted - see its own comment,
       // just above where it's declared.
     }));
@@ -4409,6 +11888,7 @@ function saveDebugSession() {
     // Quota exceeded (large embedded figure images) or localStorage
     // unavailable (private browsing) - not worth failing the UI over.
   }
+  queuePaperSnapshotSave();
 }
 
 function clearDebugSession() {
@@ -4430,6 +11910,8 @@ function restoreDebugSession() {
 
   currentLabel = saved.currentLabel || '';
   currentSections = saved.currentSections;
+  paperSnapshotId = saved.paperSnapshotId || null;
+  premiereTimelineCollapsed = !!saved.premiereTimelineCollapsed;
   // One-time migration: blank placeholders created before the default
   // title changed from "New Section" to "New Scene" (see renderMovieEditor/
   // its "+ Add Section" button) are still sitting in old saved sessions
@@ -4437,18 +11919,104 @@ function restoreDebugSession() {
   // this to just those, not a real paper section a researcher happened to
   // title "New Section" themselves.
   currentSections.forEach(section => {
+    // Normalize the independently persisted storyboard-deletion state.
+    section.sceneRemoved = !!section.sceneRemoved;
     if (section.narrativeOnly && section.title === 'New Section') section.title = 'New Scene';
+    // Sound effects used to be modeled as a mutually-exclusive scene role.
+    // They now underlay either visual role, so retain the selected audio but
+    // return legacy SFX-only scenes to the default Primary lane.
+    if (section.role === 'soundEffects') section.role = 'aRoll';
+    if (section.selectedAudio) {
+      const legacyDuration = Number(section.selectedAudio.durationSeconds || section.selectedAudio.duration);
+      if (!section.selectedAudio.sourceDurationSeconds && legacyDuration > 0) {
+        section.selectedAudio.sourceDurationSeconds = Number(section.selectedAudio.duration) || legacyDuration;
+      }
+      if (!section.selectedAudio.durationSeconds && legacyDuration > 0) {
+        section.selectedAudio.durationSeconds = legacyDuration;
+      }
+      if (!Number.isFinite(Number(section.selectedAudio.trimStartSeconds))) {
+        section.selectedAudio.trimStartSeconds = 0;
+      }
+      normalizeSelectedAudioSegment(section.selectedAudio);
+    }
   });
   currentAssignments = saved.currentAssignments || {};
   currentArcSections = Array.isArray(saved.currentArcSections) ? saved.currentArcSections : [];
+  actBoardNodes = (saved.actBoardNodes && typeof saved.actBoardNodes === 'object')
+    ? saved.actBoardNodes
+    : Object.create(null);
+  // Migrate the first act-board prototype, which keyed footage cards by
+  // entity name. The board now keeps the original narration fragment visible
+  // on each footage card instead.
+  Object.entries(actBoardNodes).forEach(([actKey, nodes]) => {
+    if (!Array.isArray(nodes)) return;
+    nodes.forEach(node => {
+      if (node && !node.actKey) node.actKey = actKey;
+      if (node && node.type === 'footage' && !node.fragment && node.entity) {
+        node.fragment = node.entity;
+      }
+      if (node && node.type === 'footage') {
+        // A stock download is a transient request; never restore a stale
+        // in-progress marker after a refresh.
+        delete node.downloadStatus;
+      }
+      if (node && node.type === 'narration') {
+        delete node.entities;
+        // Object URLs are page-local and become invalid on refresh. Never let
+        // an old serialized blob: URL win over the persisted server preview.
+        delete node._nativePreviewUrl;
+        delete node._nativeAudioUrl;
+        delete node.audioBuffer;
+        if (typeof node.audioPreviewUrl === 'string' && node.audioPreviewUrl.startsWith('blob:')) {
+          delete node.audioPreviewUrl;
+        }
+      }
+    });
+  });
+  // Before sceneRemoved existed, "Clear all scenes" marked the shared source
+  // objects as removed. Repair that legacy all-scenes-cleared shape once so a
+  // refresh restores the paper library while keeping the storyboard empty.
+  if (!saved.sceneRemovalStateVersion) {
+    const legacyArranged = currentSections.filter(section => currentAssignments[section.index]);
+    if (legacyArranged.length > 0 && legacyArranged.every(section => section.removed)) {
+      legacyArranged.forEach(section => {
+        section.removed = false;
+        section.sceneRemoved = true;
+      });
+    }
+  }
   recordedTranscript = saved.recordedTranscript || '';
+  moodboardReferences = Array.isArray(saved.moodboardReferences) ? saved.moodboardReferences : [];
+  distilledStyleRationale = saved.distilledStyleRationale || '';
+  lastDistillResult = saved.lastDistillResult || null;
   selectedFocusStatements = new Set(Array.isArray(saved.selectedFocusStatements) ? saved.selectedFocusStatements : []);
-  selectedTechniques = new Set(Array.isArray(saved.selectedTechniques) ? saved.selectedTechniques : []);
+  selectedTechniques = new Set(sanitizeDocumentaryTechniques(saved.selectedTechniques));
+  // Also migrate per-scene technique lists from older sessions where a track
+  // role could be stored as though it were a technique.
+  currentSections.forEach(section => {
+    section.techniques = sanitizeDocumentaryTechniques(section.techniques);
+    // Runtime-only request state must never survive a saved session.
+    delete section._generating;
+    // Runtime audio decodes/object URLs must be rebuilt from the persisted
+    // preview URL on refresh; older sessions may contain a serialized `{}`
+    // where an AudioBuffer used to be.
+    delete section.narrationAudioBuffer;
+    if (Array.isArray(section.narrationClips)) {
+      section.narrationClips.forEach(clip => {
+        delete clip.audioBuffer;
+        delete clip._nativePreviewUrl;
+      });
+    }
+  });
   selectedNarrationArc = saved.selectedNarrationArc || null;
+  syncAcceptedArcNarrationDrafts();
   recordedNarrationDurationSeconds = saved.recordedNarrationDurationSeconds || null;
   recordedNarrationExtension = saved.recordedNarrationExtension || 'webm';
   persistedNarrationPreviewUrl = saved.persistedNarrationPreviewUrl || null;
   premiereProjectId = saved.premiereProjectId || null;
+  sidebarModuleCollapsed = (saved.sidebarModuleCollapsed && typeof saved.sidebarModuleCollapsed === 'object')
+    ? { ...saved.sidebarModuleCollapsed }
+    : Object.create(null);
   // mediaBankItems deliberately left at its MEDIA_BANK_ASSET_DEFAULTS
   // initial value here - not restored from a saved session (see its own
   // comment, just above where it's declared).
@@ -4488,35 +12056,24 @@ const restoredSession = restoreDebugSession();
 
 if (restoredSession) {
   if (extractBtn) {
-    // --- index.html: restore the editable source-material feed, the
-    // transcript display, focus-chip selections, and (best-effort)
-    // in-browser playback of the last recording.
+    // --- index.html: restore the editable source-material feed and the
+    // moodboard of reference documentaries (re-polling any that were still
+    // analyzing when the page was left).
     if (currentSections.length) renderSectionFeed(resultsEl, currentLabel, currentSections);
-    if (intentSuggestedChipsEl) {
-      Array.from(intentSuggestedChipsEl.children).forEach(chip => {
-        chip.classList.toggle('selected', selectedFocusStatements.has(chip.textContent));
-      });
-    }
-    if (recordedTranscript) {
-      intentTranscriptTextEl.textContent = recordedTranscript;
-      intentTranscriptDisplayEl.style.display = '';
-    }
-    restorePersistedNarrationPlayback();
+    renderMoodboardList();
+    refreshMoodboardStatusLine();
+    moodboardReferences.forEach(r => {
+      if (r.state === 'analyzing' && r.refId) pollMoodboardReference(r.refId);
+    });
     updateComposeStoryboardVisibility();
     if (currentLabel) setStatus(`Restored "${currentLabel}" from your last session.`);
   } else if (suggestArcsRowEl) {
-    // --- storyboard.html: render the movie editor if an arc's already
-    // been accepted (relocating the suggestion module into the sidebar to
-    // match); otherwise pick up wherever setup left off - a stated intent
-    // ready for fresh suggestions, or (arrived here directly, with
-    // neither) a nudge back to setup. Re-fires suggestions whenever intent
-    // is known, even with an arc already accepted, so switching arcs stays
-    // available after a reload (the LLM's recommendation/alternatives
-    // aren't themselves persisted, only the one accepted).
-    if (recordedTranscript) {
-      intentTranscriptTextEl.textContent = recordedTranscript;
-      intentTranscriptDisplayEl.style.display = '';
-    }
+    // --- storyboard.html: render the movie editor if an arc's already been
+    // accepted (relocating the suggestion module into the sidebar to match).
+    // The distillation is NOT re-run on reload - its result is cached in
+    // lastDistillResult (persisted), so a refresh re-renders the suggestion
+    // from cache rather than firing a fresh LLM call. A brand-new arrival with
+    // ready references but no cache distills once.
     restorePersistedNarrationPlayback();
     renderMediaBankItems();
     // Populates the underlying content even before an arc's accepted, so
@@ -4527,16 +12084,33 @@ if (restoredSession) {
     const remaining = currentSections.filter(section => !section.removed);
     if (currentArcSections.length > 0) {
       renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
-      paperActionsEl.style.display = '';
+      autoSuggestNarrationForStoryboard();
       relocateAllSidebarModules();
     }
-    if (recordedTranscript || selectedFocusStatements.size > 0) {
+    if (lastDistillResult) {
+      // Re-render the cached suggestion (no LLM call). mode/techniques were
+      // restored from the session, so don't re-apply them here.
       suggestArcsRowEl.style.display = '';
-      runSuggestArcs();
+      renderArcSuggestion(lastDistillResult.recommended, lastDistillResult.alternatives);
+    } else if (moodboardReferences.some(r => r.state === 'ready')) {
+      suggestArcsRowEl.style.display = '';
+      runDistillMoodboard();
     } else if (currentArcSections.length === 0) {
       suggestArcsRowEl.style.display = '';
-      suggestArcsStatusEl.textContent = 'Go back to setup and record your intent or pick a focus first.';
+      suggestArcsStatusEl.textContent = 'Go back to setup and add a reference documentary to your moodboard first.';
+    }
+    // The moodboard module on storyboard is editable (add/remove references to
+    // re-suggest the arc/mode/techniques). Show + render it whether or not an
+    // arc's been accepted; it relocates into the sidebar once one has.
+    if (moodboardSummaryModuleEl && moodboardListEl) {
+      moodboardSummaryModuleEl.style.display = '';
+      renderMoodboardList();
+      refreshMoodboardStatusLine();
     }
   }
 }
+// Mirror an already-restored browser session into the quiet file-backed
+// snapshot too, so an existing paper/YouTube reference is captured without
+// requiring the presenter to make another edit first.
+if (restoredSession) queuePaperSnapshotSave();
 //#endregion

@@ -6,8 +6,8 @@ needs Premiere open and a lot of manual steps and still produces no audio.
 This path instead renders each shot to an identical-parameter intermediate
 clip (1920x1080, yuv420p, 30fps, H.264 + AAC 48kHz stereo) so the concat
 demuxer's fast, lossless `-c copy` join works at the end, and produces a
-final documentary.mp4 automatically with narration + sound-effect audio
-actually mixed in. Pure subprocess ffmpeg orchestration (no ffmpeg-python
+final documentary.mp4 automatically with original footage audio, narration,
+and sound-effect audio actually mixed in. Pure subprocess ffmpeg orchestration (no ffmpeg-python
 wrapper), matching premiere_bridge.py's own remux_for_reliable_playback
 convention.
 
@@ -119,6 +119,24 @@ def probe_duration(path):
         return None
 
 
+def _has_audio_stream(path):
+    """Return whether a visual clip contains a readable audio stream.
+
+    Uploaded/stock footage can be silent or video-only. We only reference
+    ``[0:a]`` in the ffmpeg filtergraph when ffprobe confirms an audio stream,
+    otherwise a perfectly valid silent video would make the whole render fail.
+    """
+    try:
+        result = subprocess.run(
+            [FFPROBE_BIN, '-v', 'error', '-select_streams', 'a:0',
+             '-show_entries', 'stream=index', '-of', 'csv=p=0', str(path)],
+            capture_output=True, timeout=30,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0 and bool(result.stdout.decode('utf-8', 'replace').strip())
+
+
 def _is_still(visual_path):
     return Path(visual_path).suffix.lower() in _STILL_EXTENSIONS
 
@@ -209,16 +227,20 @@ _STILL_NORM_CHAIN = (
 )
 
 
-def _audio_inputs_and_filter(shot, effective_seconds, audio_base_index=1):
+def _audio_inputs_and_filter(shot, effective_seconds, audio_base_index=1, source_audio=False):
     """Builds the ffmpeg input args and the audio half of a filtergraph for
-    a shot - narration at full level, a sound effect ducked under it, or a
-    solo sound effect at a bed level, or generated silence when there's
-    neither. Returns (input_args, filter_str, audio_label).
+    a shot - original footage audio, narration at full level, a sound effect
+    ducked under it, or generated silence when there's none. Returns
+    (input_args, filter_str, audio_label).
 
     audio_base_index is the ffmpeg input index the FIRST audio input will
     land at - i.e. the number of video inputs already declared before these
     (1 for the usual single-visual shot, 2 for a start/end still pair). The
     filtergraph's `[N:a]` labels are computed from it.
+
+    When source_audio is true, the single visual input already has the source
+    audio at index 0; it is mixed directly instead of being added as another
+    ffmpeg input.
 
     The video side always caps the shot at effective_seconds via -t, so the
     audio only needs to be *at least* that long (silence/anullsrc is
@@ -226,23 +248,38 @@ def _audio_inputs_and_filter(shot, effective_seconds, audio_base_index=1):
     narration = shot.get('narration_audio_path')
     sfx = shot.get('sfx_audio_path')
     n = audio_base_index
+    source = '[0:a]aresample=%d,aformat=channel_layouts=stereo' % _SAMPLE_RATE if source_audio else None
 
-    if narration and sfx:
-        inputs = ['-i', str(narration), '-i', str(sfx)]
-        flt = (
-            f'[{n}:a]aresample={_SAMPLE_RATE},aformat=channel_layouts=stereo,volume=1.0[nar];'
-            f'[{n + 1}:a]aresample={_SAMPLE_RATE},aformat=channel_layouts=stereo,volume={_SFX_DUCKED_VOLUME}[sfx];'
-            '[nar][sfx]amix=inputs=2:duration=longest:normalize=0[aout]'
-        )
-        return inputs, flt, '[aout]'
+    inputs = []
+    labels = []
+    filters = []
+    if source:
+        # Preserve camera/production audio, but keep it below narration when
+        # narration is present so the spoken track remains intelligible.
+        source_volume = 0.35 if (narration or shot.get('duck_source_audio')) else 1.0
+        filters.append(f'{source},volume={source_volume}[source]')
+        labels.append('[source]')
     if narration:
-        inputs = ['-i', str(narration)]
-        flt = f'[{n}:a]aresample={_SAMPLE_RATE},aformat=channel_layouts=stereo[aout]'
-        return inputs, flt, '[aout]'
+        inputs += ['-i', str(narration)]
+        filters.append(
+            f'[{n}:a]aresample={_SAMPLE_RATE},aformat=channel_layouts=stereo,volume=1.0[nar]')
+        labels.append('[nar]')
+        n += 1
     if sfx:
-        inputs = ['-i', str(sfx)]
-        flt = f'[{n}:a]aresample={_SAMPLE_RATE},aformat=channel_layouts=stereo,volume={_SFX_SOLO_VOLUME}[aout]'
-        return inputs, flt, '[aout]'
+        inputs += ['-i', str(sfx)]
+        sfx_volume = _SFX_DUCKED_VOLUME if (narration or source_audio) else _SFX_SOLO_VOLUME
+        filters.append(
+            f'[{n}:a]aresample={_SAMPLE_RATE},aformat=channel_layouts=stereo,volume={sfx_volume}[sfx]')
+        labels.append('[sfx]')
+
+    if labels:
+        if len(labels) == 1:
+            filters.append(f'{labels[0]}anull[aout]')
+        else:
+            filters.append(
+                f'{"".join(labels)}amix=inputs={len(labels)}:duration=longest:normalize=0[aout]')
+        return inputs, ';'.join(filters), '[aout]'
+
     # No audio at all - a generated silent stereo track, so every shot
     # still has a uniform audio stream for the concat to line up.
     inputs = ['-f', 'lavfi', '-i', f'anullsrc=channel_layout=stereo:sample_rate={_SAMPLE_RATE}']
@@ -289,11 +326,34 @@ def render_shot(shot, output_path, tmp_dir):
         with os.fdopen(fd, 'w', encoding='utf-8') as f:
             f.write(overlay_text)
 
+    cutaway_paths = [p for p in (shot.get('cutaway_paths') or []) if p and Path(p).is_file()]
+
     start_path = shot.get('start_visual_path')
     end_path = shot.get('end_visual_path')
     two_still = bool(start_path and end_path and Path(start_path).is_file() and Path(end_path).is_file())
+    source_audio = False
 
-    if two_still:
+    if len(cutaway_paths) >= 2:
+        # Expository cutaways: every cutaway still shown in sequence, hard cuts,
+        # each held for an equal slice of the shot (seconds/N); the concat filter
+        # joins them into one continuous stream and the audio mix (inputs after
+        # the N image inputs) plays over the whole shot. Generalizes the
+        # two-still branch below to N stills.
+        n = len(cutaway_paths)
+        slice_t = max(seconds / n, 0.1)
+        video_input = []
+        for p in cutaway_paths:
+            video_input += ['-loop', '1', '-t', f'{slice_t:.3f}', '-i', str(p)]
+        parts = [f'[{k}:v]{_STILL_NORM_CHAIN}[v{k}]' for k in range(n)]
+        concat_in = ''.join(f'[v{k}]' for k in range(n))
+        if overlay_file is not None:
+            parts.append(f'{concat_in}concat=n={n}:v=1:a=0[vcat]')
+            parts.append(f'[vcat]{_drawtext_expr(overlay_file)},format=yuv420p[vout]')
+        else:
+            parts.append(f'{concat_in}concat=n={n}:v=1:a=0[vout]')
+        video_part = ';'.join(parts)
+        audio_base = n
+    elif two_still:
         # Two frames, hard cut at the midpoint - each held for half the shot
         # (-loop 1 -t bounds each looped still); the concat filter joins them
         # into one continuous video stream, and the audio mix (from input
@@ -318,16 +378,19 @@ def render_shot(shot, output_path, tmp_dir):
         if _is_still(visual_path):
             video_input = ['-loop', '1', '-i', str(visual_path)]
             video_filter = _video_filter_for_still(shot, total_frames, overlay_file)
+            source_audio = False
         else:
             # -stream_loop -1 loops a clip shorter than the shot (capped by -t);
             # a longer clip is simply trimmed by -t. Either way the shot lasts
             # exactly `seconds`.
             video_input = ['-stream_loop', '-1', '-i', str(visual_path)]
             video_filter = _video_filter_for_clip(overlay_file)
+            source_audio = _has_audio_stream(visual_path)
         video_part = f'[0:v]{video_filter}[vout]'
         audio_base = 1
 
-    audio_inputs, audio_filter, audio_label = _audio_inputs_and_filter(shot, seconds, audio_base)
+    audio_inputs, audio_filter, audio_label = _audio_inputs_and_filter(
+        shot, seconds, audio_base, source_audio=source_audio)
 
     filter_complex = f'{video_part};{audio_filter}'
     cmd = [
@@ -391,6 +454,50 @@ def concat_shots(paths, output_path):
             list_path.unlink()
 
 
+def mix_global_sound_effects(input_path, sound_effects, output_path):
+    """Mix absolute-time SFX events over an already-joined documentary.
+
+    `adelay` places every chosen clip at its browser/timeline start;
+    `atrim` applies its selected source in-point and duration (already capped
+    at documentary end by the client). Video is stream-copied, while only the
+    final audio is encoded.
+    """
+    if not sound_effects:
+        Path(input_path).replace(output_path)
+        return
+
+    inputs = ['-i', str(input_path)]
+    has_narration = any(effect.get('kind') == 'narration' for effect in sound_effects)
+    base_volume = 0.35 if has_narration else 1.0
+    filters = [
+        f'[0:a]aresample={_SAMPLE_RATE},aformat=channel_layouts=stereo,volume={base_volume}[base]'
+    ]
+    labels = ['[base]']
+    for i, effect in enumerate(sound_effects, start=1):
+        inputs += ['-i', str(effect['file_path'])]
+        delay_ms = max(0, int(round(float(effect['start_seconds']) * 1000)))
+        source_start = max(0, float(effect.get('source_start_seconds') or 0))
+        duration = max(0.001, float(effect['duration_seconds']))
+        label = f'sfx{i}'
+        volume = max(0, float(effect.get('gain', _SFX_DUCKED_VOLUME)))
+        filters.append(
+            f'[{i}:a]aresample={_SAMPLE_RATE},aformat=channel_layouts=stereo,'
+            f'atrim={source_start:.6f}:{source_start + duration:.6f},'
+            f'asetpts=PTS-STARTPTS,volume={volume},'
+            f'adelay={delay_ms}|{delay_ms}[{label}]'
+        )
+        labels.append(f'[{label}]')
+    filters.append(f'{"".join(labels)}amix=inputs={len(labels)}:duration=first:normalize=0[aout]')
+    cmd = [
+        FFMPEG_BIN, '-y', *inputs,
+        '-filter_complex', ';'.join(filters),
+        '-map', '0:v', '-map', '[aout]', '-c:v', 'copy',
+        '-c:a', 'aac', '-ar', str(_SAMPLE_RATE), '-ac', '2',
+        '-movflags', '+faststart', str(output_path),
+    ]
+    _run(cmd, timeout=600)
+
+
 def _write_status(status_path, state, step='', message=''):
     try:
         Path(status_path).write_text(json.dumps({
@@ -400,7 +507,7 @@ def _write_status(status_path, state, step='', message=''):
         pass  # a status write failing shouldn't itself abort a render
 
 
-def render_documentary(project_id, shots, output_path, status_path):
+def render_documentary(project_id, shots, sound_effects, output_path, status_path):
     """Top-level orchestrator: renders each shot to a scratch dir, joins
     them into output_path, and writes coarse progress to status_path
     ({state: 'rendering'|'done'|'error', step, message}) as it goes so the
@@ -418,14 +525,73 @@ def render_documentary(project_id, shots, output_path, status_path):
         _write_status(status_path, 'rendering', 'starting', f'Preparing {len(shots)} shot(s) ...')
         work_dir = output_path.parent / 'render_work'
         work_dir.mkdir(parents=True, exist_ok=True)
+        # Do not leave gap/transition intermediates from an earlier render in
+        # the work directory. The current render uses its in-memory segment
+        # list, but cleaning these stale files makes it impossible to mistake
+        # an old black segment for part of the new export while debugging.
+        for stale in (*work_dir.glob('board_gap_*.mp4'), *work_dir.glob('black_*.mp4')):
+            try:
+                stale.unlink()
+            except OSError:
+                pass
 
         segment_paths = []
+        timeline_cursor = 0.0
         for i, shot in enumerate(shots):
+            # Act-board footage carries the spoken-fragment start time. Keep
+            # any real pause between fragments in the rendered picture instead
+            # of silently collapsing the DAG into a back-to-back concat.
+            target_start = shot.get('timeline_start_seconds')
+            # Board shots carry timeline timestamps. Treat those as a
+            # continuous visual sequence even for payloads saved before the
+            # explicit hold_for_timeline_gaps flag was added.
+            is_board_shot = bool(shot.get('hold_for_timeline_gaps')) or isinstance(
+                target_start, (int, float))
+            render_shot_spec = shot
+            # A board pause should hold/loop the preceding visual, not insert
+            # a black clip. Extend this shot to the next board timestamp so
+            # the concat cursor reaches that timestamp naturally. This also
+            # prevents short Pexels clips from exposing a black interval while
+            # the narration continues.
+            board_render_start = float(target_start) if isinstance(target_start, (int, float)) else None
+            if (is_board_shot and board_render_start is not None
+                    and board_render_start > timeline_cursor + 0.03):
+                # A board sequence can begin after a recorded-transcript
+                # offset. Keep the selected visual on screen during that lead-
+                # in rather than creating an unexplained black frame.
+                board_render_start = timeline_cursor
+            if is_board_shot and isinstance(target_start, (int, float)):
+                next_target = None
+                for following in shots[i + 1:]:
+                    candidate = following.get('timeline_start_seconds')
+                    if isinstance(candidate, (int, float)):
+                        next_target = float(candidate)
+                        break
+                current_seconds = _effective_seconds(shot)
+                needed_seconds = None
+                if next_target is not None and board_render_start is not None and next_target > board_render_start:
+                    needed_seconds = next_target - board_render_start
+                elif board_render_start is not None and board_render_start < float(target_start):
+                    # The final (or only) shot has no following timestamp to
+                    # anchor its extension, so carry its lead-in into the
+                    # shot duration explicitly.
+                    needed_seconds = current_seconds + (float(target_start) - board_render_start)
+                if needed_seconds is not None and needed_seconds > current_seconds + 0.01:
+                    render_shot_spec = dict(shot)
+                    render_shot_spec['duration_seconds'] = needed_seconds
+            if (isinstance(target_start, (int, float)) and target_start > timeline_cursor + 0.03
+                    and not is_board_shot):
+                gap_path = work_dir / f'board_gap_{i:03d}.mp4'
+                gap_seconds = target_start - timeline_cursor
+                _write_status(status_path, 'rendering', f'shot {i + 1}/{len(shots)}', 'Preserving narration timing ...')
+                render_black_segment(gap_path, seconds=gap_seconds)
+                segment_paths.append(gap_path)
+                timeline_cursor += gap_seconds
             # dip_to_black is faked as a leading black+silent segment (the
             # concat demuxer can't blend between segments) - the Premiere
             # path still gets a real dip. Not applied to the very first
             # shot (nothing to dip from).
-            if i > 0 and shot.get('transition_in') == 'dip_to_black':
+            if i > 0 and shot.get('transition_in') == 'dip_to_black' and not is_board_shot:
                 black_path = work_dir / f'black_{i:03d}.mp4'
                 _write_status(status_path, 'rendering', f'shot {i + 1}/{len(shots)}', 'Rendering dip to black ...')
                 render_black_segment(black_path)
@@ -434,11 +600,18 @@ def render_documentary(project_id, shots, output_path, status_path):
             _write_status(status_path, 'rendering', f'shot {i + 1}/{len(shots)}',
                           f'Rendering shot {i + 1} of {len(shots)} ...')
             shot_path = work_dir / f'shot_{i:03d}.mp4'
-            render_shot(shot, shot_path, work_dir)
+            render_shot(render_shot_spec, shot_path, work_dir)
             segment_paths.append(shot_path)
+            timeline_cursor += _effective_seconds(render_shot_spec)
 
         _write_status(status_path, 'rendering', 'joining', 'Joining shots into the final cut ...')
-        concat_shots(segment_paths, output_path)
+        if sound_effects:
+            joined_path = work_dir / 'joined_without_sfx.mp4'
+            concat_shots(segment_paths, joined_path)
+            _write_status(status_path, 'rendering', 'mixing', 'Mixing the sound-effects track ...')
+            mix_global_sound_effects(joined_path, sound_effects, output_path)
+        else:
+            concat_shots(segment_paths, output_path)
 
         _write_status(status_path, 'done', 'done', f'Rendered {len(shots)} shot(s).')
     except Exception as exc:  # noqa: BLE001 - background thread, nothing to re-raise to

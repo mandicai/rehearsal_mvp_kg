@@ -1,0 +1,64 @@
+/* evaluation.html — matrix harness styles (loaded on top of styles-index.css) */
+
+.eval-field { display: block; margin: 0 0 10px; }
+.eval-field > span { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.7; margin-bottom: 3px; }
+.eval-field input[type="text"],
+.eval-field textarea,
+#eval-scene-act { width: 100%; box-sizing: border-box; font: inherit; padding: 6px 8px; }
+.eval-field textarea { resize: vertical; }
+
+.eval-summary-row { display: flex; gap: 10px; padding: 3px 0; font-size: 13px; }
+.eval-summary-key { flex: 0 0 130px; opacity: 0.6; text-transform: uppercase; font-size: 11px; letter-spacing: 0.05em; padding-top: 2px; }
+.eval-summary-val { flex: 1 1 auto; }
+
+.eval-axes-grid { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 16px; }
+.eval-axis-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.eval-axis-actions .btn-secondary { padding: 2px 8px; font-size: 11px; }
+#eval-tech-filter { width: 100%; box-sizing: border-box; font: inherit; padding: 5px 8px; margin-bottom: 6px; }
+.eval-checklist { max-height: 240px; overflow-y: auto; border: 1px solid var(--cd-border); border-radius: 6px; padding: 6px; }
+.eval-check { display: flex; align-items: center; gap: 6px; padding: 2px 2px; font-size: 12px; cursor: pointer; }
+.eval-check:hover { background: rgba(0, 0, 0, 0.04); }
+
+.eval-inline { display: flex; align-items: center; gap: 6px; margin: 14px 0 8px; font-size: 13px; }
+.eval-run-row { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
+
+/* Matrix */
+.eval-mode-block { margin-top: 16px; }
+.eval-matrix { display: grid; gap: 6px; align-items: stretch; }
+.eval-matrix-corner { display: flex; align-items: center; justify-content: center; opacity: 0.4; font-size: 12px; }
+.eval-matrix-colhead { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; text-align: center; padding: 4px; opacity: 0.8; }
+.eval-matrix-rowhead {
+  font-size: 11px; display: flex; align-items: center; padding: 4px 6px; opacity: 0.85;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.eval-matrix-cell {
+  position: relative; aspect-ratio: 16 / 9; background: #0e0e10; border-radius: 5px;
+  overflow: hidden; cursor: pointer; border: 1px solid var(--cd-border);
+}
+.eval-matrix-cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.eval-matrix-cell:hover { outline: 2px solid var(--cd-accent-hover); }
+.eval-cell-pending, .eval-cell-error {
+  display: flex; align-items: center; justify-content: center; color: #888; font-size: 18px;
+}
+.eval-cell-error { color: #d56347; }
+.eval-cell-video-badge {
+  position: absolute; bottom: 4px; right: 4px; font-size: 10px; color: #fff;
+  background: rgba(0, 0, 0, 0.6); border-radius: 3px; padding: 1px 4px;
+}
+
+/* Cell modal */
+.eval-modal { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; }
+.eval-modal-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.6); }
+.eval-modal-body {
+  position: relative; z-index: 1; background: var(--cd-card-bg, #fff); border-radius: 8px; padding: 18px;
+  max-width: 720px; max-height: 88vh; overflow-y: auto; width: 90%;
+}
+.eval-modal-close { position: absolute; top: 12px; right: 12px; }
+.eval-modal-head { font-family: var(--cd-font-mono); font-weight: 600; margin: 0 0 12px; padding-right: 90px; }
+.eval-modal-media { width: 100%; border-radius: 6px; margin-bottom: 12px; display: block; }
+.eval-modal-meta { font-size: 12px; line-height: 1.5; }
+.eval-modal-meta > div { margin-bottom: 8px; }
+
+@media (max-width: 720px) {
+  .eval-axes-grid { grid-template-columns: 1fr; }
+}

@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shot-example evaluation matrix</title>
+  <script>window.CACHE_BUST = Date.now();</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap"
+    rel="stylesheet">
+  <script>document.write('<link rel="stylesheet" href="/styles-index.css?t=' + window.CACHE_BUST + '">');</script>
+  <script>document.write('<link rel="stylesheet" href="/styles-evaluation.css?t=' + window.CACHE_BUST + '">');</script>
+</head>
+
+<body>
+  <div class="page-layout">
+    <div class="main-column">
+      <h1 style="margin-bottom: 4px; text-align: center;">Shot-example evaluation matrix</h1>
+      <p style="font-size: 12px; opacity: 0.75; margin: 0 0 18px; text-align: center;">
+        Generate an image + video for one scene across combinations of documentary technique × mode ×
+        track — using the same prompts <a href="/html/storyboard.html">storyboard</a> builds.
+      </p>
+
+      <!-- Inherited from your last main-app session (paper + moodboard + arc). -->
+      <div class="module-card" id="eval-setup-module">
+        <h2>Setup (from your last session)</h2>
+        <div id="eval-setup-summary"></div>
+        <div id="eval-setup-missing" class="status-line" style="display: none;"></div>
+      </div>
+
+      <!-- Pick one arc part as the fixed scene; its content anchors every cell. -->
+      <div class="module-card" id="eval-scene-module" style="display: none;">
+        <h2>Scene to evaluate</h2>
+        <label class="eval-field">
+          <span>Arc part (act)</span>
+          <select id="eval-scene-act"></select>
+        </label>
+        <label class="eval-field">
+          <span>Scene title</span>
+          <input type="text" id="eval-scene-title">
+        </label>
+        <label class="eval-field">
+          <span>Narration prompt</span>
+          <textarea id="eval-scene-narration" rows="2"></textarea>
+        </label>
+        <label class="eval-field">
+          <span>Scene notes (paper text)</span>
+          <textarea id="eval-scene-notes" rows="3"></textarea>
+        </label>
+      </div>
+
+      <!-- The three axes to sweep. -->
+      <div class="module-card" id="eval-axes-module" style="display: none;">
+        <h2>Axes</h2>
+        <div class="eval-axes-grid">
+          <div class="eval-axis">
+            <div class="eval-axis-head">
+              <strong>Techniques</strong>
+              <span class="eval-axis-actions">
+                <button type="button" class="btn-secondary" id="eval-tech-none">None</button>
+              </span>
+            </div>
+            <input type="text" id="eval-tech-filter" placeholder="Filter techniques…">
+            <div id="eval-tech-list" class="eval-checklist"></div>
+          </div>
+          <div class="eval-axis">
+            <div class="eval-axis-head"><strong>Modes</strong></div>
+            <div id="eval-mode-list" class="eval-checklist"></div>
+          </div>
+          <div class="eval-axis">
+            <div class="eval-axis-head"><strong>Track</strong></div>
+            <div id="eval-role-list" class="eval-checklist"></div>
+          </div>
+        </div>
+        <label class="eval-inline">
+          <input type="checkbox" id="eval-video-toggle" checked>
+          Generate a video per cell (batched — ~1 min each)
+        </label>
+        <div class="eval-inline eval-wildness">
+          <span>Wildness</span>
+          <span style="opacity: 0.6; font-size: 11px;">Faithful</span>
+          <input type="range" id="eval-wildness" min="0" max="1" step="0.1" value="0">
+          <span style="opacity: 0.6; font-size: 11px;">Wild</span>
+          <span id="eval-wildness-val" style="font-family: var(--cd-font-mono); font-size: 11px;">0.0</span>
+        </div>
+        <div class="eval-run-row">
+          <button type="button" class="btn-primary" id="eval-run-btn">Generate matrix</button>
+          <span id="eval-run-estimate" class="status-line"></span>
+        </div>
+        <div id="eval-run-status" class="status-line"></div>
+      </div>
+
+      <!-- One section per mode; rows = technique, columns = track. -->
+      <div id="eval-grid"></div>
+    </div>
+  </div>
+
+  <!-- Cell detail overlay (image + video + shot plan + exact prompt). -->
+  <div id="eval-cell-modal" class="eval-modal" style="display: none;">
+    <div class="eval-modal-backdrop"></div>
+    <div class="eval-modal-body" id="eval-cell-modal-body"></div>
+  </div>
+
+  <script>
+    document.write('<script src="/js/helpers.js?t=' + window.CACHE_BUST + '"><\/script>');
+    document.write('<script src="/js/evaluation.js?t=' + window.CACHE_BUST + '"><\/script>');
+  </script>
+</body>
+
+</html>

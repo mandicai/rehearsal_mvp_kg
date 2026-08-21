@@ -18,6 +18,11 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Coral+Pixels&family=Parastoo:wght@400..700&family=Rubik+80s+Fade&display=swap"
     rel="stylesheet">
+  <!-- Monospace for the data-journalism (The Markup / Blacklight) styling -
+       headings, kickers, labels, badges (see styles-index.css theme block). -->
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap"
+    rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap" rel="stylesheet">
   <script>document.write('<link rel="stylesheet" href="/styles-index.css?t=' + window.CACHE_BUST + '">');</script>
   <!-- No pdf.js here - PDF parsing only happens on html/index.html's upload step. -->
 </head>
@@ -61,6 +66,34 @@
 
     <div class="main-column">
 
+      <!-- Editable moodboard carried over from index.html. Adding/removing a
+       reference here re-distills the suggested arc, mode, and techniques (see
+       js/paper-extract.js's refreshSuggestionsFromMoodboard). Reuses index.html's
+       moodboard element IDs so the same add/poll/render wiring applies. Relocates
+       into the sidebar once an arc's accepted. -->
+      <div class="module-card" id="moodboard-summary-module">
+        <h2>Documentary moodboard</h2>
+        <p style="font-size: 12px; opacity: 0.75; margin: 0 0 12px;">
+          Add or remove references—we'll re-suggest the narrative arc, mode, and techniques from them.
+        </p>
+        <div id="moodboard-add-row" class="moodboard-add-row">
+          <div class="moodboard-add-group">
+            <input type="text" id="moodboard-name-input" placeholder="Name a documentary (e.g. Free Solo)">
+            <button type="button" id="moodboard-add-name-btn" class="btn-secondary">Add</button>
+          </div>
+          <div class="moodboard-add-group">
+            <input type="url" id="moodboard-url-input" placeholder="Paste a YouTube link">
+            <button type="button" id="moodboard-add-url-btn" class="btn-secondary">Add</button>
+          </div>
+          <div class="moodboard-add-group">
+            <label for="moodboard-file-input" class="moodboard-file-label">Upload footage</label>
+            <input type="file" id="moodboard-file-input" accept="video/*">
+          </div>
+        </div>
+        <div id="moodboard-list" class="moodboard-list"></div>
+        <div id="moodboard-status" class="status-line"></div>
+      </div><!-- /#moodboard-summary-module -->
+
       <div class="module-card" id="storyboard-arc-module">
         <!-- Fires automatically whenever restoreDebugSession finds a
          stated intent, whether or not an arc's already been accepted -
@@ -75,59 +108,20 @@
         <h2>Suggested narrative arc</h2>
 
         <div id="suggest-arcs-row" style="display: none;">
-          <button type="button" id="suggest-arcs-btn" class="btn-primary" style="display: none;">Suggest Narrative
-            Arcs</button>
+          <!-- <button type="button" id="suggest-arcs-btn" class="btn-primary" style="display: none;">Suggest Narrative
+            Arcs</button> -->
         </div>
 
         <!-- The recorded documentary-intent narration (+ play button) that
          guides the arc - lives here now (moved out of the hidden "Your media"
          module). Populated on page load by restoreDebugSession; same ids, so
          the JS refs (intentTranscriptDisplayEl/playIntentBtn) are unchanged. -->
-        <div id="intent-transcript-display" style="display: none; margin-bottom: 12px;">
+        <!-- <div id="intent-transcript-display" style="display: none; margin-bottom: 12px;">
           <div id="intent-transcript-text" class="intent-transcript-text"></div>
           <button type="button" id="play-intent-btn" class="btn-primary" style="display: none;">▶</button>
-        </div>
+        </div> -->
 
         <div id="arc-suggestion-panel" style="display: none;"></div>
-
-        <!-- Hidden until an arc is accepted (see runAcceptArc) - just a
-         container for the edit-plan/Premiere-export panels below, both
-         hidden until a storyboard succeeds. Generate Storyboard/Generate
-         Edit Plan themselves live in the sticky action bar at the top of
-         the arranged view (see js/paper-extract.js's renderMovieEditor) -
-         it's always visible while scrolling that (often long) list, unlike
-         this module. -->
-        <div id="paper-actions" style="display: none; margin-top: 16px;">
-          <!-- Hidden until a storyboard succeeds (from the sticky action bar). -->
-          <div id="edit-plan-action" style="display: none; margin-top: 12px;">
-            <div id="edit-plan-overall-notes" class="status-line"></div>
-
-            <!-- Hidden until a storyboard succeeds - writes edit_plan.json +
-             any uploaded footage to premiere_exports/ for the Premiere Pro
-             UXP plugin (see premiere-plugin/) to read from disk. Including
-             an edit plan is optional (Export works from a storyboard alone),
-             so this doesn't wait specifically on an edit plan existing. -->
-            <div id="premiere-export-action" style="display: none; margin-top: 12px;">
-              <button id="export-premiere-btn" class="btn-primary">Export for Premiere</button>
-              <div id="premiere-export-status" class="status-line"></div>
-              <div id="premiere-export-folder" class="status-line"></div>
-
-              <!-- Manual refresh, not a push - nothing here can be notified
-               the moment the Premiere plugin finishes exporting rough_cut.mp4
-               into the same folder (see premiere-plugin/README.md). -->
-              <button id="check-preview-btn" class="btn-primary" style="margin-top: 8px;">Check for Exported
-                Preview</button>
-              <div id="preview-status" class="status-line"></div>
-              <video id="preview-video" controls style="display: none; margin-top: 8px; max-width: 100%;"></video>
-            </div>
-            <!-- The automated ffmpeg render (backend/movie_render.py +
-             /render/start) is triggered by the "Render MP4" button in the
-             storyboard heading row (see js/paper-extract.js's renderMovieEditor),
-             not from a panel here. The result is written to
-             premiere_exports/<id>/documentary.mp4, which the presenter opens
-             directly - there's no in-app preview. -->
-          </div>
-        </div>
 
         <!-- Moved to the very bottom of the module, after all other content
          (see js/paper-extract.js's suggestArcsStatusEl - referenced by id, so
@@ -178,7 +172,7 @@
        Restore button (see js/paper-extract.js's renderDeletedScenesList).
        Hidden whenever nothing's deleted - that function toggles it. -->
       <div class="module-card" id="deleted-scenes-module" style="display: none;">
-        <h2>Deleted scenes</h2>
+        <h2>Deleted source and scenes</h2>
         <div id="deleted-scenes-list"></div>
       </div><!-- /#deleted-scenes-module -->
 
