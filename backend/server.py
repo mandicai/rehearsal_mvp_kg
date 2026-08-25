@@ -5,8 +5,8 @@ which has no server or package manager of its own. Run with:
 python server.py (listens on http://127.0.0.1:8000).
 
 Optional LLM-based segment labeling (richer topic labels/entities/summaries
-than the local fallback) activates automatically when an API key is present:
-  OPENAI_API_KEY or OPENROUTER_API_KEY   (+ OPENAI_BASE_URL for OpenRouter)
+than the local fallback) activates automatically when a proxy key is present:
+  PROXY_API_KEY or OPENROUTER_API_KEY   (+ PROXY_BASE_URL)
 These can be exported in the shell, or dropped in a .env file in this
 directory (see .env.example) - loaded below before anything reads them.
 See segmentation/llm.py for details - no key is required to run the app.
@@ -83,6 +83,7 @@ already serves at /premiere_exports/... (no separate route needed for that
 direction - see premiere-plugin/README.md for the full round trip).
 """
 import base64
+import hashlib
 import io
 import json
 import os
@@ -252,6 +253,9 @@ app.config['MAX_CONTENT_LENGTH'] = max(MAX_PPTX_SIZE_MB, MAX_AUDIO_SIZE_MB, MAX_
 # these aren't instance methods.
 _pipeline = None
 _carta_pipeline = None
+_narration_nlp = None
+_filmability_cache = {}
+_filmability_cache_lock = threading.Lock()
 
 
 def _get_pipeline():
@@ -273,6 +277,95 @@ def _get_carta_pipeline():
         from segmentation_carta.pipeline import CartaPipeline
         _carta_pipeline = CartaPipeline(CartaConfig())
     return _carta_pipeline
+
+
+def _get_narration_nlp():
+    """Return the lightweight spaCy pipeline used by narration spans.
+
+    The main segmentation pipeline also owns a spaCy model, but constructing
+    it pulls in the embedding model as well. Narration is an interactive path,
+    so keep its first request independent and cheap while still reusing the
+    same installed model and tokenizer/tagger/NER components.
+    """
+    global _narration_nlp
+    if _narration_nlp is None:
+        import spacy
+        _narration_nlp = spacy.load('en_core_web_sm')
+    return _narration_nlp
+
+
+def _narration_span_fallback(span):
+    """Best-effort local label when no classifier key is available."""
+    text = str(span.get('text') or '').strip()
+    label = str(span.get('label') or '').upper()
+    lower = text.lower()
+    filler_words = {
+        'also', 'because', 'everything', 'it', 'many', 'more', 'nothing',
+        'something', 'that', 'the', 'this', 'things', 'what', 'which', 'you',
+    }
+    if not text or (len(text.split()) <= 1 and lower in filler_words):
+        return {'bucket': 'ignore', 'query': '', 'visual_proxy': '', 'salience': 0.0}
+    abstract_terms = (
+        'algorithm', 'analysis', 'accuracy', 'concept', 'dataset', 'equation',
+        'framework', 'hypothesis', 'method', 'model', 'network', 'parameter',
+        'probability', 'process', 'research', 'system', 'theory', 'variable',
+    )
+    lower_tokens = set(re.findall(r'[a-z]+', lower))
+    if any(term in lower_tokens for term in abstract_terms) or label in {'CARDINAL', 'PERCENT', 'MONEY', 'QUANTITY'}:
+        proxy = 'researchers comparing charts and data'
+        return {'bucket': 'abstract', 'query': proxy, 'visual_proxy': proxy, 'salience': 0.55}
+    return {
+        'bucket': 'depictable',
+        'query': ' '.join(text.split()[:8]),
+        'visual_proxy': '',
+        'salience': float(span.get('salience') or 0.5),
+    }
+
+
+def _normalise_filmability_results(raw_results, candidates):
+    by_range = {(int(item.get('start', -1)), int(item.get('end', -1))): item
+                for item in candidates if isinstance(item, dict)}
+    normalised = []
+    seen = set()
+    for item in raw_results if isinstance(raw_results, list) else []:
+        if not isinstance(item, dict):
+            continue
+        try:
+            start, end = int(item.get('start')), int(item.get('end'))
+        except (TypeError, ValueError):
+            continue
+        source = by_range.get((start, end))
+        if not source or (start, end) in seen:
+            continue
+        bucket = str(item.get('bucket') or '').strip().lower()
+        if bucket not in {'depictable', 'abstract', 'ignore'}:
+            continue
+        seen.add((start, end))
+        normalised.append({
+            'text': source.get('text', ''),
+            'start': start,
+            'end': end,
+            'kind': source.get('kind', ''),
+            'label': source.get('label', ''),
+            'bucket': bucket,
+            'query': str(item.get('query') or '').strip()[:160],
+            'visual_proxy': str(item.get('visual_proxy') or '').strip()[:240],
+            'salience': max(0.0, min(1.0, float(item.get('salience') or source.get('salience') or 0))),
+        })
+    # Keep the UI focused: the strongest three visual beats are enough to seed
+    # footage while the full local candidate set remains available for a later
+    # reclassification if the narration changes.
+    normalised.sort(key=lambda item: (-item['salience'], item['start']))
+    chosen = []
+    for item in normalised:
+        if item['bucket'] == 'ignore':
+            continue
+        if any(item['start'] < other['end'] and other['start'] < item['end'] for other in chosen):
+            continue
+        chosen.append(item)
+        if len(chosen) >= 3:
+            break
+    return sorted(chosen, key=lambda item: item['start'])
 
 
 feedback_client = FeedbackLLMClient()
@@ -337,7 +430,7 @@ def segment_carta():
     carta_pipeline = _get_carta_pipeline()
     if not carta_pipeline.llm_client.is_configured():
         return jsonify({
-            'error': 'segmentation_carta requires an LLM API key (no local fallback). Set OPENAI_API_KEY (or OPENROUTER_API_KEY) in backend/.env.'
+            'error': 'segmentation_carta requires a proxy LLM key (no local fallback). Set PROXY_API_KEY (and PROXY_BASE_URL) in backend/.env.'
         }), 503
 
     try:
@@ -375,7 +468,7 @@ def feedback():
 
     if not feedback_client.is_configured():
         return jsonify({
-            'error': 'Feedback requires an LLM API key. Set OPENAI_API_KEY (or OPENROUTER_API_KEY) in backend/.env.'
+            'error': 'Feedback requires a proxy LLM key. Set PROXY_API_KEY (and PROXY_BASE_URL) in backend/.env.'
         }), 503
 
     try:
@@ -409,7 +502,7 @@ def feedback_progressive_step():
 
     if not feedback_client.is_configured():
         return jsonify({
-            'error': 'Feedback requires an LLM API key. Set OPENAI_API_KEY (or OPENROUTER_API_KEY) in backend/.env.'
+            'error': 'Feedback requires a proxy LLM key. Set PROXY_API_KEY (and PROXY_BASE_URL) in backend/.env.'
         }), 503
 
     try:
@@ -445,7 +538,7 @@ def paper_extract():
 
 
 _NARRATIVE_ARC_NOT_CONFIGURED_ERROR = (
-    'Arranging sections into a narrative arc requires an LLM API key. Set OPENAI_API_KEY (or OPENROUTER_API_KEY) in backend/.env.'
+    'Arranging sections into a narrative arc requires a proxy LLM key. Set PROXY_API_KEY (and PROXY_BASE_URL) in backend/.env.'
 )
 
 
@@ -500,6 +593,60 @@ def _parse_techniques(data):
         if len(out) >= MAX_TECHNIQUES:
             break
     return out
+
+
+def _parse_generation_context(data):
+    """Read the Act Board's visual context as distinct API fields.
+
+    Timeline callers may still provide only ``scene_notes``/``narration``;
+    these fields are optional so that older requests remain compatible.
+    """
+    specific_phrase = str(data.get('specific_phrase') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
+    parent_narration = str(data.get('parent_narration') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS]
+    raw_linked = data.get('linked_footage_phrases') or []
+    if isinstance(raw_linked, str):
+        raw_linked = [raw_linked]
+    linked = []
+    if isinstance(raw_linked, list):
+        for phrase in raw_linked:
+            if not isinstance(phrase, str):
+                continue
+            value = phrase.strip()[:MAX_STORYBOARD_SECTION_CHARS]
+            if value and value not in linked:
+                linked.append(value)
+            if len(linked) >= 20:
+                break
+    return specific_phrase, parent_narration, linked
+
+
+def _generation_context_notes(scene_notes, specific_phrase='', parent_narration='', linked_phrases=None):
+    """Build prompt notes from the separate Act Board context fields."""
+    parts = []
+    if specific_phrase:
+        parts.append(
+            'Specific image-generation phrase (AUTHORITATIVE subject focus): '
+            + specific_phrase)
+    if parent_narration:
+        parts.append('Parent narration context:\n' + parent_narration)
+    if linked_phrases:
+        parts.append(
+            'Linked footage phrases (avoid duplicate visuals): '
+            + ' → '.join(linked_phrases))
+    if (scene_notes or '').strip():
+        parts.append(scene_notes.strip())
+    return '\n'.join(parts)[:MAX_STORYBOARD_SECTION_CHARS]
+
+
+ACT_BOARD_CAMERA_MOVEMENT_TO_PLAN = {
+    'Follow shot': 'tracking',
+    'Pan': 'pan',
+    'Tilt': 'tilt',
+    'Push-in': 'push_in',
+    'Pull-back': 'pull_out',
+    'Whip pan': 'pan',
+    'Slow motion': 'static',
+    'Time-lapse': 'static',
+}
 
 
 def _parse_moodboard_profiles(data):
@@ -604,7 +751,7 @@ def paper_suggest_narration():
 
 
 _STORYBOARD_NOT_CONFIGURED_ERROR = (
-    'Generating a storyboard requires an LLM API key. Set OPENAI_API_KEY (or OPENROUTER_API_KEY) in backend/.env.'
+    'Generating a storyboard requires a proxy LLM key. Set PROXY_API_KEY (and PROXY_BASE_URL) in backend/.env.'
 )
 
 
@@ -664,6 +811,153 @@ def save_paper_snapshot():
     temporary.write_text(json.dumps(snapshot, indent=2, ensure_ascii=False))
     temporary.replace(target)
     return jsonify({'snapshot_id': snapshot_id, 'path': str(target.relative_to(PAPER_SNAPSHOTS_DIR.parent))})
+
+
+@app.route('/narration/spans', methods=['POST'])
+def narration_spans():
+    """Extract offset-bearing, locally filmable narration candidates.
+
+    This route intentionally does not call an LLM. spaCy's entities, noun
+    chunks, and numeric/temporal mentions make a quick deterministic first
+    pass that the browser can render while the filmability classifier is
+    debounced in the background.
+    """
+    data = request.get_json(silent=True) or {}
+    text = str(data.get('text') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS]
+    if not text:
+        return jsonify({'spans': [], 'text': ''})
+
+    doc = _get_narration_nlp()(text)
+    candidates = []
+
+    def add_candidate(start, end, kind, label='', score=0.5):
+        try:
+            start, end = int(start), int(end)
+        except (TypeError, ValueError):
+            return
+        if start < 0 or end <= start or end > len(text):
+            return
+        raw = text[start:end]
+        leading = len(raw) - len(raw.lstrip())
+        trailing = len(raw.rstrip())
+        start += leading
+        end = start + max(0, trailing - leading)
+        value = text[start:end].strip()
+        words = value.split()
+        if not value or not words or len(words) > 10:
+            return
+        if all(not char.isalnum() for char in value):
+            return
+        candidates.append({
+            'text': value,
+            'start': start,
+            'end': end,
+            'kind': kind,
+            'label': label or kind,
+            'salience': max(0.0, min(1.0, float(score))),
+        })
+
+    for ent in doc.ents:
+        label = ent.label_ or 'ENTITY'
+        score = 0.82 if label in {'PERSON', 'ORG', 'GPE', 'LOC', 'FAC', 'EVENT', 'PRODUCT'} else 0.68
+        add_candidate(ent.start_char, ent.end_char, 'entity', label, score)
+
+    try:
+        for chunk in doc.noun_chunks:
+            tokens = [token for token in chunk if not token.is_punct]
+            while tokens and (tokens[0].is_stop or tokens[0].pos_ == 'DET'):
+                tokens.pop(0)
+            while tokens and (tokens[-1].is_stop or tokens[-1].is_punct):
+                tokens.pop()
+            if not tokens or all(token.is_stop for token in tokens):
+                continue
+            score = 0.58 + min(0.22, 0.04 * sum(token.pos_ in {'NOUN', 'PROPN'} for token in tokens))
+            add_candidate(tokens[0].idx, tokens[-1].idx + len(tokens[-1]), 'noun_chunk', 'NOUN_CHUNK', score)
+    except (AttributeError, ValueError):
+        # A custom lightweight spaCy pipeline may omit the parser. Entities
+        # and numeric/temporal spans still provide useful candidates.
+        pass
+
+    for ent in doc.ents:
+        if ent.label_ in {'DATE', 'TIME', 'CARDINAL', 'ORDINAL', 'QUANTITY', 'PERCENT', 'MONEY'}:
+            add_candidate(ent.start_char, ent.end_char, 'numeric_temporal', ent.label_, 0.62)
+
+    # Catch simple duration phrases that small NER models sometimes leave as
+    # separate tokens ("12 seconds", "three years") while preserving offsets.
+    for match in re.finditer(r'\b(?:\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:seconds?|minutes?|hours?|days?|weeks?|months?|years?|%)\b', text, re.I):
+        add_candidate(match.start(), match.end(), 'numeric_temporal', 'DURATION', 0.64)
+
+    # Prefer a more specific/longer candidate when spans overlap, then return
+    # source order for straightforward character-offset rendering.
+    deduped = []
+    for candidate in sorted(candidates, key=lambda item: (-item['salience'], -(item['end'] - item['start']), item['start'])):
+        if any(candidate['start'] < existing['end'] and existing['start'] < candidate['end'] for existing in deduped):
+            continue
+        if candidate['text'].lower() in {item['text'].lower() for item in deduped}:
+            continue
+        deduped.append(candidate)
+        if len(deduped) >= 24:
+            break
+    deduped.sort(key=lambda item: item['start'])
+    return jsonify({'spans': deduped, 'text': text})
+
+
+@app.route('/narration/classify', methods=['POST'])
+def narration_classify():
+    """Bucket local narration candidates by documentary filmability."""
+    data = request.get_json(silent=True) or {}
+    narration = str(data.get('narration') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS]
+    raw_spans = data.get('spans') or []
+    if not narration or not isinstance(raw_spans, list):
+        return jsonify({'spans': [], 'source': 'empty'})
+    spans = [
+        {
+            'text': str(item.get('text') or '').strip()[:240],
+            'start': int(item.get('start')),
+            'end': int(item.get('end')),
+            'kind': str(item.get('kind') or ''),
+            'label': str(item.get('label') or ''),
+            'salience': float(item.get('salience') or 0),
+        }
+        for item in raw_spans[:24]
+        if isinstance(item, dict)
+        and str(item.get('text') or '').strip()
+        and str(item.get('start', '')).lstrip('-').isdigit()
+        and str(item.get('end', '')).lstrip('-').isdigit()
+    ]
+    mode = str(data.get('documentary_mode') or '').strip()[:80]
+    cache_key = hashlib.sha256(json.dumps(
+        {'narration': narration, 'spans': spans, 'mode': mode},
+        sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()
+    with _filmability_cache_lock:
+        cached = _filmability_cache.get(cache_key)
+    if cached is not None:
+        return jsonify({'spans': cached, 'source': 'cache'})
+
+    source = 'fallback'
+    raw_results = []
+    if media_query_client.is_configured():
+        try:
+            raw_results = media_query_client.classify_filmability(narration, spans, mode)
+            source = 'llm'
+        except MediaQueryLLMCallError:
+            raw_results = []
+    if not raw_results:
+        raw_results = [
+            {
+                **span,
+                **_narration_span_fallback(span),
+            }
+            for span in spans
+        ]
+    results = _normalise_filmability_results(raw_results, spans)
+    with _filmability_cache_lock:
+        # Bound this process-local cache so long-running browser sessions do
+        # not retain every prior narration forever.
+        if len(_filmability_cache) >= 256:
+            _filmability_cache.pop(next(iter(_filmability_cache)))
+        _filmability_cache[cache_key] = results
+    return jsonify({'spans': results, 'source': source})
 
 
 @app.route('/paper/media_queries', methods=['POST'])
@@ -780,7 +1074,7 @@ def paper_storyboard():
 
 
 _EDIT_PLAN_NOT_CONFIGURED_ERROR = (
-    'Generating an edit plan requires an LLM API key. Set OPENAI_API_KEY (or OPENROUTER_API_KEY) in backend/.env.'
+    'Generating an edit plan requires a proxy LLM key. Set PROXY_API_KEY (and PROXY_BASE_URL) in backend/.env.'
 )
 
 
@@ -845,7 +1139,7 @@ def paper_edit_plan():
 
 
 _SKETCH_NOT_CONFIGURED_ERROR = (
-    'Generating a sketch requires an LLM API key. Set OPENAI_API_KEY (or OPENROUTER_API_KEY) in backend/.env.'
+    'Generating a sketch requires a proxy LLM key. Set PROXY_API_KEY (and PROXY_BASE_URL) in backend/.env.'
 )
 
 # Deliberate gap between a shot's two frame-image calls (see
@@ -926,6 +1220,49 @@ def paper_generate_sketch():
     return jsonify({'project_id': project_id, 'preview_url': preview_url})
 
 
+@app.route('/paper/generate_shot_plan', methods=['POST'])
+def paper_generate_shot_plan():
+    """Generate only the shot plan used by Act Board image-to-video."""
+    data = request.get_json(silent=True) or {}
+    try:
+        int(data.get('section_index'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'section_index is required and must be an integer'}), 400
+
+    if not shot_plan_client.is_configured():
+        return jsonify({'error': _STORYBOARD_NOT_CONFIGURED_ERROR}), 503
+
+    title = (data.get('title') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
+    scene_notes = (data.get('scene_notes') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
+    specific_phrase, parent_narration, linked_phrases = _parse_generation_context(data)
+    scene_notes = _generation_context_notes(
+        scene_notes, specific_phrase, '', linked_phrases)
+    documentary_mode, err = _parse_documentary_mode(data)
+    if err:
+        return err
+    scene_techniques = [technique for technique in _parse_techniques(data)
+                        if technique in ACT_BOARD_CAMERA_MOVEMENT_TO_PLAN]
+    camera_movement = str(data.get('camera_movement') or '').strip()
+    requested_movement = ACT_BOARD_CAMERA_MOVEMENT_TO_PLAN.get(camera_movement)
+    if camera_movement and not requested_movement:
+        return jsonify({'error': 'camera_movement must be a valid Camera movement technique'}), 400
+    if camera_movement:
+        scene_notes = (
+            f'{scene_notes}\nRequested camera movement (AUTHORITATIVE): {camera_movement}'
+        ).strip()[:MAX_STORYBOARD_SECTION_CHARS]
+
+    project_id = (data.get('project_id') or '').strip() or next_premiere_project_id()
+    try:
+        shot_plan = shot_plan_client.generate_shot_plan(
+            title, scene_notes, parent_narration, '', documentary_mode,
+            techniques=scene_techniques, count=1, return_all=False)
+    except ShotPlanLLMCallError as exc:
+        return jsonify({'error': str(exc)}), 500
+    if requested_movement:
+        shot_plan['movement'] = requested_movement
+    return jsonify({'project_id': project_id, 'shot_plan': shot_plan})
+
+
 @app.route('/paper/generate_shot', methods=['POST'])
 def paper_generate_shot():
     # Narration-driven shot design (see backend/shot_plan_llm.py and
@@ -945,8 +1282,13 @@ def paper_generate_shot():
     # the whole paper's abstract, so it gets the larger transcript-style cap.
     title = (data.get('title') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
     scene_notes = (data.get('scene_notes') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
+    specific_phrase, parent_narration, linked_footage_phrases = _parse_generation_context(data)
+    scene_notes = _generation_context_notes(
+        scene_notes, specific_phrase, '', linked_footage_phrases)
     reference_subject = (data.get('reference_subject') or '').strip()[:MAX_SKETCH_VISUAL_CHARS]
     narration = (data.get('narration') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS]
+    if parent_narration:
+        narration = parent_narration
     act_title = (data.get('act_title') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
 
     documentary_mode, err = _parse_documentary_mode(data)
@@ -1046,8 +1388,9 @@ def paper_generate_shot_video():
         return jsonify({'error': 'section_index is required and must be an integer'}), 400
 
     scene_notes = (data.get('scene_notes') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
-    reference_subject = (data.get('reference_subject') or '').strip()[:MAX_SKETCH_VISUAL_CHARS]
-
+    specific_phrase, parent_narration, linked_footage_phrases = _parse_generation_context(data)
+    scene_notes = _generation_context_notes(
+        scene_notes, specific_phrase, parent_narration, linked_footage_phrases)
     documentary_mode, err = _parse_documentary_mode(data)
     if err:
         return err
@@ -1057,14 +1400,17 @@ def paper_generate_shot_video():
     if not animate_client.is_configured():
         return jsonify({'error': _ANIMATE_NOT_CONFIGURED_ERROR}), 503
 
-    scene_techniques = _parse_techniques(data)
+    scene_techniques = [technique for technique in _parse_techniques(data)
+                        if technique in ACT_BOARD_CAMERA_MOVEMENT_TO_PLAN]
     chosen_path = resolve_static_preview_path(data.get('chosen_image_url'))
     if not _is_readable_image(chosen_path):
-        chosen_path = _resolve_video_reference_image(data, project_id, section_index)
-    if chosen_path is None:
-        return jsonify({'error': 'Choose an image or provide an open-slot video with a readable frame'}), 400
+        return jsonify({'error': 'Choose, generate, or upload an image before generating a video'}), 400
 
     movement = (data.get('movement') or '').strip()
+    requested_movement = ACT_BOARD_CAMERA_MOVEMENT_TO_PLAN.get(
+        str(data.get('camera_movement') or '').strip())
+    if requested_movement:
+        movement = requested_movement
     narrative_operation = (data.get('narrative_operation') or '').strip()[:80]
     shot_size = (data.get('shot_size') or '').strip()
     purpose = (data.get('purpose') or '').strip()[:500]
@@ -1083,8 +1429,7 @@ def paper_generate_shot_video():
             chosen_image_bytes, movement, documentary_mode, framing=framing,
             scene_notes=scene_notes, techniques=scene_techniques,
             narrative_operation=narrative_operation,
-            visual_description=visual_description,
-            reference_subject=reference_subject)
+            visual_description=visual_description)
     except (OSError, AnimateLLMCallError) as exc:
         return jsonify({'error': str(exc)}), 500
 
@@ -1127,6 +1472,9 @@ def paper_generate_shot_examples():
     act_title = (data.get('act_title') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
 
     scene_notes = (data.get('scene_notes') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
+    specific_phrase, parent_narration, linked_footage_phrases = _parse_generation_context(data)
+    scene_notes = _generation_context_notes(
+        scene_notes, specific_phrase, '', linked_footage_phrases)
     role = (data.get('role') or '').strip()
     documentary_mode, err = _parse_documentary_mode(data)
     if err:
@@ -1134,6 +1482,8 @@ def paper_generate_shot_examples():
     scene_techniques = _parse_techniques(data)
 
     narration = (data.get('narration') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS]
+    if parent_narration:
+        narration = parent_narration
     # Content/subject anchors: the paper abstract, the track role (Primary vs
     # Cutaway), the uploaded-footage subject, and a visual frame/thumbnail when
     # the open slot contains video.
@@ -1306,7 +1656,7 @@ def paper_generate_cutaways():
 
 
 _ANIMATE_NOT_CONFIGURED_ERROR = (
-    'Generating an animated sketch requires an LLM API key. Set OPENAI_API_KEY (or OPENROUTER_API_KEY) in backend/.env.'
+    'Generating an animated sketch requires a proxy LLM key. Set PROXY_API_KEY (and PROXY_BASE_URL) in backend/.env.'
 )
 
 
@@ -2089,6 +2439,10 @@ def render_start():
                 start_seconds = footage.get('start_seconds', 0)
                 if not isinstance(start_seconds, (int, float)) or start_seconds < 0:
                     return jsonify({'error': f'board_sequence {sequence_index} footage {footage_index} has invalid start_seconds'}), 400
+                source_start_seconds = footage.get('source_start_seconds', 0)
+                if (not isinstance(source_start_seconds, (int, float))
+                        or source_start_seconds < 0):
+                    return jsonify({'error': f'board_sequence {sequence_index} footage {footage_index} has invalid source_start_seconds'}), 400
                 # If the recorded umbrella narration runs a little longer
                 # than its last referenced phrase, hold the final visual
                 # through the end of that narration rather than cutting the
@@ -2112,6 +2466,7 @@ def render_start():
                     'narration_audio_path': None,
                     'sfx_audio_path': None,
                     'duration_seconds': render_duration,
+                    'source_start_seconds': float(source_start_seconds),
                     # Board footage timings are relative to the complete
                     # narration-led sequence. The renderer uses this to
                     # preserve any gap between spoken fragments instead of
@@ -2228,12 +2583,17 @@ def render_start():
         if (not isinstance(source_start, (int, float)) or source_start < 0
                 or not isinstance(duration, (int, float)) or duration <= 0):
             return jsonify({'error': f'sound_effect {i} has an invalid source_start_seconds or duration_seconds'}), 400
+        try:
+            gain = max(0.0, min(2.0, float(effect.get('gain', 1.0))))
+        except (TypeError, ValueError):
+            gain = 1.0
         sound_effects.append({
             'file_path': str(resolved),
             'start_seconds': float(start),
             'source_start_seconds': float(source_start),
             'duration_seconds': float(duration),
-            'kind': 'sfx',
+            'kind': effect.get('kind') if effect.get('kind') in ('sfx', 'music') else 'sfx',
+            'gain': gain,
         })
 
     if not isinstance(narration_specs, list):
@@ -3008,7 +3368,7 @@ def transcribe():
 
     if not transcription_client.is_configured():
         return jsonify({
-            'error': 'Transcription requires an LLM API key. Set OPENAI_API_KEY (or OPENROUTER_API_KEY) in backend/.env.'
+            'error': 'Transcription requires a direct OpenAI key. Set OPENAI_API_KEY in backend/.env.'
         }), 503
 
     try:
@@ -3058,7 +3418,7 @@ def suggest_learning_objectives():
 
     if not objectives_client.is_configured():
         return jsonify({
-            'error': 'Suggesting learning objectives requires an LLM API key. Set OPENAI_API_KEY (or OPENROUTER_API_KEY) in backend/.env.'
+            'error': 'Suggesting learning objectives requires a proxy LLM key. Set PROXY_API_KEY (and PROXY_BASE_URL) in backend/.env.'
         }), 503
 
     try:
@@ -3070,7 +3430,7 @@ def suggest_learning_objectives():
 
 
 _ASSESSMENT_NOT_CONFIGURED_ERROR = (
-    'Simulating an audience requires an LLM API key. Set OPENAI_API_KEY (or OPENROUTER_API_KEY) in backend/.env.'
+    'Simulating an audience requires a proxy LLM key. Set PROXY_API_KEY (and PROXY_BASE_URL) in backend/.env.'
 )
 
 

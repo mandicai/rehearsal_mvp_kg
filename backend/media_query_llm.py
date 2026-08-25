@@ -31,14 +31,28 @@ Return exactly 2-5 ordinary words (up to 6 only when needed), lower-case, as a s
 Respond only as JSON: {"video_query":"...","audio_query":"..."}."""
 
 
+_FILMABILITY_SYSTEM_PROMPT = """You are a documentary footage editor. Classify candidate phrases from one narration passage by whether a filmmaker can show them on screen.
+
+Choose at most the three strongest visual beats. Return only JSON in this shape:
+{"spans":[{"start":0,"end":12,"bucket":"depictable","query":"people walking through a laboratory","visual_proxy":"","salience":0.9}]}
+
+Rules:
+- depictable: a concrete person, place, object, visible action, or observable scene. The query must be a broad, literal stock-footage query of 3-10 ordinary words.
+- abstract: academic jargon, an invisible process, a dataset, theory, metric, or idea that is not literal stock footage. Supply a concrete visual_proxy and query that metaphorically or observationally represents it (for example, researchers comparing charts, hands annotating data, or a close-up of a computer screen).
+- ignore: filler, vague connective language, or a phrase that would not help choose a shot.
+- Preserve the supplied character offsets exactly. Do not invent offsets or return candidates that were not supplied.
+- Prefer phrases that are specific, visually salient, and useful for a coherent documentary sequence. Avoid returning multiple overlapping or redundant beats.
+"""
+
+
 class MediaQueryLLMCallError(Exception):
     pass
 
 
 class MediaQueryLLMClient:
     def __init__(self, model=None):
-        self.api_key = os.environ.get('OPENAI_API_KEY') or os.environ.get('OPENROUTER_API_KEY')
-        self.base_url = os.environ.get('OPENAI_BASE_URL') or None
+        self.api_key = os.environ.get('PROXY_API_KEY') or os.environ.get('OPENROUTER_API_KEY')
+        self.base_url = os.environ.get('PROXY_BASE_URL') or os.environ.get('OPENAI_BASE_URL') or None
         self.model = model or os.environ.get('LLM_MODEL', 'gpt-4o-mini')
         self._client = None
 
@@ -87,3 +101,47 @@ class MediaQueryLLMClient:
             return {'video_query': video, 'audio_query': audio}
         except Exception as exc:
             raise MediaQueryLLMCallError(f'Could not generate media queries: {exc}') from exc
+
+    def classify_filmability(self, narration, spans, documentary_mode=''):
+        """Classify local narration candidates into usable visual beats.
+
+        The local span pass deliberately happens before this call. Keeping the
+        LLM input to offset-bearing candidates makes the result cheap, stable,
+        and directly renderable in the browser without another text-matching
+        pass.
+        """
+        if not self.is_configured():
+            raise MediaQueryLLMCallError('Media-query LLM is not configured (missing API key or openai package)')
+        payload = {
+            'narration': str(narration or '')[:20000],
+            'documentary_mode': str(documentary_mode or '')[:80],
+            'candidates': [
+                {
+                    'text': str(span.get('text') or ''),
+                    'start': int(span.get('start', 0)),
+                    'end': int(span.get('end', 0)),
+                    'kind': str(span.get('kind') or ''),
+                    'label': str(span.get('label') or ''),
+                    'salience': float(span.get('salience') or 0),
+                }
+                for span in (spans or [])[:24]
+                if isinstance(span, dict)
+            ],
+        }
+        try:
+            response = self._get_client().chat.completions.create(
+                model=self.model,
+                messages=[
+                    {'role': 'system', 'content': _FILMABILITY_SYSTEM_PROMPT},
+                    {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False)},
+                ],
+                response_format={'type': 'json_object'},
+                temperature=0.2,
+            )
+            parsed = json.loads(response.choices[0].message.content)
+            result = parsed.get('spans') if isinstance(parsed, dict) else None
+            if not isinstance(result, list):
+                raise ValueError('response omitted spans')
+            return result
+        except Exception as exc:
+            raise MediaQueryLLMCallError(f'Could not classify narration filmability: {exc}') from exc

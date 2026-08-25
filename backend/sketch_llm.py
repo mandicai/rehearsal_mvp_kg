@@ -119,8 +119,8 @@ class SketchLLMCallError(Exception):
 
 class SketchLLMClient:
     def __init__(self):
-        self.api_key = os.environ.get('OPENAI_API_KEY') or os.environ.get('OPENROUTER_API_KEY')
-        self.base_url = os.environ.get('OPENAI_BASE_URL') or None
+        self.api_key = os.environ.get('PROXY_API_KEY') or os.environ.get('OPENROUTER_API_KEY')
+        self.base_url = os.environ.get('PROXY_BASE_URL') or os.environ.get('OPENAI_BASE_URL') or None
         self._client = None
 
     def is_configured(self):

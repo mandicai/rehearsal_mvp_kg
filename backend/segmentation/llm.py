@@ -38,8 +38,8 @@ class LLMCallError(Exception):
 
 class LLMClient:
     def __init__(self, model=None):
-        self.api_key = os.environ.get('OPENAI_API_KEY') or os.environ.get('OPENROUTER_API_KEY')
-        self.base_url = os.environ.get('OPENAI_BASE_URL') or None
+        self.api_key = os.environ.get('PROXY_API_KEY') or os.environ.get('OPENROUTER_API_KEY')
+        self.base_url = os.environ.get('PROXY_BASE_URL') or os.environ.get('OPENAI_BASE_URL') or None
         self.model = model or os.environ.get('LLM_MODEL', 'gpt-4o-mini')
         self._client = None
 

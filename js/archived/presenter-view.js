@@ -338,9 +338,9 @@ document.getElementById('stop-recording-btn').addEventListener('click', stopReco
 // slideActivations/totalDurationSeconds are set - runs /align, then
 // refreshes the transcript panel above (selectSlide) with the newly
 // aligned start/end/transcript for whichever slide is currently showing.
-// transcriptionResult.words is always empty (this proxy's transcription
-// path has no per-word timestamps - see transcription.py), so `text` is
-// sent too as the fallback /align falls through to for a proportional split.
+// Whisper now supplies word timestamps when available. `text` is sent too so
+// /align can retain its proportional-split fallback for older saved captures
+// or transcription providers that return no word metadata.
 function onTranscriptReady() {
   fetchAlignment({
     slide_activations: slideActivations,

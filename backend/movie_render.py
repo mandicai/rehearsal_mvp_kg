@@ -382,8 +382,14 @@ def render_shot(shot, output_path, tmp_dir):
         else:
             # -stream_loop -1 loops a clip shorter than the shot (capped by -t);
             # a longer clip is simply trimmed by -t. Either way the shot lasts
-            # exactly `seconds`.
-            video_input = ['-stream_loop', '-1', '-i', str(visual_path)]
+            # exactly `seconds`. A board footage node can also choose a
+            # source in-point, which is applied before the input so the
+            # rendered shot uses the same portion selected in the browser.
+            source_start = max(0.0, float(shot.get('source_start_seconds') or 0))
+            video_input = ['-stream_loop', '-1']
+            if source_start > 0:
+                video_input += ['-ss', f'{source_start:.3f}']
+            video_input += ['-i', str(visual_path)]
             video_filter = _video_filter_for_clip(overlay_file)
             source_audio = _has_audio_stream(visual_path)
         video_part = f'[0:v]{video_filter}[vout]'

@@ -88,13 +88,13 @@ _MODE_CAMERA_FEEL = {
     'poetic': 'slow, dreamlike movement',
 }
 
-# Veo output is a fixed 1280x720/4s clip - both are the smallest supported
-# combination on this proxy's Literal-typed size/seconds enums, kept short
-# since this is a rough preview of a technique, not a finished shot.
-SECONDS = '4'
+# Keep generated image-to-video previews at the provider-supported maximum.
+# Veo 3.1 accepts 4, 6, or 8 seconds; playback/export can still trim a
+# generated clip to a shorter footage-node duration.
+SECONDS = '8'
 SIZE = '1280x720'
 
-# Live-measured full round trip is ~50s for a 4s clip - this caps a stuck
+# Longer clips can take substantially longer to complete; this caps a stuck
 # job well above that. Polled manually (not via the SDK's own
 # create_and_poll/poll helpers) because those only keep polling while
 # status is 'in_progress' or 'queued' (OpenAI/Sora's own vocabulary) -
@@ -150,8 +150,8 @@ class AnimateLLMCallError(Exception):
 
 class AnimateLLMClient:
     def __init__(self):
-        self.api_key = os.environ.get('OPENAI_API_KEY') or os.environ.get('OPENROUTER_API_KEY')
-        self.base_url = os.environ.get('OPENAI_BASE_URL') or None
+        self.api_key = os.environ.get('PROXY_API_KEY') or os.environ.get('OPENROUTER_API_KEY')
+        self.base_url = os.environ.get('PROXY_BASE_URL') or os.environ.get('OPENAI_BASE_URL') or None
         self._client = None
 
     def is_configured(self):
@@ -159,7 +159,7 @@ class AnimateLLMClient:
 
     def _get_client(self):
         if self._client is None:
-            # Measured ~50s live for a 4s clip (create() call itself ~16s,
+            # An eight-second clip can take tens of seconds to create,
             # then polling until the job completes) - comfortably under this
             # budget. max_retries=0 so the SDK's own default retries don't
             # compound with a caller-level retry into a much longer wait
@@ -227,8 +227,7 @@ class AnimateLLMClient:
             raise AnimateLLMCallError(f'Animated sketch generation failed: {exc}')
 
     def generate_shot_video(self, image_png_bytes, movement=None, documentary_mode=None, framing=None,
-                            scene_notes='', techniques=None, narrative_operation='', visual_description='',
-                            reference_subject=''):
+                            scene_notes='', techniques=None, narrative_operation='', visual_description=''):
         """Image-to-video for the shot flow: animates an already-generated shot
         FRAME (see sketch_llm.generate_sketch style='shot_frame') into a short
         cinematic clip that keeps the frame's composition/style, moving the
@@ -252,16 +251,12 @@ class AnimateLLMClient:
         visual_clause = (
             f' Intended visual description: {visual_description.strip()}. Preserve the reference image as the visual anchor while making the action and motion clearly express this description.'
             if (visual_description or '').strip() else '')
-        subject_clause = (
-            f' Uploaded-content subject: {reference_subject.strip()}. Keep this exact subject/content identity as the anchor; '
-            'do not substitute a different subject.'
-            if (reference_subject or '').strip() else '')
         prompt = (
             'Animate this documentary storyboard frame into a short photorealistic cinematic documentary '
             'clip. Keep its exact composition, subjects, setting, lighting, and visual identity; preserve '
             'the same people and objects, and do not redraw, stylize, or add or remove people.'
             f'{framing_clause} {move_clause}{feel_clause}'
-            f'{visual_clause}{subject_clause}{operation_clause}{notes_clause}{techniques_clause}'
+            f'{visual_clause}{operation_clause}{notes_clause}{techniques_clause}'
         )
 
         try:

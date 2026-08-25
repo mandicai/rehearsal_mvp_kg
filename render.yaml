@@ -19,7 +19,9 @@ services:
     envVars:
       - key: OPENAI_API_KEY
         sync: false
-      - key: OPENAI_BASE_URL
+      - key: PROXY_API_KEY
+        sync: false
+      - key: PROXY_BASE_URL
         sync: false
       - key: PEXELS_API_KEY
         sync: false

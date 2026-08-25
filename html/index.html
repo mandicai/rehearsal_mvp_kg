@@ -21,10 +21,10 @@
     rel="stylesheet">
   <!-- Monospace for the data-journalism (The Markup / Blacklight) styling -
        headings, kickers, labels, badges (see styles-index.css theme block). -->
-  <link
-    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap"
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap"
     rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap"
+    rel="stylesheet">
   <script>document.write('<link rel="stylesheet" href="/styles-index.css?t=' + window.CACHE_BUST + '">');</script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <!-- three.js (global THREE) + OrbitControls for the inline 3D reconstruction
@@ -59,6 +59,36 @@
        js/paper-extract.js's saveDebugSession/restoreDebugSession, which
        both pages call). -->
 
+      <!-- Upload panel - the next step after stating intent above. -->
+      <aside id="upload-sidebar" class="upload-sidebar upload-sidebar-doc upload-sidebar-inline">
+        <div class="upload-sidebar-header">
+          <h2>Your research paper</h2>
+          <!-- <button id="upload-sidebar-toggle" class="sidebar-toggle-btn" type="button" title="Collapse">&raquo;</button> -->
+        </div>
+
+        <div class="upload-sidebar-body">
+          <div class="source-material">
+            <p style="font-size: 13px; margin: 0 0 12px;">
+              Upload a PDF of your research paper, which will serve as source material.
+            </p>
+            <div class="input-group">
+              <input type="file" id="paper-file-input" accept=".pdf,.txt,.md">
+              <button id="extract-paper-btn" class="btn-primary">Extract</button> 
+              <!-- style="margin-top: 16px; -->
+            </div>
+            <div id="paper-status" class="status-line"></div>
+          </div>
+
+          <!-- Extracted sections: one block per detected section (title +
+           body text) so the extraction can be sanity-checked against the
+           source paper, right underneath the file input, scrollable (see
+           .paper-sections-feed in styles-index.css) - edit headers/text,
+           click to exclude/restore, split or add new sections (see
+           js/paper-extract.js's renderSectionFeed/buildSectionBlock). -->
+          <div id="paper-sections"></div>
+        </div>
+      </aside>
+
       <!-- Documentary intent module: a moodboard of reference documentaries.
        The presenter adds references (a documentary name, a YouTube link, or an
        uploaded clip); each is deep-analyzed in the background and the whole
@@ -67,7 +97,7 @@
        replaced the old narration recorder as the entry point. -->
       <div class="module-card" id="documentary-intent-module">
         <h2>What documentaries capture the feel you're going for?</h2>
-        <p style="font-size: 12px; opacity: 0.75; margin: 0 0 14px;">
+        <p style="font-size: 13px; margin: 0 0 14px;">
           Build a moodboard of reference documentaries—name one, paste a YouTube link, or upload a clip.
           We'll study their style and suggest a narrative arc, mode, and techniques for your paper.
         </p>
@@ -82,7 +112,6 @@
             <button type="button" id="moodboard-add-url-btn" class="btn-secondary">Add</button>
           </div>
           <div class="moodboard-add-group">
-            <label for="moodboard-file-input" class="moodboard-file-label">Upload footage</label>
             <input type="file" id="moodboard-file-input" accept="video/*">
           </div>
         </div>
@@ -128,35 +157,6 @@
         <div id="reconstruct-list" class="moodboard-list"></div>
         <div id="reconstruct-status" class="status-line"></div>
       </div><!-- /#reconstruct-module -->
-
-      <!-- Upload panel - the next step after stating intent above. -->
-      <aside id="upload-sidebar" class="upload-sidebar upload-sidebar-doc upload-sidebar-inline">
-        <div class="upload-sidebar-header">
-          <h2>Your research paper</h2>
-          <!-- <button id="upload-sidebar-toggle" class="sidebar-toggle-btn" type="button" title="Collapse">&raquo;</button> -->
-        </div>
-
-        <div class="upload-sidebar-body">
-          <div class="source-material">
-            <p style="font-size: 12px; opacity: 0.75; margin: 0 0 12px;">
-              Upload a PDF of your research paper, which will serve as source material.
-            </p>
-            <div class="input-group">
-              <input type="file" id="paper-file-input" accept=".pdf,.txt,.md">
-            </div>
-            <button id="extract-paper-btn" class="btn-primary" style="margin-top: 16px;">Extract</button>
-            <div id="paper-status" class="status-line"></div>
-          </div>
-
-          <!-- Extracted sections: one block per detected section (title +
-           body text) so the extraction can be sanity-checked against the
-           source paper, right underneath the file input, scrollable (see
-           .paper-sections-feed in styles-index.css) - edit headers/text,
-           click to exclude/restore, split or add new sections (see
-           js/paper-extract.js's renderSectionFeed/buildSectionBlock). -->
-          <div id="paper-sections"></div>
-        </div>
-      </aside>
 
       <!-- Hidden until both a stated intent (a recording or a chosen focus
        chip) and at least one extracted section exist (see

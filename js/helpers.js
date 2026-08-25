@@ -1724,6 +1724,36 @@ function fetchPaperExtraction(file) {
 
 const STORYBOARD_API_URL = `${API_BASE_URL}/paper/storyboard`;
 const MEDIA_QUERIES_API_URL = `${API_BASE_URL}/paper/media_queries`;
+const NARRATION_SPANS_API_URL = `${API_BASE_URL}/narration/spans`;
+const NARRATION_FILMABILITY_API_URL = `${API_BASE_URL}/narration/classify`;
+
+function fetchNarrationSpans(text, signal) {
+  return fetch(NARRATION_SPANS_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    ...(signal ? { signal } : {}),
+    body: JSON.stringify({ text: String(text || '') }),
+  }).then(handleJsonResponse).catch(err => {
+    if (err.isServerError) throw err;
+    throw new Error(`Could not reach the narration-span server at ${NARRATION_SPANS_API_URL} (${err.message}).`);
+  });
+}
+
+function fetchNarrationFilmability({ narration, spans, documentaryMode, signal }) {
+  return fetch(NARRATION_FILMABILITY_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    ...(signal ? { signal } : {}),
+    body: JSON.stringify({
+      narration: String(narration || ''),
+      spans: Array.isArray(spans) ? spans : [],
+      documentary_mode: documentaryMode || '',
+    }),
+  }).then(handleJsonResponse).catch(err => {
+    if (err.isServerError) throw err;
+    throw new Error(`Could not reach the narration-filmability server at ${NARRATION_FILMABILITY_API_URL} (${err.message}).`);
+  });
+}
 
 function fetchMediaQueries(scene) {
   return fetch(MEDIA_QUERIES_API_URL, {
@@ -1918,7 +1948,7 @@ function fetchGenerateCutaways({ sectionIndex, narration, title, sceneNotes, act
 // moodboard reference profiles; the CONTENT is anchored in the scene's
 // narration, title, act title, and scene notes (the paper abstract is not
 // used). Same projectId in/out convention as fetchGenerateSketch.
-function fetchGenerateShot({ sectionIndex, title, sceneNotes, narration, actTitle, documentaryMode, techniques, moodboard, shotIndex, projectId, abstract, role, referenceSubject, referenceSketchUrl, referenceFigureDataUrl, referenceVideoUrl, referenceVideoThumbnailUrl, signal }) {
+function fetchGenerateShot({ sectionIndex, title, sceneNotes, specificPhrase, parentNarration, linkedFootagePhrases, narration, actTitle, documentaryMode, techniques, moodboard, shotIndex, projectId, abstract, role, referenceSubject, referenceSketchUrl, referenceFigureDataUrl, referenceVideoUrl, referenceVideoThumbnailUrl, signal }) {
   return fetch(GENERATE_SHOT_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1928,6 +1958,9 @@ function fetchGenerateShot({ sectionIndex, title, sceneNotes, narration, actTitl
       title: title || '',
       act_title: actTitle || '',
       scene_notes: sceneNotes || '',
+      ...(specificPhrase ? { specific_phrase: specificPhrase } : {}),
+      ...(parentNarration ? { parent_narration: parentNarration } : {}),
+      ...(linkedFootagePhrases && linkedFootagePhrases.length ? { linked_footage_phrases: linkedFootagePhrases } : {}),
       narration: narration || '',
       ...(abstract ? { abstract } : {}),
       ...(role ? { role } : {}),
@@ -1955,7 +1988,35 @@ function fetchGenerateShot({ sectionIndex, title, sceneNotes, narration, actTitl
 // Animates the exact image selected in the examples gallery. The selected
 // plan's direction is forwarded; the backend does not regenerate a seed frame.
 const GENERATE_SHOT_VIDEO_API_URL = `${API_BASE_URL}/paper/generate_shot_video`;
-function fetchGenerateShotVideo({ sectionIndex, chosenImageUrl, sceneNotes, documentaryMode, techniques, projectId, shotPlan, referenceSubject, referenceVideoUrl, referenceVideoThumbnailUrl, signal }) {
+const GENERATE_SHOT_PLAN_API_URL = `${API_BASE_URL}/paper/generate_shot_plan`;
+function fetchGenerateShotPlan({ sectionIndex, title, sceneNotes, specificPhrase, parentNarration, linkedFootagePhrases, documentaryMode, techniques, projectId, cameraMovement, signal }) {
+  return fetch(GENERATE_SHOT_PLAN_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    ...(signal ? { signal } : {}),
+    body: JSON.stringify({
+      section_index: sectionIndex,
+      title: title || '',
+      scene_notes: sceneNotes || '',
+      ...(specificPhrase ? { specific_phrase: specificPhrase } : {}),
+      ...(parentNarration ? { parent_narration: parentNarration } : {}),
+      ...(linkedFootagePhrases && linkedFootagePhrases.length ? { linked_footage_phrases: linkedFootagePhrases } : {}),
+      ...(documentaryMode ? { documentary_mode: documentaryMode } : {}),
+      ...(techniques && techniques.length ? { techniques } : {}),
+      ...(cameraMovement ? { camera_movement: cameraMovement } : {}),
+      ...(projectId ? { project_id: projectId } : {}),
+    })
+  })
+    .then(handleJsonResponse)
+    .catch(err => {
+      if (err.isServerError) throw err;
+      throw new Error(
+        `Could not reach the shot-plan server at ${GENERATE_SHOT_PLAN_API_URL} (${err.message}). Check that the backend is running and reachable.`
+      );
+    });
+}
+
+function fetchGenerateShotVideo({ sectionIndex, chosenImageUrl, sceneNotes, specificPhrase, parentNarration, linkedFootagePhrases, documentaryMode, techniques, projectId, shotPlan, cameraMovement, signal }) {
   return fetch(GENERATE_SHOT_VIDEO_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1964,9 +2025,10 @@ function fetchGenerateShotVideo({ sectionIndex, chosenImageUrl, sceneNotes, docu
       section_index: sectionIndex,
       chosen_image_url: chosenImageUrl || '',
       scene_notes: sceneNotes || '',
-      ...(referenceSubject ? { reference_subject: referenceSubject } : {}),
-      ...(referenceVideoUrl ? { reference_video_url: referenceVideoUrl } : {}),
-      ...(referenceVideoThumbnailUrl ? { reference_video_thumbnail_url: referenceVideoThumbnailUrl } : {}),
+      ...(specificPhrase ? { specific_phrase: specificPhrase } : {}),
+      ...(parentNarration ? { parent_narration: parentNarration } : {}),
+      ...(linkedFootagePhrases && linkedFootagePhrases.length ? { linked_footage_phrases: linkedFootagePhrases } : {}),
+      ...(cameraMovement ? { camera_movement: cameraMovement } : {}),
       movement: (shotPlan && shotPlan.movement) || '',
       narrative_operation: (shotPlan && shotPlan.narrative_operation) || '',
       shot_size: (shotPlan && shotPlan.shot_size) || '',
@@ -1990,7 +2052,7 @@ function fetchGenerateShotVideo({ sectionIndex, chosenImageUrl, sceneNotes, docu
 // ~count cheap still frames + one Veo clip, all from the same shot plan/framing,
 // for the presenter to pick from. Same inputs as fetchGenerateShot.
 const GENERATE_SHOT_EXAMPLES_API_URL = `${API_BASE_URL}/paper/generate_shot_examples`;
-function fetchGenerateShotExamples({ sectionIndex, title, sceneNotes, narration, actTitle, documentaryMode, techniques, moodboard, count, video, projectId, abstract, role, referenceSubject, referenceSketchUrl, referenceFigureDataUrl, referenceVideoUrl, referenceVideoThumbnailUrl, signal }) {
+function fetchGenerateShotExamples({ sectionIndex, title, sceneNotes, specificPhrase, parentNarration, linkedFootagePhrases, narration, actTitle, documentaryMode, techniques, moodboard, count, video, projectId, abstract, role, referenceSubject, referenceSketchUrl, referenceFigureDataUrl, referenceVideoUrl, referenceVideoThumbnailUrl, signal }) {
   return fetch(GENERATE_SHOT_EXAMPLES_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2000,6 +2062,9 @@ function fetchGenerateShotExamples({ sectionIndex, title, sceneNotes, narration,
       title: title || '',
       act_title: actTitle || '',
       scene_notes: sceneNotes || '',
+      ...(specificPhrase ? { specific_phrase: specificPhrase } : {}),
+      ...(parentNarration ? { parent_narration: parentNarration } : {}),
+      ...(linkedFootagePhrases && linkedFootagePhrases.length ? { linked_footage_phrases: linkedFootagePhrases } : {}),
       narration: narration || '',
       ...(abstract ? { abstract } : {}),
       ...(role ? { role } : {}),

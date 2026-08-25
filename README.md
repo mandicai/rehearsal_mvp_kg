@@ -15,7 +15,7 @@
 
    Confirm it's on your `PATH` with `soffice --version`. -->
 
-3. **Configure an LLM API key**: copy `backend/.env.example` to `backend/.env` and fill in `OPENAI_API_KEY` with a real OpenAI (or OpenRouter) key. If you're using the real OpenAI API directly (not an internal proxy), delete/blank out the `OPENAI_BASE_URL` line - it's only needed to point at a custom OpenAI-compatible proxy. 
+3. **Configure API keys**: copy `backend/.env.example` to `backend/.env`. Put the direct OpenAI key in `OPENAI_API_KEY` for Whisper transcription, and put the proxy key/URL in `PROXY_API_KEY` / `PROXY_BASE_URL` for the other LLM-backed features.
 
 <!-- Without a key, most LLM-backed features (learning objective suggestions, Simulate Audience, feedback) won't work, though the app will still start. `participant-view.html` doesn't call the LLM at all. -->
 
@@ -40,7 +40,7 @@ HTML pages live in `html/` and JS files live in `js/`; both are served as static
 This site's frontend deploys to Netlify (`netlify.toml`), but Netlify only runs short-lived serverless functions - not a persistent process like `python backend/server.py`, which several routes need (long-polling a video-generation job, `ffmpeg`/Docling model calls that can take longer than a function timeout, etc.). So the backend deploys separately, to [Render](https://render.com), as an always-running Docker container:
 
 1. On Render: **New +** → **Blueprint** → point it at this repo. Render reads `render.yaml` and creates the `rehearsal-mvp-kg-backend` web service from `backend/Dockerfile`.
-2. Render will prompt for the env vars marked `sync: false` in `render.yaml` (`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `PEXELS_API_KEY`, `FREESOUND_API_KEY`) - same values as your local `backend/.env`, entered directly in Render's dashboard instead (never committed).
+2. Render will prompt for the env vars marked `sync: false` in `render.yaml` (including the transcription and proxy credentials, plus `PEXELS_API_KEY` and `FREESOUND_API_KEY`) - same values as your local `backend/.env`, entered directly in Render's dashboard instead (never committed).
 3. Once deployed, copy the service's `https://<name>.onrender.com` URL into `window.API_BASE_URL` near the top of `html/index.html` and `html/storyboard.html` (both currently have this commented out, defaulting to `http://127.0.0.1:8000` for local dev - see `js/helpers.js`'s `API_BASE_URL`).
 4. Redeploy the frontend to Netlify so it picks up that change.
 

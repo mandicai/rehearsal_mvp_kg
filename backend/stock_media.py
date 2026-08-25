@@ -3,7 +3,7 @@ server.py's /media/search_video and /media/search_audio routes) - triggered
 by that page's per-section "Find Footage" action, using the video_query/
 audio_query fields storyboard_llm.py's generate_storyboard already produces.
 
-Four video providers (Pexels, Internet Archive, Library of Congress) plus
+Three video providers (Pexels, Internet Archive, Library of Congress) plus
 one audio provider (Freesound), all single unretried GETs against a plain
 REST search endpoint - there's nothing here that benefits from the
 retry-on-transient-failure pattern the LLM clients use; a failed search
@@ -29,6 +29,7 @@ Env vars (see backend/.env.example):
     (Internet Archive and Library of Congress need no env var/key at all.)
 """
 import os
+import re
 
 import requests
 
@@ -45,6 +46,34 @@ _LOC_SEARCH_URL = 'https://www.loc.gov/film-and-videos/'
 # lookups) so a run of candidates with no usable file doesn't turn one
 # search into dozens of sequential requests.
 _MAX_METADATA_LOOKUPS = 10
+
+
+def _duration_seconds(value):
+    """Normalize provider duration metadata to a numeric seconds value."""
+    if value is None or value == '':
+        return None
+    if isinstance(value, (int, float)):
+        return float(value) if float(value) > 0 else None
+    text = str(value).strip()
+    if not text:
+        return None
+    if ':' in text:
+        try:
+            parts = [float(part) for part in text.split(':')]
+            seconds = 0.0
+            for part in parts:
+                seconds = seconds * 60 + part
+            return seconds if seconds > 0 else None
+        except (TypeError, ValueError):
+            return None
+    match = re.search(r'-?\d+(?:\.\d+)?', text)
+    if not match:
+        return None
+    try:
+        seconds = float(match.group(0))
+    except ValueError:
+        return None
+    return seconds if seconds > 0 else None
 
 
 class StockMediaCallError(Exception):
@@ -91,7 +120,7 @@ class PexelsClient:
                 'id': video.get('id'),
                 'thumbnail_url': pictures[0]['picture'] if pictures else None,
                 'video_url': smallest['link'],
-                'duration': video.get('duration'),
+                'duration': _duration_seconds(video.get('duration')),
                 'creator': (video.get('user') or {}).get('name'),
                 'source_url': video.get('url'),
             })
@@ -152,15 +181,22 @@ class InternetArchiveClient:
             except (requests.RequestException, ValueError):
                 continue  # this one item's lookup failed - still try the rest
 
-            mp4_names = [f['name'] for f in (meta.get('files') or []) if (f.get('name') or '').lower().endswith('.mp4')]
-            if not mp4_names:
+            mp4_files = [f for f in (meta.get('files') or [])
+                         if (f.get('name') or '').lower().endswith('.mp4')]
+            if not mp4_files:
                 continue
+            selected_file = mp4_files[0]
+            duration = _duration_seconds(
+                selected_file.get('duration')
+                or selected_file.get('length')
+                or (meta.get('metadata') or {}).get('runtime')
+            )
 
             results.append({
                 'id': identifier,
                 'thumbnail_url': f'https://archive.org/services/img/{identifier}',
-                'video_url': f'https://archive.org/download/{identifier}/{mp4_names[0]}',
-                'duration': None,  # not reliably available without parsing per-file ffprobe-style metadata
+                'video_url': f'https://archive.org/download/{identifier}/{selected_file["name"]}',
+                'duration': duration,
                 'creator': None,
                 'source_url': f'https://archive.org/details/{identifier}',
             })
@@ -219,7 +255,7 @@ class LibraryOfCongressClient:
                         filename = (file_info.get('format') or {}).get('filename')
                         if file_info.get('mimetype') == 'video/mp4' and filename:
                             video_url = f'https://tile.loc.gov/storage-services{filename}'
-                            duration = resource.get('duration')
+                            duration = _duration_seconds(resource.get('duration'))
                             break
                     if video_url:
                         break
