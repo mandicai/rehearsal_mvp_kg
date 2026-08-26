@@ -82,6 +82,10 @@ const DOCUMENTARY_MODE_PROMPTS = {
 // sizes each scene's clip by its duration (see buildNarrativeTimeline), so a
 // scene needs some length even before an edit plan fills in a real one.
 const DEFAULT_SCENE_SECONDS = 5;
+// Image-to-video generation uses the provider-supported eight-second clip.
+// Keep the footage-node preview window in sync with that output instead of
+// inheriting the generic new-footage default of two seconds.
+const ACT_BOARD_GENERATED_VIDEO_SECONDS = 8;
 
 const sceneGenerationControllers = new Map();
 function beginSceneGeneration(section) {
@@ -2200,7 +2204,7 @@ function buildNarrationClipEditor(section, narrationClip) {
   readout.className = 'sfx-segment-readout';
   trimEditor.appendChild(readout);
   const strip = document.createElement('div'); strip.className = 'sfx-source-strip';
-  strip.title = 'Drag the selected window or either edge to choose the narration source';
+  // strip.title = 'Drag the selected window or either edge to choose the narration source';
   const selection = document.createElement('div'); selection.className = 'sfx-source-selection';
   const label = document.createElement('span'); label.className = 'sfx-source-selection-label'; selection.appendChild(label);
   const handles = ['start', 'end'].map(edge => {
@@ -3895,7 +3899,10 @@ function buildMoodboardFramesStrip(profile) {
 function renderMoodboardSummaryList() {
   if (!moodboardSummaryListEl) return;
   const refs = moodboardReferences.filter(r => r.profile);
-  if (moodboardSummaryModuleEl) moodboardSummaryModuleEl.style.display = refs.length ? '' : 'none';
+  if (moodboardSummaryModuleEl) {
+    moodboardSummaryModuleEl.style.display = document.body.classList.contains('storyboard-page')
+      ? 'none' : (refs.length ? '' : 'none');
+  }
   moodboardSummaryListEl.innerHTML = '';
 
   refs.forEach(ref => {
@@ -3947,9 +3954,12 @@ function renderMoodboardSummaryList() {
 
 function renderMoodboardList() {
   if (!moodboardListEl) return;
-  // On storyboard.html the moodboard lives in #moodboard-summary-module and is
-  // always shown (so references can be edited any time), unlike index.html.
-  if (moodboardSummaryModuleEl) moodboardSummaryModuleEl.style.display = '';
+  // The moodboard is an index/setup input. Keep it hidden on storyboard.html
+  // even when this renderer is called during session restore or relocation.
+  if (moodboardSummaryModuleEl) {
+    moodboardSummaryModuleEl.style.display = document.body.classList.contains('storyboard-page')
+      ? 'none' : '';
+  }
   moodboardListEl.innerHTML = '';
   moodboardReferences.forEach(ref => {
     const card = document.createElement('div');
@@ -5963,7 +5973,7 @@ function buildNarrativeTimeline(timelineEl, sections, assignmentsByIndex) {
       clip.dataset.sectionIndex = String(section.index);
       clip.classList.toggle('filled', spec.filled);
       clip.classList.toggle('drafted', spec.drafted);
-      clip.title = `${spec.title} · ${Math.round(seconds)}s · Drag to rearrange; drag the right edge to resize`;
+      // clip.title = `${spec.title} · ${Math.round(seconds)}s · Drag to rearrange; drag the right edge to resize`;
       clip.addEventListener('click', event => {
         if (event.detail > 1 || event.target.closest('.premiere-timeline-clip-handle')) return;
         scrollTimelineClipToScene(section.index);
@@ -6609,6 +6619,21 @@ function syncActBoardLiveSceneSnapshots() {
 
 function restoreActBoardSceneToCanvas(scene) {
   if (!scene || !scene.actKey) return;
+  // Loading the scene that is already open should be a no-op. In particular,
+  // repeated clicks on a card must not rebuild the live canvas repeatedly or
+  // make it appear as though several scenes are active at once.
+  if (actBoardOpenSceneForAct(scene.actKey)?.id === scene.id) {
+    const expectedIds = new Set([
+      ...(scene.nodeIds || []),
+      ...(scene.nodeSnapshots || []).map(snapshot => snapshot?.id),
+    ].filter(Boolean));
+    const liveNodes = actBoardNodesForAct(scene.actKey);
+    const liveIds = new Set(liveNodes.map(node => node.id));
+    const onlyThisScene = liveNodes.every(node =>
+      node.sceneId === scene.id || expectedIds.has(node.id));
+    const hasExpectedNodes = [...expectedIds].every(id => liveIds.has(id));
+    if (onlyThisScene && hasExpectedNodes) return;
+  }
   setActBoardOpenScene(scene.actKey, scene);
   // Save the currently live scene's latest node/link state before replacing
   // the canvas with another scene.
@@ -6866,6 +6891,124 @@ function actBoardNarrationSourceText(node) {
   return String(node?.transcript || node?.text || '').trim();
 }
 
+function actBoardNarrationSpanTextKey(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase();
+}
+
+function actBoardNarrationSpanKey(span, fallbackText = '') {
+  const text = actBoardNarrationSpanTextKey(span?.text || fallbackText);
+  if (!text) return '';
+  const start = Number(span?.start);
+  return Number.isFinite(start) && start >= 0 ? `${text}|${start}` : text;
+}
+
+function actBoardNarrationSpanExcluded(node, span) {
+  const exclusions = Array.isArray(node?.narrationSpanExclusions)
+    ? node.narrationSpanExclusions : [];
+  if (!exclusions.length) return false;
+  const textKey = actBoardNarrationSpanTextKey(span?.text);
+  const exactKey = actBoardNarrationSpanKey(span);
+  return exclusions.includes(exactKey) || exclusions.includes(textKey);
+}
+
+function removeActBoardNarrationHighlight(narrationNode, metadata, renderedText) {
+  if (!narrationNode) return;
+  const text = String(renderedText || metadata?.text || '').replace(/\s+/g, ' ').trim();
+  if (!text) return;
+  const start = Number(metadata?.start);
+  const key = actBoardNarrationSpanKey({ text, start });
+  if (!Array.isArray(narrationNode.narrationSpanExclusions)) {
+    narrationNode.narrationSpanExclusions = [];
+  }
+  if (key && !narrationNode.narrationSpanExclusions.includes(key)) {
+    narrationNode.narrationSpanExclusions.push(key);
+  }
+  const textKey = actBoardNarrationSpanTextKey(text);
+  const samePhrase = item => actBoardNarrationSpanTextKey(
+    item?.text || item?.fragment || item,
+  ) === textKey;
+  const sameRange = item => {
+    if (!samePhrase(item)) return false;
+    const itemStart = Number(item?.start);
+    return !Number.isFinite(start) || !Number.isFinite(itemStart) || Math.abs(itemStart - start) < 1;
+  };
+  ['narrationCandidateSpans', 'narrationSpans', 'fragmentTimings'].forEach(field => {
+    if (!Array.isArray(narrationNode[field])) return;
+    narrationNode[field] = narrationNode[field].filter(item => !sameRange(item));
+  });
+  if (Array.isArray(narrationNode.footageFragments)) {
+    narrationNode.footageFragments = narrationNode.footageFragments.filter(item =>
+      actBoardNarrationSpanTextKey(item) !== textKey);
+  }
+  ['selectedFootagePhrases', 'footageSuggestedPhrases'].forEach(field => {
+    if (Array.isArray(narrationNode[field])) {
+      narrationNode[field] = narrationNode[field].filter(item => !sameRange(item));
+    }
+  });
+  if (Array.isArray(narrationNode.userFilmablePhrases)) {
+    narrationNode.userFilmablePhrases = narrationNode.userFilmablePhrases
+      .filter(item => !sameRange(item));
+  }
+  narrationNode.narrationSpanStatus = 'ready';
+  narrationNode.narrationSpanError = '';
+  saveDebugSession();
+  rerenderActBoard();
+}
+
+function removeActBoardFootageNodesForDeletedPhrases(actKey, narrationNode) {
+  if (!narrationNode) return;
+  const exclusions = Array.isArray(narrationNode.narrationSpanExclusions)
+    ? narrationNode.narrationSpanExclusions : [];
+  if (!exclusions.length) return;
+  const deletedPhrases = new Set(exclusions
+    .map(key => String(key).split('|')[0])
+    .map(actBoardNarrationSpanTextKey)
+    .filter(Boolean));
+  if (!deletedPhrases.size) return;
+  const nodes = actBoardNodesForAct(actKey);
+  const removeIds = new Set((narrationNode.footageNodeIds || [])
+    .map(id => nodes.find(node => node.id === id))
+    .filter(node => node?.type === 'footage'
+      && deletedPhrases.has(actBoardNarrationSpanTextKey(node.fragment)))
+    .map(node => node.id));
+  if (!removeIds.size) return;
+  removeIds.forEach(id => {
+    const node = nodes.find(item => item.id === id);
+    if (!node) return;
+    // Splice a deleted shot out of a direct footage chain instead of leaving
+    // a broken gap between its former neighbors.
+    const previous = nodes.find(item => item.id === node.previousFootageNodeId);
+    const next = nodes.find(item => item.id === node.nextFootageNodeId);
+    if (previous && previous.nextFootageNodeId === node.id) previous.nextFootageNodeId = next?.id || null;
+    if (next && next.previousFootageNodeId === node.id) next.previousFootageNodeId = previous?.id || null;
+    node.previousFootageNodeId = null;
+    node.nextFootageNodeId = null;
+    if (Array.isArray(narrationNode.footageNodeIds)) {
+      narrationNode.footageNodeIds = narrationNode.footageNodeIds.filter(item => item !== id);
+    }
+    if (Array.isArray(actBoardScenes[actKey])) {
+      actBoardScenes[actKey] = actBoardScenes[actKey].map(scene => ({
+        ...scene,
+        sequenceStartNodeId: scene.sequenceStartNodeId === id ? null : scene.sequenceStartNodeId,
+        nodeIds: (scene.nodeIds || []).filter(item => item !== id),
+        nodeSnapshots: (scene.nodeSnapshots || []).filter(snapshot => snapshot?.id !== id),
+        nodeLinks: (scene.nodeLinks || []).filter(link =>
+          link.sourceId !== id && link.targetId !== id),
+      }));
+    }
+  });
+  nodes.filter(node => node.type === 'audio' && removeIds.has(node.linkedToNodeId))
+    .forEach(node => {
+      node.linkedToNodeId = null;
+      node.linkedToType = null;
+    });
+  actBoardNodes[actKey] = nodes.filter(node => !removeIds.has(node.id));
+  narrationNode.footageFragments = (narrationNode.footageFragments || [])
+    .filter(fragment => !deletedPhrases.has(actBoardNarrationSpanTextKey(fragment)));
+  recomputeActBoardTiming(narrationNode);
+  syncActBoardLiveSceneSnapshots();
+}
+
 function requestActBoardNarrationAnalysis(narrationNode) {
   if (!narrationNode || narrationNode.type !== 'narration') return null;
   const text = actBoardNarrationSourceText(narrationNode);
@@ -6880,7 +7023,8 @@ function requestActBoardNarrationAnalysis(narrationNode) {
   const promise = fetchNarrationSpans(text)
     .then(local => {
       if (actBoardNarrationTextHash(actBoardNarrationSourceText(narrationNode)) !== hash) return null;
-      const candidates = Array.isArray(local.spans) ? local.spans : [];
+      const candidates = (Array.isArray(local.spans) ? local.spans : [])
+        .filter(span => !actBoardNarrationSpanExcluded(narrationNode, span));
       narrationNode.narrationCandidateSpans = candidates;
       narrationNode.narrationSpans = candidates.map(span => ({ ...span, bucket: 'pending' }));
       narrationNode.narrationSpanStatus = candidates.length ? 'classifying' : 'ready';
@@ -6907,7 +7051,8 @@ function requestActBoardNarrationAnalysis(narrationNode) {
     })
     .then(classified => {
       if (!classified || actBoardNarrationTextHash(actBoardNarrationSourceText(narrationNode)) !== hash) return;
-      narrationNode.narrationSpans = Array.isArray(classified.spans) ? classified.spans : [];
+      narrationNode.narrationSpans = (Array.isArray(classified.spans) ? classified.spans : [])
+        .filter(span => !actBoardNarrationSpanExcluded(narrationNode, span));
       narrationNode.narrationSpanSource = classified.source || 'fallback';
       narrationNode.narrationSpanStatus = 'ready';
       const detectedFragments = narrationNode.narrationSpans
@@ -6981,6 +7126,7 @@ function appendActBoardNarrationWords(parent, text, sourceOffset, source) {
     word.dataset.narrationWordIndex = String(baseWordIndex + localWordIndex);
     word.dataset.narrationSourceStart = String(sourceOffset + match.index);
     word.dataset.narrationSourceEnd = String(sourceOffset + match.index + match[0].length);
+    word.dataset.narrationWordText = match[0];
     word.textContent = match[0];
     parent.appendChild(word);
     cursor = match.index + match[0].length;
@@ -6989,11 +7135,11 @@ function appendActBoardNarrationWords(parent, text, sourceOffset, source) {
   if (cursor < value.length) parent.appendChild(document.createTextNode(value.slice(cursor)));
 }
 
-function buildActBoardSuggestedNarrationText(text, fragments, onFragmentEdit, labelText = 'Suggested narration: ', onFragmentSelect, highlightFallback = true) {
+function buildActBoardSuggestedNarrationText(text, fragments, onFragmentEdit, labelText = 'Suggested narration: ', onFragmentSelect, highlightFallback = true, onFragmentRemove = null) {
   const container = document.createElement('p');
   container.className = 'storyboard-act-board-node-text';
   if (onFragmentSelect) {
-    container.title = 'Click a word or drag-select a phrase, then press Suggest footage. Hold Command/Ctrl while clicking to select multiple phrases.';
+    container.title = 'Click words or drag-select phrases to highlight them, then press Suggest footage. Click a selected phrase again to toggle it off.';
   }
   const label = document.createElement('strong');
   label.textContent = labelText;
@@ -7028,7 +7174,10 @@ function buildActBoardSuggestedNarrationText(text, fragments, onFragmentEdit, la
     // `value` belongs to the range-building loop above; use the actual
     // rendered source slice here so this second loop does not reference an
     // out-of-scope variable.
-    highlight.dataset.narrationFragment = source.slice(range.start, range.end);
+    const renderedPhrase = source.slice(range.start, range.end);
+    highlight.dataset.narrationFragment = renderedPhrase;
+    highlight.dataset.narrationFragmentStart = String(range.start);
+    highlight.dataset.narrationFragmentEnd = String(range.end);
     if (metadata.bucket) highlight.classList.add(`storyboard-act-board-narration-span-${metadata.bucket}`);
     appendActBoardNarrationWords(highlight, source.slice(range.start, range.end), range.start, source);
     const bucket = metadata.bucket;
@@ -7039,9 +7188,9 @@ function buildActBoardSuggestedNarrationText(text, fragments, onFragmentEdit, la
     } else if (bucket === 'pending') {
       highlight.title = 'Classifying this narration phrase…';
     }
+    let selectTimer = null;
     if (onFragmentSelect && bucket && bucket !== 'ignore' && bucket !== 'pending') {
       highlight.classList.add('storyboard-act-board-narration-span-clickable');
-      let selectTimer = null;
       highlight.addEventListener('click', event => {
         event.preventDefault();
         event.stopPropagation();
@@ -7050,10 +7199,46 @@ function buildActBoardSuggestedNarrationText(text, fragments, onFragmentEdit, la
           ...metadata,
           start: range.start,
           end: range.end,
-          text: highlight.textContent,
-        }, highlight.textContent, Boolean(event.metaKey || event.ctrlKey)), 180);
+          text: renderedPhrase,
+          }, renderedPhrase, true), 180);
       });
       highlight.addEventListener('dblclick', () => clearTimeout(selectTimer));
+    }
+    if (onFragmentRemove) {
+      highlight.tabIndex = 0;
+      highlight.addEventListener('keydown', event => {
+        if (event.key !== 'Delete' && event.key !== 'Backspace') return;
+        event.preventDefault();
+        event.stopPropagation();
+        onFragmentRemove({
+          ...metadata,
+          start: range.start,
+          end: range.end,
+          text: renderedPhrase,
+        }, renderedPhrase);
+      });
+      const removeButton = document.createElement('button');
+      removeButton.type = 'button';
+      removeButton.className = 'storyboard-act-board-narration-span-remove';
+      removeButton.textContent = '×';
+      removeButton.title = 'Remove this highlighted phrase';
+      removeButton.setAttribute('aria-label', `Remove highlighted phrase: ${renderedPhrase}`);
+      removeButton.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        clearTimeout(selectTimer);
+        // Prevent a stale native text selection from being re-emitted by the
+        // narration container's mouseup handler while this delete click is
+        // being processed.
+        window.getSelection?.()?.removeAllRanges?.();
+        onFragmentRemove({
+          ...metadata,
+          start: range.start,
+          end: range.end,
+          text: renderedPhrase,
+        }, renderedPhrase);
+      });
+      highlight.appendChild(removeButton);
     }
     if (onFragmentEdit) {
       if (!bucket || bucket === 'ignore') highlight.title = 'Double-click to edit this narration phrase';
@@ -7097,8 +7282,9 @@ function buildActBoardSuggestedNarrationText(text, fragments, onFragmentEdit, la
   if (!source) container.appendChild(document.createTextNode('No narration draft yet.'));
   if (onFragmentSelect && source) {
     // Any word in the narration can seed a new footage idea, not just a span
-    // returned by the filmability classifier. A click selects one word; a
-    // native text selection selects an arbitrary phrase.
+    // returned by the filmability classifier. Clicks and native text
+    // selections accumulate phrase highlights; clicking the same range again
+    // toggles it off.
     let textSelectionCaptured = false;
     const emitSelection = (selectedText, start, end, append = false) => {
       const phrase = String(selectedText || '').replace(/\s+/g, ' ').trim();
@@ -7115,7 +7301,8 @@ function buildActBoardSuggestedNarrationText(text, fragments, onFragmentEdit, la
         query: phrase,
       }, phrase, append);
     };
-    container.addEventListener('mouseup', () => {
+    container.addEventListener('mouseup', event => {
+      if (event.target.closest?.('button, input, select, textarea')) return;
       setTimeout(() => {
         const selection = window.getSelection?.();
         if (!selection || selection.isCollapsed || !selection.rangeCount
@@ -7136,7 +7323,7 @@ function buildActBoardSuggestedNarrationText(text, fragments, onFragmentEdit, la
           .indexOf(phrase.toLocaleLowerCase());
         const end = ends.length ? Math.max(...ends) : start + phrase.length;
         textSelectionCaptured = true;
-      emitSelection(phrase, start, end);
+        emitSelection(phrase, start, end, true);
       }, 0);
     });
     container.addEventListener('click', event => {
@@ -7147,23 +7334,29 @@ function buildActBoardSuggestedNarrationText(text, fragments, onFragmentEdit, la
       if (event.target.closest('.storyboard-act-board-narration-span')) return;
       const word = event.target.closest('[data-narration-source-start]');
       if (!word || !container.contains(word)) return;
-      emitSelection(word.textContent, Number(word.dataset.narrationSourceStart),
-        Number(word.dataset.narrationSourceEnd), Boolean(event.metaKey || event.ctrlKey));
+      emitSelection(word.dataset.narrationWordText || word.textContent,
+        Number(word.dataset.narrationSourceStart),
+        Number(word.dataset.narrationSourceEnd), true);
     });
   }
   return container;
 }
 
-function applyActBoardNarrationPhraseSelection(root, narrationNode) {
+function applyActBoardNarrationPhraseSelection(root, narrationNode, onPhraseRemove = null) {
   if (!root || !narrationNode) return;
   const selections = Array.isArray(narrationNode.selectedFootagePhrases)
     ? narrationNode.selectedFootagePhrases : [];
   const footageSuggested = Array.isArray(narrationNode.footageSuggestedPhrases)
     ? narrationNode.footageSuggestedPhrases : [];
+  const userFilmable = Array.isArray(narrationNode.userFilmablePhrases)
+    ? narrationNode.userFilmablePhrases : [];
   const ranges = selections.map(item => ({
     start: Number(item.start), end: Number(item.end),
   })).filter(item => Number.isFinite(item.start) && Number.isFinite(item.end));
   const footageRanges = footageSuggested.map(item => ({
+    start: Number(item.start), end: Number(item.end),
+  })).filter(item => Number.isFinite(item.start) && Number.isFinite(item.end));
+  const userRanges = userFilmable.map(item => ({
     start: Number(item.start), end: Number(item.end),
   })).filter(item => Number.isFinite(item.start) && Number.isFinite(item.end));
   root.querySelectorAll('[data-narration-source-start]').forEach(word => {
@@ -7172,7 +7365,8 @@ function applyActBoardNarrationPhraseSelection(root, narrationNode) {
     word.classList.toggle('storyboard-act-board-narration-phrase-selected',
       ranges.some(range => end > range.start && start < range.end));
     word.classList.toggle('storyboard-act-board-narration-phrase-has-footage',
-      footageRanges.some(range => end > range.start && start < range.end));
+      footageRanges.some(range => end > range.start && start < range.end)
+        || userRanges.some(range => end > range.start && start < range.end));
   });
   root.querySelectorAll('[data-narration-fragment]').forEach(fragment => {
     const value = fragment.dataset.narrationFragment || '';
@@ -7184,6 +7378,50 @@ function applyActBoardNarrationPhraseSelection(root, narrationNode) {
     fragment.classList.toggle('storyboard-act-board-narration-phrase-has-footage',
       start >= 0 && footageRanges.some(range => end > range.start && start < range.end));
   });
+  const removableRanges = [...footageRanges, ...userRanges, ...ranges]
+    .filter((range, index, all) => all.findIndex(item =>
+      item.start === range.start && item.end === range.end) === index);
+  if (onPhraseRemove && removableRanges.length) {
+    const words = Array.from(root.querySelectorAll('[data-narration-source-start]'));
+    const appended = new Set();
+    removableRanges.forEach(range => {
+      const covered = words.filter(word => {
+        const start = Number(word.dataset.narrationSourceStart);
+        const end = Number(word.dataset.narrationSourceEnd);
+        return end > range.start && start < range.end;
+      });
+      const anchor = covered[covered.length - 1];
+      if (!anchor) return;
+      // Classifier-created spans already carry their own remove affordance for
+      // the exact same range. A user-added range may be nested inside or
+      // overlap that span, however, and still needs its own delete control.
+      const parentSpan = anchor.closest('.storyboard-act-board-narration-span');
+      const parentStart = Number(parentSpan?.dataset.narrationFragmentStart);
+      const parentEnd = Number(parentSpan?.dataset.narrationFragmentEnd);
+      const hasExactRemove = parentSpan?.querySelector('.storyboard-act-board-narration-span-remove')
+        && Number.isFinite(parentStart) && Number.isFinite(parentEnd)
+        && parentStart === range.start && parentEnd === range.end;
+      if (hasExactRemove) return;
+      const key = `${range.start}:${range.end}`;
+      if (appended.has(key)) return;
+      appended.add(key);
+      const removeButton = document.createElement('button');
+      removeButton.type = 'button';
+      removeButton.className = 'storyboard-act-board-narration-span-remove storyboard-act-board-narration-user-highlight-remove';
+      removeButton.textContent = '×';
+      const source = String(narrationNode.transcript || narrationNode.text || '');
+      const phrase = source.slice(Math.max(0, range.start), Math.max(0, range.end));
+      removeButton.title = 'Remove this user-added highlighted phrase';
+      removeButton.setAttribute('aria-label', `Remove highlighted phrase: ${phrase}`);
+      removeButton.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        window.getSelection?.()?.removeAllRanges?.();
+        onPhraseRemove({ text: phrase, start: range.start, end: range.end }, phrase);
+      });
+      anchor.appendChild(removeButton);
+    });
+  }
 }
 
 function replaceActBoardNarrationPhrase(text, original, replacement) {
@@ -7279,6 +7517,11 @@ function handleActBoardNarrationSpanSelect(narrationNode, metadata, renderedText
   };
   const priorSelections = Array.isArray(narrationNode.selectedFootagePhrases)
     ? narrationNode.selectedFootagePhrases : [];
+  const priorUserPhrases = Array.isArray(narrationNode.userFilmablePhrases)
+    ? narrationNode.userFilmablePhrases : [];
+  const duplicateUserPhrase = priorUserPhrases.findIndex(item =>
+    String(item.text || '').toLocaleLowerCase() === phrase.toLocaleLowerCase()
+      && Math.abs(Number(item.start) - nextSelection.start) < 1);
   if (appendSelection) {
     const duplicate = priorSelections.findIndex(item =>
       String(item.text || '').toLocaleLowerCase() === phrase.toLocaleLowerCase()
@@ -7286,8 +7529,15 @@ function handleActBoardNarrationSpanSelect(narrationNode, metadata, renderedText
     narrationNode.selectedFootagePhrases = duplicate >= 0
       ? priorSelections.filter((item, index) => index !== duplicate)
       : [...priorSelections, nextSelection];
+    narrationNode.userFilmablePhrases = duplicateUserPhrase >= 0
+      ? priorUserPhrases.filter((item, index) => index !== duplicateUserPhrase)
+      : [...priorUserPhrases, nextSelection];
   } else {
     narrationNode.selectedFootagePhrases = [nextSelection];
+    // A plain click intentionally replaces the user phrase selection. The
+    // Plain clicks replace the temporary search selection, while the durable
+    // user phrase list is managed by the click/drag handlers above.
+    narrationNode.userFilmablePhrases = [nextSelection];
   }
   const count = narrationNode.selectedFootagePhrases.length;
   narrationNode.footageStatus = count
@@ -7431,8 +7681,18 @@ function alignActBoardNarrationFragments(narrationNode, fragmentOverride = null)
     .map(id => nodes.find(node => node.id === id)).filter(Boolean);
   let previousStart = 0;
   linked.forEach((node, index) => {
+    // Keep the narration list's order stable even when a rerecord no longer
+    // contains an older footage phrase.  The sequence index is also what the
+    // playback rail uses as its deterministic tie-breaker.
+    node.sequenceIndex = index;
     const timing = byFragment.get(node.fragment);
-    if (!timing) return;
+    if (!timing) {
+      // A prior footage card can legitimately outlive the transcript that
+      // created it.  Leave its manually chosen source window and direct
+      // footage links intact instead of reassigning it to a new phrase's
+      // timing window.
+      return;
+    }
     const timingIndex = narrationNode.fragmentTimings.findIndex(item => item === timing);
     const window = actBoardNarrationFootageWindow(
       narrationNode.fragmentTimings,
@@ -7445,7 +7705,7 @@ function alignActBoardNarrationFragments(narrationNode, fragmentOverride = null)
     node.durationWasSuggested = false;
     node.alignedToNarration = true;
     node.timingWasManuallyAdjusted = false;
-    previousStart = window.startSeconds;
+    previousStart = Math.max(previousStart, window.startSeconds + window.durationSeconds);
   });
   narrationNode.durationSeconds = duration;
 }
@@ -7521,8 +7781,10 @@ async function recordActBoardNarration(node, blob, filename, statusEl) {
     node.narrationSpanStatus = 'stale';
     node.narrationCandidateSpans = [];
     node.narrationSpans = [];
+    node.narrationSpanExclusions = [];
     node.selectedFootagePhrases = [];
     node.footageSuggestedPhrases = [];
+    node.userFilmablePhrases = [];
     node.recordingStatus = 'ready';
     node.recordingError = '';
     const act = currentArcSections.find(item => item.key === node.actKey);
@@ -8425,6 +8687,16 @@ function clearActBoard() {
   rerenderActBoard();
 }
 
+function bringNewActBoardNodeToFront(actKey, node) {
+  if (!node || node.type === 'playback') return;
+  const highest = actBoardNodesForAct(actKey).reduce((max, item) => Math.max(
+    max, Number(item?.boardZIndex) || 1,
+  ), 1);
+  // New working nodes should sit above the playback surface even when the
+  // playback node was previously brought to the front by a click.
+  node.boardZIndex = highest + 1;
+}
+
 function spawnActBoardNodeAt(actKey, type, x, y) {
   if (type === 'narration') {
     const act = currentArcSections.find(item => item.key === actKey);
@@ -8460,7 +8732,13 @@ function spawnActBoardNodeAt(actKey, type, x, y) {
   node.boardX = Math.max(0, Number(x) || 0);
   node.boardY = Math.max(0, Number(y) || 0);
   node.boardPositionMode = 'manual';
-  attachActBoardNodeToScene(actKey, node);
+  // New nodes belong to the currently open scene, even when the chosen
+  // canvas point is temporarily outside the scene frame while it is
+  // expanding. Position-based scene detection can otherwise leave the node
+  // unassigned, making it disappear on the next render and preventing the
+  // presenter from adding a second node.
+  attachActBoardNodeToScene(actKey, node, actBoardOpenSceneForAct(actKey));
+  bringNewActBoardNodeToFront(actKey, node);
   actBoardNodesForAct(actKey).push(node);
   saveDebugSession();
   rerenderActBoard();
@@ -8500,7 +8778,7 @@ function actBoardCanvasWidth(boardLayer) {
 }
 
 function actBoardNarrationMaxWidth(boardLayer) {
-  return Math.max(120, Math.floor(actBoardCanvasWidth(boardLayer) * 0.8));
+  return Math.max(120, Math.floor(actBoardCanvasWidth(boardLayer) * 0.6));
 }
 
 function actBoardNarrationWidth(node, boardLayer) {
@@ -8514,8 +8792,9 @@ function actBoardAutoWidth(node, boardLayer) {
     : node.type === 'audio'
       ? Math.max(220, actBoardNodeDurationWidth(node))
       : actBoardNodeDurationWidth(node);
-  // Existing explicit widths are user work. New and previously auto-sized
-  // nodes follow their narration/shot timing as durations change.
+  // Existing explicit widths are user work. Narration cards follow their
+  // duration; linked footage cards are normalized to a shared row width by
+  // refineActBoardRenderedGeometry rather than tracking phrase duration.
   // Initialize an auto width once. Rewriting it on every render makes a
   // narration card shrink when suggested footage changes the card's content;
   // the responsive refinement pass below handles actual canvas resizes.
@@ -8575,21 +8854,27 @@ function refineActBoardRenderedGeometry(nodeStack, nodes) {
   const longestNarrationWidth = Math.max(1,
     ...narrationNodes.map(narration => actBoardNodeDurationWidth(narration)));
   const canvasWidth = actBoardCanvasWidth(nodeStack);
+  // Adding footage changes the cards inside the canvas, but it should not be
+  // interpreted as a responsive resize. Use the viewport as the resize
+  // signal so suggesting footage does not unexpectedly shrink the narration
+  // node and every linked footage node beneath it.
+  const viewportWidth = typeof window !== 'undefined' && Number(window.innerWidth) > 0
+    ? Number(window.innerWidth) : canvasWidth;
   const responsiveNarrationWidth = actBoardNarrationMaxWidth(nodeStack);
   const narrationWidthScale = responsiveNarrationWidth / longestNarrationWidth;
   narrationNodes.forEach(narration => {
     const narrationCard = cards.get(narration.id);
     if (!narrationCard) return;
     const calculatedNarrationWidth = Math.round(actBoardNodeDurationWidth(narration) * narrationWidthScale);
-    const previousCanvasWidth = Number(narration.boardWidthCanvasWidth);
-    const canvasResized = Number.isFinite(previousCanvasWidth)
-      && Math.abs(previousCanvasWidth - canvasWidth) > 1;
+    const previousViewportWidth = Number(narration.boardWidthViewportWidth);
+    const viewportResized = Number.isFinite(previousViewportWidth)
+      && Math.abs(previousViewportWidth - viewportWidth) > 1;
     const existingAutoWidth = Number(narration.boardWidth) > 0
       ? Number(narration.boardWidth) : 0;
     const preferredNarrationWidth = narration.boardWidthMode === 'manual'
       && Number(narration.boardWidth) > 0
       ? Number(narration.boardWidth)
-      : canvasResized ? calculatedNarrationWidth
+      : viewportResized ? calculatedNarrationWidth
         : Math.max(existingAutoWidth, calculatedNarrationWidth);
     const narrationWidth = Math.min(preferredNarrationWidth, actBoardNarrationMaxWidth(nodeStack));
     narrationCard.style.width = `${narrationWidth}px`;
@@ -8597,6 +8882,7 @@ function refineActBoardRenderedGeometry(nodeStack, nodes) {
       narration.boardWidth = narrationWidth;
     }
     narration.boardWidthCanvasWidth = canvasWidth;
+    narration.boardWidthViewportWidth = viewportWidth;
     const parentX = parseFloat(narrationCard.style.left) || Number(narration.boardX) || 0;
     const parentY = parseFloat(narrationCard.style.top) || Number(narration.boardY) || 0;
     const parentHeight = narrationCard.offsetHeight || Number(narration.boardHeight) || 260;
@@ -8607,6 +8893,10 @@ function refineActBoardRenderedGeometry(nodeStack, nodes) {
     let cursorX = parentX;
     const defaultFootageWidth = Math.max(180, Math.round(narrationWidth * 0.3));
     linked.forEach(({ node: footage, card: footageCard }) => {
+      // Auto-sized footage cards use one consistent width within their
+      // narration row. Their playback duration still controls the track, but
+      // it must not make a newly suggested phrase produce a wider card. Only
+      // an explicitly resized card keeps its custom width.
       const width = footage.boardWidthMode === 'manual' && Number(footage.boardWidth) > 0
         ? Number(footage.boardWidth) : defaultFootageWidth;
       if (footage.boardPositionMode === 'auto') {
@@ -8637,6 +8927,44 @@ function refineActBoardRenderedGeometry(nodeStack, nodes) {
   nodeStack.style.minHeight = `${Math.max(360, maxBottom + 24, maxSceneBottom + 24)}px`;
 }
 
+// Reflow the footage row immediately after a new phrase/card is added. The
+// normal render pass also performs responsive geometry, but this mutation-time
+// pass prevents a new card with no saved coordinates from landing on top of
+// its neighbors for one or more frames.
+function arrangeActBoardNarrationFootageNodes(narrationNode, nodes) {
+  if (!narrationNode || narrationNode.type !== 'narration') return;
+  const source = Array.isArray(nodes) ? nodes : [];
+  const byId = new Map(source.map(node => [node.id, node]));
+  const footage = (narrationNode.footageNodeIds || [])
+    .map(id => byId.get(id))
+    .filter(node => node?.type === 'footage');
+  if (!footage.length) return;
+  const narrationWidth = Math.max(300, Number(narrationNode.boardWidth) || 600);
+  const sharedWidth = Math.max(180, Math.round(narrationWidth * 0.3));
+  const narrationX = Number(narrationNode.boardX) || 16;
+  const narrationY = Number(narrationNode.boardY) || 16;
+  const narrationHeight = Number(narrationNode.boardHeight) || 260;
+  const childY = narrationY + narrationHeight + ACT_BOARD_NODE_GAP;
+  let cursorX = narrationX;
+  footage.forEach(node => {
+    const manuallySized = node.boardWidthMode === 'manual' && Number(node.boardWidth) > 0;
+    const width = manuallySized
+      ? Number(node.boardWidth) : sharedWidth;
+    // Adding a new phrase is an explicit organize-like operation: lay out
+    // the complete linked row again so every card has room. Preserve a user's
+    // custom card width, but normalize positions (the presenter can drag any
+    // card again afterward).
+    node.boardX = cursorX;
+    node.boardY = childY;
+    node.boardPositionMode = 'auto';
+    if (!manuallySized) {
+      node.boardWidth = sharedWidth;
+      node.boardWidthMode = 'auto';
+    }
+    cursorX = Math.max(cursorX, (Number(node.boardX) || 0) + width + ACT_BOARD_FOOTAGE_GAP);
+  });
+}
+
 function defaultActBoardNodePosition(node, index) {
   if (node.type === 'narration') {
     return { x: 16, y: 16 + index * 230 };
@@ -8662,7 +8990,7 @@ function wireActBoardNodeDragging(card, node, boardLayer, index) {
   const startPosition = actBoardNodePosition(node, index);
   card.style.left = `${startPosition.x}px`;
   card.style.top = `${startPosition.y}px`;
-  card.title = 'Drag to reposition; double-click a node + drag + double-click another to link them.';
+  // card.title = 'Drag to reposition; double-click a node + drag + double-click another to link them.';
   card.addEventListener('pointerdown', event => {
     if (event.target.closest('button, input, audio, a, select, textarea, label, details, summary, .storyboard-act-board-node-text, .storyboard-act-board-node-fragment, .storyboard-act-board-node-fragment-title, .paper-section-open-slot')) return;
     event.preventDefault();
@@ -8802,7 +9130,7 @@ function wireActBoardNodeResizing(card, node, boardLayer) {
   resizeHandle.className = 'storyboard-act-board-node-resize-handle';
   resizeHandle.setAttribute('role', 'button');
   resizeHandle.setAttribute('aria-label', 'Resize board node');
-  resizeHandle.title = 'Drag to resize this node';
+  // resizeHandle.title = 'Drag to resize this node';
   card.appendChild(resizeHandle);
   // Keep the resize affordance pinned to the visible bottom-right corner of
   // scrollable nodes while their content is being browsed or resized.
@@ -8814,7 +9142,20 @@ function wireActBoardNodeResizing(card, node, boardLayer) {
   };
   card.addEventListener('scroll', syncResizeHandlePosition, { passive: true });
   if (typeof ResizeObserver === 'function') {
-    const handleObserver = new ResizeObserver(() => syncResizeHandlePosition());
+    const handleObserver = new ResizeObserver(() => {
+      syncResizeHandlePosition();
+      // Selecting footage can replace the upload prompt with a video/image
+      // whose intrinsic dimensions settle one or more frames later. Refresh
+      // the SVG endpoints after that resize so links stay anchored at the
+      // actual center of the rendered cards.
+      if (boardLayer._actBoardLinkState) {
+        if (typeof requestAnimationFrame === 'function') {
+          requestAnimationFrame(() => refreshActBoardLinkPaths(boardLayer));
+        } else {
+          refreshActBoardLinkPaths(boardLayer);
+        }
+      }
+    });
     handleObserver.observe(card);
   }
   if (typeof requestAnimationFrame === 'function') requestAnimationFrame(syncResizeHandlePosition);
@@ -8845,7 +9186,10 @@ function wireActBoardNodeResizing(card, node, boardLayer) {
     const maxWidth = node.type === 'footage'
       ? Math.max(620, actBoardNodeDurationWidth(node))
       : canvasMaxWidth;
-    const maxHeight = node.type === 'footage' ? 420 : 640;
+    // Footage cards can contain a full visual/search workflow; do not impose a
+    // fixed resize ceiling on them. Other node types retain their existing
+    // safety cap.
+    const maxHeight = node.type === 'footage' ? Infinity : 640;
     // Once the presenter starts resizing, stop the responsive auto-layout from
     // writing its preferred width back over the pointer's live width.
     if (node.type === 'narration') {
@@ -8900,17 +9244,22 @@ function wireActBoardNodeResizing(card, node, boardLayer) {
 }
 
 function actBoardLinkPoint(boardLayer, card, towardCard) {
-  const layerRect = boardLayer.getBoundingClientRect();
-  const rect = card.getBoundingClientRect();
-  const centerX = rect.left - layerRect.left + rect.width / 2;
-  const centerY = rect.top - layerRect.top + rect.height / 2;
-  const towardRect = towardCard && towardCard.getBoundingClientRect();
-  const towardX = towardRect ? towardRect.left - layerRect.left + towardRect.width / 2 : centerX + 1;
-  const right = towardX >= centerX;
-  return {
-    x: right ? rect.right - layerRect.left : rect.left - layerRect.left,
-    y: centerY,
-  };
+  // Node cards are absolutely positioned children of the link layer's board.
+  // Use their content coordinates instead of viewport rectangles: the act
+  // column is scrollable, and mixing getBoundingClientRect() with the SVG's
+  // content-space viewBox makes a footage link appear to start outside its
+  // source card after scrolling or reflow. Anchoring every endpoint at the
+  // exact card center also avoids the old left/right-edge heuristic drifting
+  // away from a card when nodes are stacked or resized.
+  const cardX = Number.parseFloat(card.style.left);
+  const cardY = Number.parseFloat(card.style.top);
+  const x = Number.isFinite(cardX) ? cardX : card.offsetLeft;
+  const y = Number.isFinite(cardY) ? cardY : card.offsetTop;
+  const width = card.offsetWidth;
+  const height = card.offsetHeight;
+  const centerX = x + width / 2;
+  const centerY = y + height / 2;
+  return { x: centerX, y: centerY };
 }
 
 function actBoardLinkPathD(from, to) {
@@ -9183,6 +9532,76 @@ function buildActBoardLinkLayer(boardLayer, nodes) {
   refreshActBoardLinkPaths(boardLayer);
 }
 
+function openActBoardNodeSpawnMenu(nodeStack, actKey, clientX, clientY) {
+  if (!nodeStack) return;
+  const closeSpawnMenu = () => {
+    nodeStack.querySelector('.storyboard-act-board-node-spawn-menu')?.remove();
+  };
+  const visibleScenes = actBoardScenesForAct(actKey).filter(scene => scene.hidden !== true);
+  if (!visibleScenes.length) {
+    const shouldAddScene = typeof window !== 'undefined' && typeof window.confirm === 'function'
+      ? window.confirm('There are no scene boards on this act. Add a new scene before adding nodes?')
+      : false;
+    if (shouldAddScene) {
+      createActBoardEmptyScene(actKey);
+      saveDebugSession();
+      rerenderActBoard();
+    }
+    return;
+  }
+  const openScene = actBoardOpenSceneForAct(actKey) || visibleScenes[0];
+  const rect = nodeStack.getBoundingClientRect();
+  const sceneCard = openScene?.id
+    ? nodeStack.querySelector(`[data-board-scene-id="${openScene.id}"]`)
+    : null;
+  const sceneX = Number.isFinite(Number.parseFloat(sceneCard?.style?.left))
+    ? Number.parseFloat(sceneCard.style.left) : Math.max(0, Number(openScene?.boardX) || 0);
+  const sceneY = Number.isFinite(Number.parseFloat(sceneCard?.style?.top))
+    ? Number.parseFloat(sceneCard.style.top) : Math.max(0, Number(openScene?.boardY) || 0);
+  const sceneWidth = Math.max(1,
+    Number(sceneCard?.offsetWidth) || Number(openScene?.boardWidth) || nodeStack.clientWidth || 1);
+  const sceneHeight = Math.max(1,
+    Number(sceneCard?.offsetHeight) || Number(openScene?.boardHeight) || nodeStack.clientHeight || 1);
+  const rawX = (Number(clientX) || rect.left) - rect.left + nodeStack.scrollLeft;
+  const rawY = (Number(clientY) || rect.top) - rect.top + nodeStack.scrollTop;
+  // A node must always originate inside the open scene frame. Do not open a
+  // spawn menu for double-clicks in the surrounding canvas between scenes.
+  if (rawX < sceneX || rawX > sceneX + sceneWidth
+    || rawY < sceneY || rawY > sceneY + sceneHeight) return;
+  const x = Math.max(sceneX, Math.min(rawX, sceneX + sceneWidth));
+  const y = Math.max(sceneY, Math.min(rawY, sceneY + sceneHeight));
+  closeSpawnMenu();
+  const menu = document.createElement('div');
+  menu.className = 'storyboard-act-board-node-spawn-menu';
+  menu.tabIndex = -1;
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+  const label = document.createElement('span');
+  label.textContent = 'Add node';
+  menu.appendChild(label);
+  [['narration', 'Narration node'], ['footage', 'Footage node'], ['audio', 'Sound / music node']].forEach(([type, text]) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = text;
+    button.addEventListener('click', buttonEvent => {
+      buttonEvent.preventDefault();
+      buttonEvent.stopPropagation();
+      spawnActBoardNodeAt(actKey, type, x, y);
+    });
+    menu.appendChild(button);
+  });
+  menu.addEventListener('click', menuEvent => menuEvent.stopPropagation());
+  menu.addEventListener('keydown', menuEvent => {
+    if (menuEvent.key === 'Escape') {
+      menuEvent.preventDefault();
+      menuEvent.stopPropagation();
+      menu.remove();
+    }
+  });
+  nodeStack.appendChild(menu);
+  menu.focus({ preventScroll: true });
+}
+
 function wireActBoardNodeSpawn(nodeStack, actKey) {
   const closeSpawnMenu = () => {
     nodeStack.querySelector('.storyboard-act-board-node-spawn-menu')?.remove();
@@ -9196,52 +9615,17 @@ function wireActBoardNodeSpawn(nodeStack, actKey) {
     menu.remove();
   });
   nodeStack.addEventListener('dblclick', event => {
-    if (event.target.closest('.storyboard-act-board-node, .storyboard-act-board-node-spawn-menu, .storyboard-act-board-footage-drop-menu')) return;
-    const visibleScenes = actBoardScenesForAct(actKey).filter(scene => scene.hidden !== true);
-    if (!visibleScenes.length) {
-      const shouldAddScene = typeof window !== 'undefined' && typeof window.confirm === 'function'
-        ? window.confirm('There are no scene boards on this act. Add a new scene before adding nodes?')
-        : false;
-      if (shouldAddScene) {
-        createActBoardEmptyScene(actKey);
-        saveDebugSession();
-        rerenderActBoard();
-      }
-      return;
-    }
-    const rect = nodeStack.getBoundingClientRect();
-    const x = Math.max(0, event.clientX - rect.left);
-    const y = Math.max(0, event.clientY - rect.top);
-    closeSpawnMenu();
-    const menu = document.createElement('div');
-    menu.className = 'storyboard-act-board-node-spawn-menu';
-    menu.tabIndex = -1;
-    menu.style.left = `${x}px`;
-    menu.style.top = `${y}px`;
-    const label = document.createElement('span');
-    label.textContent = 'Add node';
-    menu.appendChild(label);
-    [['narration', 'Narration node'], ['footage', 'Footage node'], ['audio', 'Sound / music node']].forEach(([type, text]) => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.textContent = text;
-      button.addEventListener('click', buttonEvent => {
-        buttonEvent.preventDefault();
-        buttonEvent.stopPropagation();
-        spawnActBoardNodeAt(actKey, type, x, y);
-      });
-      menu.appendChild(button);
-    });
-    menu.addEventListener('click', menuEvent => menuEvent.stopPropagation());
-    menu.addEventListener('keydown', menuEvent => {
-      if (menuEvent.key === 'Escape') {
-        menuEvent.preventDefault();
-        menuEvent.stopPropagation();
-        menu.remove();
-      }
-    });
-    nodeStack.appendChild(menu);
-    menu.focus({ preventScroll: true });
+    const nodeTarget = event.target.closest('.storyboard-act-board-node');
+    const onPlaybackSurface = nodeTarget?.classList.contains('storyboard-act-board-node-playback');
+    // The playback card is a large scene-level surface and often occupies the
+    // only visually empty area where a presenter wants to add another sound.
+    // Keep its controls/link layer protected, but treat its blank surface as
+    // canvas space so multiple audio nodes can be spawned normally.
+    if ((nodeTarget && !onPlaybackSurface)
+      || event.target.closest('.storyboard-act-board-node-spawn-menu, .storyboard-act-board-footage-drop-menu')
+      || (onPlaybackSurface
+        && event.target.closest('button, input, audio, video, a, select, textarea, label, details, summary, .storyboard-act-board-node-resize-handle'))) return;
+    openActBoardNodeSpawnMenu(nodeStack, actKey, event.clientX, event.clientY);
   });
   // Focus can move to the canvas, a control, or another panel after the
   // double-click. Keep Escape global to this live board so the spawn menu
@@ -10024,6 +10408,7 @@ async function generateActBoardNodeVideo(actKey, act, node) {
       url: result.preview_url,
       thumbnail_url: result.thumbnail_url || chosenImageUrl,
       kind: 'video',
+      duration_seconds: ACT_BOARD_GENERATED_VIDEO_SECONDS,
       label: 'Generated video',
       shot_size: (result.shot_plan && result.shot_plan.shot_size) || (node.shotPlan && node.shotPlan.shot_size) || '',
       movement: (result.shot_plan && result.shot_plan.movement) || (node.shotPlan && node.shotPlan.movement) || '',
@@ -10042,6 +10427,12 @@ async function generateActBoardNodeVideo(actKey, act, node) {
     node.mediaKind = 'video';
     node.mediaOrigin = 'generated';
     node.shotPlan = video.shotPlan;
+    if (node.timingWasManuallyAdjusted !== true) {
+      node.sourceDurationSeconds = ACT_BOARD_GENERATED_VIDEO_SECONDS;
+      node.trimStartSeconds = 0;
+      node.durationSeconds = ACT_BOARD_GENERATED_VIDEO_SECONDS;
+      node.durationWasSuggested = false;
+    }
     node.generationStatus = 'ready';
     saveDebugSession();
     rerenderActBoard();
@@ -10610,6 +11001,12 @@ function buildActBoardNarrationPlayback(actKey, node, boardLayer, playbackNode =
 
   const syncVideoToNarration = (footage, nowSeconds, forceSeek = false) => {
     if (!state.video || !footage) return;
+    // Linked-sequence playback should include the selected footage's native
+    // audio alongside narration and sound-effect layers. The footage-node
+    // preview is audible already; keep this shared playback video audible as
+    // well, while honoring an explicitly saved footage volume when present.
+    state.video.muted = false;
+    state.video.volume = actBoardNodeVolume(footage, 1);
     const start = Math.max(0, Number(footage.startSeconds) || 0);
     const localSeconds = Math.max(0, nowSeconds - start);
     if (Number.isFinite(state.video.duration) && state.video.duration > 0) {
@@ -10727,7 +11124,11 @@ function buildActBoardNarrationPlayback(actKey, node, boardLayer, playbackNode =
       const video = document.createElement('video');
       video.src = url;
       video.poster = thumbnailUrl;
-      video.muted = true;
+      // Do not mute footage in the linked-sequence player: its native audio
+      // is part of the scene soundtrack and should play with narration and
+      // sound-effect nodes.
+      video.muted = false;
+      video.volume = actBoardNodeVolume(footage, 1);
       video.playsInline = true;
       video.loop = true;
       video.preload = 'auto';
@@ -12269,8 +12670,27 @@ async function findActBoardFootageNode(
   footageNode,
   shouldRerender = true,
   generateExamplesAfterSearch = false,
+  requestToken = null,
 ) {
   if (!act || !footageNode) return;
+  if (!requestToken && narrationNode?._footageSuggestionAbortController) {
+    // A direct Find footage action supersedes any background suggestion pass.
+    narrationNode._footageSuggestionAbortController.abort();
+    narrationNode._footageSuggestionAbortController = null;
+  }
+  const requestIsCurrent = () => !requestToken
+    || footageNode.footageRequestToken === requestToken;
+  const requestSignal = requestToken
+    ? narrationNode?._footageSuggestionAbortController?.signal : null;
+  if (requestToken) {
+    Object.defineProperty(footageNode, 'footageRequestToken', {
+      value: requestToken, writable: true, configurable: true, enumerable: false,
+    });
+  } else if (Object.prototype.hasOwnProperty.call(footageNode, 'footageRequestToken')) {
+    // A direct Find footage action is itself the newest request for this
+    // card, so invalidate any older Suggest footage pass.
+    delete footageNode.footageRequestToken;
+  }
   const narrationText = String(narrationNode?.transcript || narrationNode?.text || '').trim();
   footageNode.status = 'generating';
   footageNode.error = '';
@@ -12294,19 +12714,22 @@ async function findActBoardFootageNode(
         reference_footage_entities: [],
         abstract: findAbstractText(),
         documentary_mode: actBoardDocumentaryModeForNode(actKey, footageNode),
-      });
+      }, requestSignal);
+    if (!requestIsCurrent()) return;
     footageNode.query = (result.video_query || footageNode.fragment).trim();
     try {
       const minimumDuration = Math.max(1, Number(footageNode.durationSeconds) || 1);
       const cacheKey = `${footageNode.query.toLocaleLowerCase()}|${minimumDuration.toFixed(2)}`;
       let options = actBoardFootageSearchCache.get(cacheKey);
       if (!options) {
-        options = await fetchVideoOptions(footageNode.query, minimumDuration);
+        options = await fetchVideoOptions(footageNode.query, minimumDuration, requestSignal);
+        if (!requestIsCurrent()) return;
         if (actBoardFootageSearchCache.size >= 128) {
           actBoardFootageSearchCache.delete(actBoardFootageSearchCache.keys().next().value);
         }
         actBoardFootageSearchCache.set(cacheKey, options);
       }
+      if (!requestIsCurrent()) return;
       const freshResults = diversifyActBoardVideoResults(options.videos, 10).map(video => ({
         id: video.id || '',
         video_url: video.video_url,
@@ -12346,17 +12769,21 @@ async function findActBoardFootageNode(
         }
       }
     } catch (err) {
+      if (!requestIsCurrent()) return;
       footageNode.error = `Search unavailable: ${err.message}`;
     }
+    if (!requestIsCurrent()) return;
     footageNode.status = 'ready';
   } catch (err) {
+    if (!requestIsCurrent()) return;
     footageNode.query = footageNode.query || footageNode.fragment;
     footageNode.status = 'ready';
     footageNode.error = err.message;
   }
+  if (!requestIsCurrent()) return;
   saveDebugSession();
   if (shouldRerender) rerenderActBoard();
-  if (generateExamplesAfterSearch && footageNode.status === 'ready') {
+  if (generateExamplesAfterSearch && requestIsCurrent() && footageNode.status === 'ready') {
     await generateActBoardNodeExamples(actKey, act, footageNode);
   }
 }
@@ -12371,15 +12798,20 @@ function actBoardSelectedPhraseInsertionIndex(sourceText, footageIds, nodes, phr
     const fragment = String(footage?.fragment || '').trim();
     const fragmentStart = fragment ? source.indexOf(fragment.toLocaleLowerCase()) : -1;
     if (fragmentStart >= 0 && fragmentStart > phraseStart) return index;
-    // A node created from an earlier free-floating link may not have a phrase
-    // in the current narration. Its sequence start is a useful fallback.
-    if (fragmentStart < 0 && Number.isFinite(Number(footage?.startSeconds))
-      && Number(footage.startSeconds) > phraseStart) return index;
+    // A node created from an earlier narration (for example, before a
+    // rerecord) may not have a phrase in the current text.  Its old playback
+    // timestamp is not a reliable insertion point and used to put new nodes
+    // in the middle of an existing linked list.  Keep those legacy nodes in
+    // their existing order and append the new phrase after them instead.
   }
   return footageIds.length;
 }
 
-async function suggestActBoardSelectedFootage(actKey, act, narrationNode, sourceText, selections) {
+async function suggestActBoardSelectedFootage(
+  actKey, act, narrationNode, sourceText, selections, requestToken = null,
+) {
+  const requestIsCurrent = () => !requestToken
+    || narrationNode.footageSuggestionInFlight === requestToken;
   const selected = (Array.isArray(selections) ? selections : [])
     .map(item => ({
       ...item,
@@ -12421,6 +12853,7 @@ async function suggestActBoardSelectedFootage(actKey, act, narrationNode, source
         previousFootageNodeId: null,
         nextFootageNodeId: null,
       };
+      bringNewActBoardNodeToFront(actKey, footageNode);
       nodes.push(footageNode);
       const insertionIndex = actBoardSelectedPhraseInsertionIndex(
         sourceText, footageIds, nodes, phrase);
@@ -12439,6 +12872,8 @@ async function suggestActBoardSelectedFootage(actKey, act, narrationNode, source
     footageNodes.push(footageNode);
   });
   narrationNode.footageNodeIds = footageIds;
+  arrangeActBoardNarrationFootageNodes(narrationNode, nodes);
+  syncActBoardLiveSceneSnapshots();
   narrationNode.footageFragments = footageIds
     .map(id => nodes.find(node => node.id === id)?.fragment || '')
     .filter(Boolean);
@@ -12459,11 +12894,23 @@ async function suggestActBoardSelectedFootage(actKey, act, narrationNode, source
   ].filter((item, index, all) => all.findIndex(candidate =>
     String(candidate.text || '').toLocaleLowerCase() === String(item.text || '').toLocaleLowerCase()
       && Number(candidate.start) === Number(item.start)) === index);
+  // Migrate the temporary click selection into the durable user phrase list
+  // before clearing it. This keeps manually added phrases available if the
+  // generated footage cards are later removed and footage is suggested again.
+  narrationNode.userFilmablePhrases = [
+    ...(Array.isArray(narrationNode.userFilmablePhrases)
+      ? narrationNode.userFilmablePhrases : []),
+    ...selected,
+  ].filter((item, index, all) => all.findIndex(candidate =>
+    String(candidate.text || '').toLocaleLowerCase() === String(item.text || '').toLocaleLowerCase()
+      && Number(candidate.start) === Number(item.start)) === index);
   narrationNode.selectedFootagePhrases = [];
+  if (!requestIsCurrent()) return false;
   saveDebugSession();
   rerenderActBoard();
   await Promise.all(footageNodes.map(node =>
-    findActBoardFootageNode(actKey, act, narrationNode, node, false, true)));
+    findActBoardFootageNode(actKey, act, narrationNode, node, false, true, requestToken)));
+  if (!requestIsCurrent()) return false;
   narrationNode.footageStatus = 'Selected phrase footage added to the linked sequence.';
   saveDebugSession();
   rerenderActBoard();
@@ -12471,26 +12918,103 @@ async function suggestActBoardSelectedFootage(actKey, act, narrationNode, source
 }
 
 async function suggestActBoardFootage(actKey, act, narrationNode, sourceText) {
+  if (!narrationNode) return;
+  narrationNode._footageSuggestionAbortController?.abort();
+  const suggestionToken = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  // This is a request lock, not session state. Keep it non-enumerable so a
+  // refresh during a network request cannot restore a permanently disabled
+  // Suggest footage button.
+  Object.defineProperty(narrationNode, 'footageSuggestionInFlight', {
+    value: suggestionToken, writable: true, configurable: true, enumerable: false,
+  });
+  const abortController = typeof AbortController === 'function' ? new AbortController() : null;
+  Object.defineProperty(narrationNode, '_footageSuggestionAbortController', {
+    value: abortController, writable: true, configurable: true, enumerable: false,
+  });
+  const clearSuggestionToken = () => {
+    if (narrationNode.footageSuggestionInFlight === suggestionToken) {
+      delete narrationNode.footageSuggestionInFlight;
+      if (narrationNode._footageSuggestionAbortController === abortController) {
+        narrationNode._footageSuggestionAbortController = null;
+      }
+    }
+  };
+  const requestIsCurrent = () => narrationNode.footageSuggestionInFlight === suggestionToken;
   const narrationText = String(sourceText || narrationNode.text || '').trim();
+  // Deletions are intentionally applied on the next explicit Suggest footage
+  // action, so the presenter can still inspect the old shot before choosing
+  // to refresh the sequence.
+  removeActBoardFootageNodesForDeletedPhrases(actKey, narrationNode);
+  actBoardNodesForAct(actKey)
+    .filter(node => node.type === 'footage' && node.narrationNodeId === narrationNode.id)
+    .forEach(footageNode => {
+      Object.defineProperty(footageNode, 'footageRequestToken', {
+        value: suggestionToken, writable: true, configurable: true, enumerable: false,
+      });
+    });
   const selectedPhrases = Array.isArray(narrationNode.selectedFootagePhrases)
     ? narrationNode.selectedFootagePhrases : [];
   if (selectedPhrases.length) {
-    await suggestActBoardSelectedFootage(actKey, act, narrationNode, narrationText, selectedPhrases);
+    try {
+      await suggestActBoardSelectedFootage(
+        actKey, act, narrationNode, narrationText, selectedPhrases, suggestionToken,
+      );
+    } finally {
+      clearSuggestionToken();
+    }
     return;
   }
   const smartSpans = Array.isArray(narrationNode.narrationSpans)
     ? narrationNode.narrationSpans.filter(span => span && span.bucket !== 'ignore' && span.bucket !== 'pending')
     : [];
-  const fragments = smartSpans.length
-    ? smartSpans.map(span => span.text).filter(Boolean).slice(0, 5)
-    : actBoardNarrationFragments(narrationText);
+  const fallbackFragments = actBoardNarrationFragments(narrationText);
+  // A phrase selected by the presenter is kept in footageSuggestedPhrases even
+  // after its footage card is deleted. Include those current, still-present
+  // phrases on the next Suggest footage click; otherwise the LLM spans would
+  // win every time and a manually added entity would silently disappear from
+  // the resuggestion input. Manual phrases get priority, then fill the five
+  // visual beats with classified LLM spans.
+  const currentTextKey = actBoardNarrationSpanTextKey(narrationText);
+  const rememberedUserPhrases = [
+    ...(Array.isArray(narrationNode.userFilmablePhrases)
+      ? narrationNode.userFilmablePhrases : []),
+    ...(Array.isArray(narrationNode.footageSuggestedPhrases)
+      ? narrationNode.footageSuggestedPhrases : []),
+  ];
+  const manualFragments = rememberedUserPhrases
+    .map(item => ({
+      text: String(item?.text || item?.fragment || '').replace(/\s+/g, ' ').trim(),
+      start: Number(item?.start),
+    }))
+    .filter(item => item.text
+      && currentTextKey.includes(actBoardNarrationSpanTextKey(item.text))
+      && !actBoardNarrationSpanExcluded(narrationNode, item));
+  const llmFragments = smartSpans
+    .map(span => ({ text: String(span.text || '').trim(), span }))
+    .filter(item => item.text);
+  const seenFragmentKeys = new Set();
+  const mergedFilmableFragments = [...manualFragments, ...llmFragments]
+    .filter(item => {
+      const key = item.text.toLocaleLowerCase();
+      if (!key || seenFragmentKeys.has(key)) return false;
+      seenFragmentKeys.add(key);
+      return true;
+    })
+    .map(item => item.text)
+    .slice(0, 5);
+  const fragments = mergedFilmableFragments.length
+    ? mergedFilmableFragments
+    // If the presenter removed every detected entity, keep the action useful
+    // by treating the remaining narration as one broad visual beat. This also
+    // covers short/irregular narration that the punctuation fallback cannot
+    // split into three-word fragments.
+    : (fallbackFragments.length ? fallbackFragments : narrationText ? [narrationText] : []);
   if (!fragments.length) {
-    const oldIds = new Set((narrationNode.footageNodeIds || []).map(String));
-    actBoardNodes[actKey] = actBoardNodesForAct(actKey)
-      .filter(node => !oldIds.has(String(node.id)));
-    narrationNode.footageNodeIds = [];
-    narrationNode.footageFragments = [];
-    narrationNode.footageStatus = 'No filmable narration fragments found';
+    // No new filmable phrases is not a reason to delete the presenter’s
+    // existing footage or links. Leave the current chain intact and report
+    // that there was nothing additional to suggest.
+    narrationNode.footageStatus = 'No new filmable narration fragments found';
+    clearSuggestionToken();
     saveDebugSession();
     rerenderActBoard();
     return;
@@ -12498,39 +13022,85 @@ async function suggestActBoardFootage(actKey, act, narrationNode, sourceText) {
 
   const nodes = actBoardNodesForAct(actKey);
   const parentScene = actBoardSceneForNode(actKey, narrationNode);
-  const oldIds = new Set((narrationNode.footageNodeIds || []).map(String));
-  actBoardNodes[actKey] = nodes.filter(node => !oldIds.has(String(node.id)));
-  const footageNodes = fragments.map(fragment => {
-    const smartSpan = smartSpans.find(span => span.text === fragment);
-    return {
-      id: createActBoardNodeId('footage'),
-      type: 'footage',
-      actKey,
-      narrationNodeId: narrationNode.id,
-      sceneId: parentScene?.id || narrationNode.sceneId || null,
-      fragment,
-      query: '',
-      results: [],
-      status: 'generating',
-      videoGenerationTechniques: [...ACT_BOARD_DEFAULT_VIDEO_TECHNIQUES],
-      error: '',
-      trimStartSeconds: 0,
-      sourceDurationSeconds: 0,
-      previousFootageNodeId: null,
-      nextFootageNodeId: null,
-      ...(smartSpan ? {
-        filmabilityBucket: smartSpan.bucket,
-        filmabilityQuery: smartSpan.query || smartSpan.visual_proxy || fragment,
-        filmabilityProxy: smartSpan.visual_proxy || '',
-      } : {}),
-    };
+  // Reuse the existing narration-footage nodes wherever their phrase still
+  // appears. Replacing the whole array here used to delete the nodes that
+  // carried previous/next link fields, so clicking Suggest footage again
+  // broke user-created chains. Keep unmatched old nodes too: they represent
+  // user work and can remain available until explicitly removed.
+  const oldIds = Array.isArray(narrationNode.footageNodeIds)
+    ? narrationNode.footageNodeIds.filter(id => nodes.some(item => item.id === id)) : [];
+  const oldFootage = oldIds
+    .map(id => nodes.find(item => item.id === id))
+    .filter(item => item && item.type === 'footage');
+  // Invalidate searches from the previous click for every existing card,
+  // including stale cards that are being kept on the board but are not part of
+  // this narration's newly selected phrase set.
+  oldFootage.forEach(footageNode => {
+    Object.defineProperty(footageNode, 'footageRequestToken', {
+      value: suggestionToken, writable: true, configurable: true, enumerable: false,
+    });
   });
-  actBoardNodes[actKey].push(...footageNodes);
+  const usedExisting = new Set();
+  // Preserve the existing narration list order.  The rendered path uses this
+  // list as its chain, so rebuilding it from the new transcript would make
+  // existing links appear to jump even when their relationship fields were
+  // untouched.  New phrases are inserted by the helper below; stale cards
+  // from a rerecord remain where the presenter left them.
+  const footageIds = oldIds.slice();
+  const footageNodes = [];
+  fragments.forEach(fragment => {
+    const smartSpan = smartSpans.find(span => span.text === fragment);
+    const normalizedFragment = String(fragment || '').toLocaleLowerCase();
+    let footageNode = oldFootage.find(item => !usedExisting.has(item.id)
+      && String(item.fragment || '').trim().toLocaleLowerCase() === normalizedFragment);
+    if (footageNode) {
+      usedExisting.add(footageNode.id);
+      footageNode.filmabilityBucket = smartSpan?.bucket || footageNode.filmabilityBucket || 'depictable';
+      footageNode.filmabilityQuery = smartSpan?.query || smartSpan?.visual_proxy
+        || footageNode.filmabilityQuery || fragment;
+      footageNode.filmabilityProxy = smartSpan?.visual_proxy || footageNode.filmabilityProxy || '';
+      footageNode.status = 'generating';
+      footageNode.error = '';
+    } else {
+      footageNode = {
+        id: createActBoardNodeId('footage'),
+        type: 'footage',
+        actKey,
+        narrationNodeId: narrationNode.id,
+        sceneId: parentScene?.id || narrationNode.sceneId || null,
+        fragment,
+        query: '',
+        results: [],
+        status: 'generating',
+        videoGenerationTechniques: [...ACT_BOARD_DEFAULT_VIDEO_TECHNIQUES],
+        error: '',
+        trimStartSeconds: 0,
+        sourceDurationSeconds: 0,
+        previousFootageNodeId: null,
+        nextFootageNodeId: null,
+        ...(smartSpan ? {
+          filmabilityBucket: smartSpan.bucket,
+          filmabilityQuery: smartSpan.query || smartSpan.visual_proxy || fragment,
+          filmabilityProxy: smartSpan.visual_proxy || '',
+        } : {}),
+      };
+      nodes.push(footageNode);
+      const insertionIndex = actBoardSelectedPhraseInsertionIndex(
+        narrationText, footageIds, nodes, { text: fragment });
+      footageIds.splice(insertionIndex, 0, footageNode.id);
+      attachActBoardNodeToScene(actKey, footageNode, parentScene);
+    }
+    if (!footageIds.includes(footageNode.id)) footageIds.push(footageNode.id);
+    footageNodes.push(footageNode);
+  });
+  footageNodes.forEach(node => bringNewActBoardNodeToFront(actKey, node));
   // Keep the scene container's live membership and restore snapshot aligned
   // with the generated footage cards. Without this, the cards can render on
   // the live canvas but the framed scene only knows about the narration node.
   footageNodes.forEach(node => attachActBoardNodeToScene(actKey, node));
-  narrationNode.footageNodeIds = footageNodes.map(node => node.id);
+  narrationNode.footageNodeIds = footageIds;
+  arrangeActBoardNarrationFootageNodes(narrationNode, nodes);
+  syncActBoardLiveSceneSnapshots();
   narrationNode.footageFragments = fragments;
   if (narrationNode.transcript && narrationText === narrationNode.transcript) {
     alignActBoardNarrationFragments(narrationNode);
@@ -12541,9 +13111,18 @@ async function suggestActBoardFootage(actKey, act, narrationNode, sourceText) {
   saveDebugSession();
   rerenderActBoard();
 
-  await Promise.all(footageNodes.map(node =>
-    findActBoardFootageNode(actKey, act, narrationNode, node, false, true)));
-  narrationNode.footageStatus = ``; // Suggested ${footageNodes.length} footage node${footageNodes.length === 1 ? '' : 's'} from narration fragments
+  let wasCurrent = false;
+  try {
+    await Promise.all(footageNodes.map(node =>
+      findActBoardFootageNode(
+        actKey, act, narrationNode, node, false, true, suggestionToken,
+      )));
+    wasCurrent = requestIsCurrent();
+  } finally {
+    clearSuggestionToken();
+  }
+  if (!wasCurrent) return;
+  narrationNode.footageStatus = '';
   saveDebugSession();
   rerenderActBoard();
 }
@@ -12571,7 +13150,8 @@ async function suggestActBoardNarration(actKey, act, button, position) {
     node.boardY = Math.max(0, Number(position.y) || 0);
     node.boardPositionMode = 'manual';
   }
-  attachActBoardNodeToScene(actKey, node);
+  attachActBoardNodeToScene(actKey, node, actBoardOpenSceneForAct(actKey));
+  bringNewActBoardNodeToFront(actKey, node);
   nodes.push(node);
   if (button) button.disabled = true;
   saveDebugSession();
@@ -12632,8 +13212,10 @@ async function resuggestActBoardNarration(actKey, act, narrationNode, button) {
     narrationNode.text = (result.narration || '').trim();
     if (!narrationNode.text) throw new Error('The narration suggestion was empty.');
     narrationNode.status = 'ready';
+    narrationNode.narrationSpanExclusions = [];
     narrationNode.selectedFootagePhrases = [];
     narrationNode.footageSuggestedPhrases = [];
+    narrationNode.userFilmablePhrases = [];
     narrationNode.footageFragments = actBoardNarrationFragments(
       narrationNode.transcript || narrationNode.text || '');
     narrationNode.footageStatus = ''; // Narration updated — press Suggest footage to refresh the linked footage.
@@ -13359,18 +13941,13 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
   });
   if (node.type !== 'narration') topActions.appendChild(remove);
   top.append(type, topActions);
+  if (footageStartButton) top.insertBefore(footageStartButton, topActions);
   const nodeStickyBanner = ['narration', 'footage', 'audio'].includes(node.type)
     ? document.createElement('div') : null;
   if (nodeStickyBanner) {
     nodeStickyBanner.className = `storyboard-act-board-node-sticky-banner storyboard-act-board-${node.type}-sticky-banner`;
     card.appendChild(nodeStickyBanner);
     nodeStickyBanner.appendChild(top);
-    if (footageStartButton) {
-      const startRow = document.createElement('div');
-      startRow.className = 'storyboard-act-board-footage-start-row';
-      startRow.appendChild(footageStartButton);
-      nodeStickyBanner.appendChild(startRow);
-    }
   } else {
     card.appendChild(top);
   }
@@ -13413,10 +13990,10 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
     const suggestedReferenceFragments = node.transcript
       ? []
       : fragments;
-    const onFilmableSpanSelect = (metadata, renderedText) =>
-      handleActBoardNarrationSpanSelect(node, metadata, renderedText);
-    const recordControls = document.createElement('div');
-    recordControls.className = 'storyboard-act-board-node-record-controls';
+    const onFilmableSpanSelect = (metadata, renderedText, appendSelection = false) =>
+      handleActBoardNarrationSpanSelect(node, metadata, renderedText, appendSelection);
+    const onFilmableSpanRemove = (metadata, renderedText) =>
+      removeActBoardNarrationHighlight(node, metadata, renderedText);
     const recordActionRow = document.createElement('div');
     recordActionRow.className = 'storyboard-act-board-node-action-row';
     const recordButton = document.createElement('button');
@@ -13477,6 +14054,10 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
     recordActionRow.append(
       recordButton, uploadNarrationButton, narrationPlaybackLabel, suggestFootageBtn,
     );
+    // Keep the narration actions in the sticky node header so recording,
+    // uploading, and footage suggestions remain available while the node's
+    // transcript/content scrolls below.
+    top.insertBefore(recordActionRow, topActions);
     const idleRecordLabel = () => node.audioPreviewUrl ? 'Record again' : 'Record narration';
     const setRecordButtonStatus = (message = '', isError = false) => {
       const status = String(message || '').trim();
@@ -13497,8 +14078,9 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
           : node.recordingStatus === 'error' ? (node.recordingError || 'Recording failed') : '',
       node.recordingStatus === 'error',
     );
-    recordControls.append(recordActionRow, uploadNarrationInput);
-    nodeStickyBanner.appendChild(recordControls);
+    // The file input stays mounted in the sticky area but remains hidden; the
+    // visible Upload narration button above opens it.
+    nodeStickyBanner.appendChild(uploadNarrationInput);
     const sourceNotesPanel = document.createElement('details');
     sourceNotesPanel.className = 'storyboard-act-board-narration-source-notes';
     sourceNotesPanel.open = false;
@@ -13576,17 +14158,19 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
       const primaryNarration = buildActBoardSuggestedNarrationText(
         node.transcript, fragments,
         null,
-        'Recorded narration: ', onFilmableSpanSelect, !analysisPending && smartSpans.length > 0);
+        'Recorded narration: ', onFilmableSpanSelect, !analysisPending && smartSpans.length > 0,
+        onFilmableSpanRemove);
       primaryNarration.classList.add('storyboard-act-board-narration-primary');
-      applyActBoardNarrationPhraseSelection(primaryNarration, node);
+      applyActBoardNarrationPhraseSelection(primaryNarration, node, onFilmableSpanRemove);
       recordedNarrationGrid.appendChild(primaryNarration);
     } else if (node.text) {
       const primaryNarration = buildActBoardSuggestedNarrationText(
         node.text, fragments,
         null,
-        'Suggested narration: ', onFilmableSpanSelect, !analysisPending && smartSpans.length > 0);
+        'Suggested narration: ', onFilmableSpanSelect, !analysisPending && smartSpans.length > 0,
+        onFilmableSpanRemove);
       primaryNarration.classList.add('storyboard-act-board-narration-primary');
-      applyActBoardNarrationPhraseSelection(primaryNarration, node);
+      applyActBoardNarrationPhraseSelection(primaryNarration, node, onFilmableSpanRemove);
       suggestedView.appendChild(primaryNarration);
       suggestedView.append(sourceNotesPanel, resuggestButton);
     } else {
@@ -13958,6 +14542,7 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
         generatedIndex: index,
         source: 'AI-generated',
         pinned: Boolean(option.pinned),
+        durationSeconds: Number(option.duration_seconds) || 0,
         shotSize: option.shot_size || '',
         movement: option.movement || '',
         shotPlan: option.shotPlan || {},
@@ -14315,6 +14900,11 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
           node.shotPlan = generated.shotPlan || node.shotPlan || {};
           node.sourceDurationSeconds = Number(generated.duration_seconds || generated.duration) || 0;
           node.trimStartSeconds = 0;
+          if (generated.kind === 'video' && node.timingWasManuallyAdjusted !== true
+            && node.sourceDurationSeconds > 0) {
+            node.durationSeconds = node.sourceDurationSeconds;
+            node.durationWasSuggested = false;
+          }
         } else if (option.resultIndex != null) {
           const result = node.results[option.resultIndex];
           if (!result?.video_url) return;
@@ -14390,7 +14980,7 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
     const footageSearchSummary = document.createElement('summary');
     footageSearchSummary.textContent = node.status === 'generating' ? 'Finding footage…'
       : node.generationStatus === 'generating-images' ? 'Generating image…'
-        : node.generationStatus === 'generating-video' ? 'Generating video…' : 'Find footage';
+        : node.generationStatus === 'generating-video' ? 'Generating video…' : 'Find or generate footage';
     footageSearchPanel.appendChild(footageSearchSummary);
     const generationControls = document.createElement('div');
     generationControls.className = 'storyboard-act-board-node-generation-controls';
@@ -14439,9 +15029,9 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
     findFootageRow.className = 'storyboard-act-board-footage-find-row';
     findFootageRow.appendChild(findFootageButton);
     generationControls.appendChild(findFootageRow);
-    // Keep the Find footage dropdown directly under the Footage header. The
-    // gallery and generation controls remain below it in the node body.
-    card.insertBefore(footageSearchPanel, card.children[1] || null);
+    // Keep the Find footage dropdown directly under the selected footage
+    // gallery, with its search and generation controls grouped inside.
+    card.appendChild(footageSearchPanel);
     if (node.compositionMode) {
       const composition = document.createElement('div');
       composition.className = 'storyboard-act-board-node-composition-mode';
@@ -15074,23 +15664,39 @@ function buildActBoardView(sections, assignmentsByIndex) {
     const nodeStack = document.createElement('div');
     nodeStack.className = 'storyboard-act-board-node-stack';
     const boardScenes = actBoardScenesForAct(act.key);
+    // Only the selected scene is live on the canvas. Other defined scenes stay
+    // available in the loadable card stack, but rendering all of their framed
+    // boards here makes their headers overlap and makes it look like repeated
+    // clicks loaded several scenes at once.
+    const canvasScenes = boardScenes.filter(scene =>
+      scene.hidden !== true && scene.id === openScene?.id);
     // Migrate older scene boards that were saved before playback belonged to
     // the scene itself. New and restored scene boards always show a playback
     // node immediately, even before narration or footage is added.
     let migratedScenePlayback = false;
-    boardScenes.filter(scene => scene.hidden !== true).forEach(scene => {
+    canvasScenes.forEach(scene => {
       const before = actBoardNodesForAct(act.key).some(node =>
         node.type === 'playback' && node.sceneId === scene.id);
       ensureActBoardPlaybackNode(act.key, null, { create: true, sceneId: scene.id });
       if (!before) migratedScenePlayback = true;
     });
-    const nodes = actBoardNodesForAct(act.key);
     if (migratedScenePlayback) saveDebugSession();
     ensureActBoardSceneSnapshots(act.key);
-    // Defined scenes remain visible as framed boards behind their live nodes;
-    // the matching committed card below remains the loadable scene snapshot.
-    const canvasScenes = boardScenes.filter(scene => scene.hidden !== true);
+    // Defined scenes remain available as committed cards below; only the
+    // selected scene is rendered as a framed board behind the live nodes.
     const committedScenes = boardScenes.filter(scene => scene.committedToStack);
+    const allLiveNodes = actBoardNodesForAct(act.key);
+    // A legacy refresh could leave nodes from more than one scene in the live
+    // array. Keep those nodes in their scene snapshots, but render only the
+    // currently open scene so a load is visually and behaviorally exclusive.
+    const activeScene = canvasScenes[0] || null;
+    const activeNodeIds = new Set([
+      ...(activeScene?.nodeIds || []),
+      ...(activeScene?.nodeSnapshots || []).map(snapshot => snapshot?.id),
+    ].filter(Boolean));
+    const nodes = activeScene
+      ? allLiveNodes.filter(node => activeNodeIds.has(node.id) || node.sceneId === activeScene.id)
+      : allLiveNodes;
     if (!nodes.length) {
       const nodeEmpty = document.createElement('div');
       nodeEmpty.className = 'storyboard-act-board-node-empty';
@@ -15199,6 +15805,7 @@ function buildActBoardView(sections, assignmentsByIndex) {
   board.appendChild(canvas);
   const renderBoardLinks = () => boardLinkLayers.forEach(({ nodeStack, nodes }) => {
     if (!nodeStack._actBoardLinkState) buildActBoardLinkLayer(nodeStack, nodes);
+    else refreshActBoardLinkPaths(nodeStack);
   });
   const refreshBoardGeometry = () => board.querySelectorAll('.storyboard-act-board-node-stack')
     .forEach(nodeStack => {
@@ -15870,6 +16477,10 @@ function renderMovieEditor(container, label, sections, assignmentsByIndex) {
 
   const updateStoryboardView = () => {
     const boardActive = storyboardView === 'board';
+    // The Act Board is a full-window workspace. Keep a body-level hook so its
+    // viewport layer and the page-level controls can be styled together,
+    // without changing the established Timeline + Scenes layout.
+    document.body.classList.toggle('act-board-active', boardActive);
     arcLayout.style.display = boardActive ? 'none' : '';
     boardView.style.display = boardActive ? '' : 'none';
     // Generate All and Clear all scenes belong to Timeline + scenes. Keep
@@ -18332,9 +18943,19 @@ function restoreDebugSession() {
         const selectedKey = String(node.selectedVisualKey || '');
         const selectedResult = selectedKey.startsWith('result-') && Array.isArray(node.results)
           ? node.results[node.selectedResultIndex || 0] : null;
+        const selectedGenerated = selectedKey.startsWith('generated-') && Array.isArray(node.generatedOptions)
+          ? node.generatedOptions[node.selectedGeneratedIndex || 0] : null;
         node.sourceDurationSeconds = Math.max(0, Number(node.sourceDurationSeconds)
           || Number(selectedResult?.duration_seconds || selectedResult?.duration)
+          || Number(selectedGenerated?.duration_seconds || selectedGenerated?.duration)
           || (node.mediaKind === 'video' ? Number(node.durationSeconds) || 0 : 0));
+        if (selectedGenerated?.kind === 'video'
+          && node.timingWasManuallyAdjusted !== true
+          && node.sourceDurationSeconds > 0) {
+          node.trimStartSeconds = 0;
+          node.durationSeconds = node.sourceDurationSeconds;
+          node.durationWasSuggested = false;
+        }
       }
       if (node && node.type === 'narration') {
         if (node.includeNarration == null) {
@@ -18511,11 +19132,10 @@ if (restoredSession) {
       suggestArcsRowEl.style.display = '';
       suggestArcsStatusEl.textContent = 'Go back to setup and add a reference documentary to your moodboard first.';
     }
-    // The moodboard module on storyboard is editable (add/remove references to
-    // re-suggest the arc/mode/techniques). Show + render it whether or not an
-    // arc's been accepted; it relocates into the sidebar once one has.
+    // Keep the setup moodboard out of the storyboard page. The setup page
+    // remains the place where references are edited and re-distilled.
     if (moodboardSummaryModuleEl && moodboardListEl) {
-      moodboardSummaryModuleEl.style.display = '';
+      moodboardSummaryModuleEl.style.display = 'none';
       renderMoodboardList();
       refreshMoodboardStatusLine();
     }

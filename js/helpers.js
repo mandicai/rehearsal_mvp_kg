@@ -1755,10 +1755,11 @@ function fetchNarrationFilmability({ narration, spans, documentaryMode, signal }
   });
 }
 
-function fetchMediaQueries(scene) {
+function fetchMediaQueries(scene, signal) {
   return fetch(MEDIA_QUERIES_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    ...(signal ? { signal } : {}),
     body: JSON.stringify(scene),
   }).then(handleJsonResponse).catch(err => {
     if (err.isServerError) throw err;
@@ -2277,10 +2278,11 @@ function fetchDownloadStockMedia(sectionIndex, kind, url, projectId, minDuration
 const SEARCH_VIDEO_API_URL = `${API_BASE_URL}/media/search_video`;
 const SEARCH_AUDIO_API_URL = `${API_BASE_URL}/media/search_audio`;
 
-function fetchVideoOptions(query, minDurationSeconds = 0) {
+function fetchVideoOptions(query, minDurationSeconds = 0, signal) {
   return fetch(SEARCH_VIDEO_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    ...(signal ? { signal } : {}),
     body: JSON.stringify({
       query,
       min_duration_seconds: Number(minDurationSeconds) > 0 ? Number(minDurationSeconds) : 0,
