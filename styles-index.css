@@ -63,7 +63,6 @@ h2,
 h3,
 .module-card h2 {
   font-family: var(--cd-font-heading);
-  /* text-transform: uppercase; */
   letter-spacing: 0.04em;
   font-weight: 700;
 }
@@ -91,7 +90,7 @@ h3,
   max-width: 700px;
   margin: 10px auto 30px;
   padding: 10px 20px 20px 20px;
-  border: 1.5px solid var(--cd-border-strong);
+  border: 0.5px solid var(--cd-border-strong);
   border-radius: 4px 6px 3px 5px;
   /* The outline layers sit outside the card without changing its measured
      width/height. This keeps sidebar sizing and collapsible module layout
@@ -115,14 +114,14 @@ h3,
 
 .module-card::before {
   inset: -3px;
-  border: 1.5px solid rgba(38, 37, 35, .52);
+  border: 0.5px solid rgba(38, 37, 35, .52);
   border-radius: 7px 3px 6px 4px;
   transform: rotate(-.35deg);
 }
 
 #upload-sidebar::before {
   inset: -3px;
-  border: 1.5px solid rgba(38, 37, 35, .52);
+  border: 0.5px solid rgba(38, 37, 35, .52);
   border-radius: 7px 3px 6px 4px;
   transform: rotate(-.35deg);
 }
@@ -303,7 +302,7 @@ h3,
    offset outlines to extend beyond this upload module's box. */
 #upload-sidebar {
   position: relative;
-  border: 1.5px solid var(--cd-border-strong);
+  border: 0.5px solid var(--cd-border-strong);
   border-radius: 4px 6px 3px 5px;
   overflow: visible;
   isolation: isolate;
@@ -316,7 +315,7 @@ h3,
   margin: 0;
   white-space: nowrap;
   padding-bottom: 10px;
-  border-bottom: 1.5px solid var(--cd-border-strong);
+  border-bottom: 0.5px solid var(--cd-border-strong);
 }
 
 .upload-sidebar-body {
@@ -325,7 +324,7 @@ h3,
 
 .source-material {
   padding-bottom: 20px;
-  border-bottom: 1px solid var(--cd-border);
+  border-bottom: 0.5px solid var(--cd-border);
 }
 
 /* html/storyboard.html's "Source material" sidebar module
@@ -1100,7 +1099,7 @@ body.pub-to-doc-page .action-bar {
   flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
-  border: 1.5px solid var(--cd-border-strong);
+  border: 0.5px solid var(--cd-border-strong);
   border-radius: 4px 6px 3px 5px;
   overflow: visible;
   isolation: isolate;
@@ -1118,7 +1117,7 @@ body.pub-to-doc-page .action-bar {
   position: absolute;
   z-index: 0;
   inset: -3px;
-  border: 1.5px solid rgba(38, 37, 35, .52);
+  border: 0.5px solid rgba(38, 37, 35, .52);
   border-radius: 7px 3px 6px 4px;
   pointer-events: none;
   transform: rotate(-.35deg);
@@ -1133,7 +1132,6 @@ body.pub-to-doc-page .action-bar {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-}
 }
 
 .storyboard-act-board-full-playback-outline {
@@ -1899,7 +1897,7 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 
 .storyboard-act-board-column-header span {
   flex: 0 0 auto;
-  font: 12px var(--cd-font-mono);
+  font: 10px var(--cd-font-mono);
   opacity: .6;
 }
 
@@ -4192,7 +4190,7 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   gap: 6px;
   overflow: hidden;
   padding: 9px 10px 8px;
-  border: 1px dashed rgba(38, 37, 35, .3);
+  /* border: 1px dashed rgba(38, 37, 35, .3); */
   border-radius: 6px 4px 7px 5px;
   background: rgba(255, 255, 255, .62);
   pointer-events: none;
@@ -6120,7 +6118,7 @@ audio.storyboard-act-board-node-audio {
 .storyboard-act-board-card {
   position: relative;
   padding: 10px;
-  border: 1px solid var(--cd-border-strong);
+  border: 0.5px solid var(--cd-border-strong);
   /* border-left: 4px solid var(--cd-accent-hover); */
   border-radius: 4px;
   background: var(--cd-card-bg);
@@ -6149,7 +6147,7 @@ audio.storyboard-act-board-node-audio {
   position: absolute;
   z-index: 0;
   inset: -3px;
-  border: 1.5px solid rgba(38, 37, 35, .52);
+  border: 0.5px solid rgba(38, 37, 35, .52);
   border-radius: 7px 3px 6px 4px;
   content: '';
   pointer-events: none;
@@ -9489,7 +9487,7 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
    for something the presenter wrote. */
 .llm-generated {
   position: relative;
-  border-left: 5px solid var(--cd-accent-special);
+  border-left: 3px solid var(--cd-accent-special);
 }
 
 .llm-generated::before {
@@ -9939,7 +9937,7 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
   font-size: 20px;
   padding-bottom: 10px;
   margin-bottom: 14px;
-  border-bottom: 1.5px solid var(--cd-border-strong);
+  border-bottom: 0.5px solid var(--cd-border-strong);
 }
 
 /* Uppercase mono for kickers / labels / tags / captions - the editorial
@@ -9967,12 +9965,12 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
 /* Boxy reference cards with a crisp hairline; the user/LLM left-edge accent
    reads stronger against the flat card. */
 .moodboard-card {
-  border: 1.5px solid var(--cd-border-strong);
+  border: 1px solid var(--cd-border-strong);
   border-radius: 3px;
 }
 
 .moodboard-card.user-content {
-  border-left-width: 5px;
+  border-left-width: 3px;
 }
 
 /* .moodboard-card-title {
