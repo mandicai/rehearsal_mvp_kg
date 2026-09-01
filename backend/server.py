@@ -2684,6 +2684,36 @@ def _resolve_video_reference_image(data, project_id, section_index):
     return moodboard_media.extract_first_frame(video_path, frame_path)
 
 
+def _narration_overlaps(shot_start_seconds, shot_duration_seconds, narration_specs):
+    """Whether any narration actually plays while this shot is on screen.
+
+    Board narration is mixed as independently timed global events after the
+    shots are joined, so a shot cannot tell from its own fields whether a voice
+    covers it. Ducking used to be applied to every shot in a sequence that had
+    narration anywhere in it, which silenced a presenter's own uploaded footage
+    even when nothing was being spoken over it - the clip came back at 35% under
+    an otherwise empty mix. Compare the actual time windows instead.
+    """
+    try:
+        start = float(shot_start_seconds)
+        end = start + max(0.0, float(shot_duration_seconds))
+    except (TypeError, ValueError):
+        return bool(narration_specs)
+    for narration in narration_specs or []:
+        if not isinstance(narration, dict):
+            continue
+        try:
+            n_start = float(narration.get('start_seconds') or 0)
+            n_duration = float(narration.get('duration_seconds') or 0)
+        except (TypeError, ValueError):
+            continue
+        if n_duration <= 0:
+            continue
+        if n_start < end and start < n_start + n_duration:
+            return True
+    return False
+
+
 def _resolve_board_media(media_url, project_id, sequence_index, footage_index):
     """Resolve a linked act-board visual to a local renderable file.
 
@@ -2809,7 +2839,9 @@ def render_start():
                     'start_visual_path': None,
                     'end_visual_path': None,
                     'cutaway_paths': [],
-                    'duck_source_audio': bool(narration_specs),
+                    'duck_source_audio': _narration_overlaps(
+                        float(sequence_start_seconds) + float(start_seconds),
+                        render_duration, narration_specs),
                     'narration_audio_path': None,
                     'sfx_audio_path': None,
                     'duration_seconds': render_duration,
@@ -3107,14 +3139,22 @@ def _analyze_moodboard_reference(project_id, ref_id, source_kind, source, note, 
             _write_moodboard_status(status_path, 'analyzing', 'transcribing', 'Transcribing audio ...')
             transcript = _transcribe_if_possible(moodboard_media.extract_audio(video_path, ref_dir))
 
+        # A reference reaches 'ready' whether or not the style read actually
+        # ran, so record which happened. Without this an unconfigured backend is
+        # indistinguishable from a model that found nothing to say, and the card
+        # reports "Analyzed" for a reference that was never analyzed.
         style = {}
-        if moodboard_client.is_configured():
+        style_source = 'llm'
+        if not moodboard_client.is_configured():
+            style_source = 'unconfigured'
+        else:
             _write_moodboard_status(status_path, 'analyzing', 'reading', 'Reading style ...')
             try:
                 style = moodboard_client.read_style(
                     frames_data_urls, transcript=transcript, title=title, source_kind=source_kind)
             except MoodboardLLMCallError:
                 style = {}
+                style_source = 'error'
 
         profile = {
             'ref_id': ref_id,
@@ -3128,6 +3168,7 @@ def _analyze_moodboard_reference(project_id, ref_id, source_kind, source, note, 
             'pacing': style.get('pacing', ''),
             'suggested_mode': style.get('suggested_mode'),
             'transcript_summary': style.get('transcript_summary', ''),
+            'style_source': style_source,
             'thumbnail_url': thumbnail_url,
             'frame_urls': frame_urls,
             'note': (note or '').strip(),

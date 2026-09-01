@@ -4213,7 +4213,16 @@ function buildMoodboardStyleSummary(profile) {
     style.appendChild(document.createTextNode(' ' + techs.join(', ')));
   }
 
-  if (!style.childNodes.length) style.textContent = 'Analyzed (no distinct style cues detected).';
+  if (!style.childNodes.length) {
+    // An empty profile is ambiguous on its own: the model may have found
+    // nothing, or it may never have been asked. `style_source` says which, and
+    // during a session that difference is the whole story.
+    style.textContent = profile.style_source === 'unconfigured'
+      ? 'Not analyzed — no LLM key configured. Set PROXY_API_KEY in backend/.env and restart the backend.'
+      : profile.style_source === 'error'
+        ? 'Style analysis failed — the reference was added, but the model call did not return a profile.'
+        : 'Analyzed (no distinct style cues detected).';
+  }
   return style;
 }
 
