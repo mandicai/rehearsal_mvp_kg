@@ -11099,8 +11099,18 @@ function mountActBoardFootageCardsInLayer(nodeStack, scene) {
     const y = Number.parseFloat(card.style.top);
     const legacyX = Number.isFinite(x) ? x : Number(node.boardX) || 0;
     const legacyY = Number.isFinite(y) ? y : Number(node.boardY) || 0;
-    node.boardX = Math.max(0, Math.round(wasLocal ? legacyX : legacyX - layerOriginX));
-    node.boardY = Math.max(0, Math.round(wasLocal ? legacyY : legacyY - layerOriginY));
+    const localX = wasLocal ? legacyX : legacyX - layerOriginX;
+    const localY = wasLocal ? legacyY : legacyY - layerOriginY;
+    // A card arriving from canvas space - a legacy session, or any node built
+    // before this lane existed - can convert to a point outside the lane,
+    // where the Footage section's overflow clip simply swallows it. Pull those
+    // inside the measured lane. Cards already in lane space keep their saved
+    // position: the lane grows to contain them instead.
+    const clampable = !wasLocal && layerRect.width > 0 && layerRect.height > 0;
+    const maxLocalX = Math.max(0, layerRect.width - (card.offsetWidth || 0));
+    const maxLocalY = Math.max(0, layerRect.height - (card.offsetHeight || 0));
+    node.boardX = Math.max(0, Math.round(clampable ? Math.min(localX, maxLocalX) : localX));
+    node.boardY = Math.max(0, Math.round(clampable ? Math.min(localY, maxLocalY) : localY));
     node.boardPositionSpace = 'footage-section';
     card.style.left = `${node.boardX}px`;
     card.style.top = `${node.boardY}px`;
@@ -11445,6 +11455,45 @@ function growActBoardFootageLaneToFit(layer, requiredBottom) {
   return true;
 }
 
+// The lane grows while a card is dragged toward its bottom edge. Once the
+// cards move back up that extra height is dead space, so give it back: trim
+// the scene by whatever surplus sits below the lowest card, and stop as soon
+// as the lane stops shrinking - that point is the grid's own minimum row
+// height, and taking more would only clip the scene's other lanes.
+function shrinkActBoardFootageLaneToFit(layer) {
+  if (!layer) return false;
+  const sceneCard = layer.closest('.storyboard-act-board-board-scene');
+  const actKey = layer.dataset.actKey
+    || sceneCard?.closest('.storyboard-act-board-column')?.dataset.actKey || '';
+  const sceneId = layer.dataset.sceneId || sceneCard?.dataset.boardSceneId || '';
+  const scene = actBoardScenesForAct(actKey).find(item => item.id === sceneId);
+  if (!scene || !sceneCard) return false;
+  const contentBottom = Array.from(layer.children).reduce((max, child) =>
+    Math.max(max, (Number.parseFloat(child.style.top) || 0) + (child.offsetHeight || 0)), 0);
+  const required = contentBottom + ACT_BOARD_FOOTAGE_LANE_DRAG_PADDING;
+  let changed = false;
+  for (let pass = 0; pass < 8; pass += 1) {
+    const laneHeight = layer.getBoundingClientRect().height;
+    const surplus = laneHeight - required;
+    if (!(surplus > 1)) break;
+    const current = Math.max(116,
+      Number(scene.boardHeight) || ACT_BOARD_DEFAULT_SCENE_HEIGHT);
+    const next = Math.max(116, Math.round(current - surplus));
+    if (next >= current) break;
+    scene.boardHeight = next;
+    sceneCard.style.height = `${next}px`;
+    if (layer.getBoundingClientRect().height >= laneHeight - 0.5) {
+      // The lane is already at its minimum row height; the scene card has
+      // nothing left to give back.
+      scene.boardHeight = current;
+      sceneCard.style.height = `${current}px`;
+      break;
+    }
+    changed = true;
+  }
+  return changed;
+}
+
 function wireActBoardNodeDragging(card, node, boardLayer, index) {
   if (!boardLayer) return;
   const startPosition = actBoardNodePosition(node, index);
@@ -11697,6 +11746,9 @@ function wireActBoardNodeDragging(card, node, boardLayer, index) {
         else assignActBoardNodeToSceneAtPosition(childNode.actKey, childNode);
       });
       if (node.type !== 'footage') assignActBoardNodeToSceneAtPosition(node.actKey, node);
+      else shrinkActBoardFootageLaneToFit(
+        card.closest('.storyboard-act-board-scene-footage-node-layer'),
+      );
       expandActBoardScenesToContainNodes(boardLayer, node.actKey);
       const currentMinHeight = parseFloat(boardLayer.style.minHeight) || 0;
       const draggedBottom = dragGroup.reduce((max, { node: childNode, card: childCard }) =>
@@ -12350,6 +12402,14 @@ function pasteActBoardNodeFromPayload(actKey, boardLayer, payload) {
     pasted.narrationNodeId = null;
     pasted.previousFootageNodeId = null;
     pasted.nextFootageNodeId = null;
+    // Footage belongs to its scene's Footage lane, never to canvas space. The
+    // paste offset above is a canvas coordinate borrowed from whichever node
+    // was active - often a narration card in a different lane - so handing the
+    // card to the lane placer is the only way it lands somewhere valid.
+    delete pasted.boardX;
+    delete pasted.boardY;
+    pasted.boardPositionSpace = 'footage-section';
+    pasted.boardPositionMode = 'footage-section-auto';
   }
   if (pasted.type === 'audio') {
     pasted.linkedToNodeId = null;
