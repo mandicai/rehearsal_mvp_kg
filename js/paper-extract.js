@@ -12127,6 +12127,30 @@ function setActBoardSceneLoading(actKey, sceneId, active, message = '') {
   return true;
 }
 
+// The Visualize veil was created and removed inside a single frame whenever
+// the narration already had classified spans, so the click produced no visible
+// loading state at all. Hold it on screen long enough to actually read.
+const ACT_BOARD_SCENE_LOADING_MIN_MS = 550;
+
+function waitForActBoardSceneLoadingFloor(shownAt) {
+  const elapsed = Date.now() - Number(shownAt);
+  const remaining = ACT_BOARD_SCENE_LOADING_MIN_MS
+    - (Number.isFinite(elapsed) ? elapsed : 0);
+  if (!(remaining > 0)) return Promise.resolve();
+  return new Promise(resolve => setTimeout(resolve, remaining));
+}
+
+// Re-label a veil that is already up, without touching its reference count.
+function setActBoardSceneLoadingMessage(sceneId, message) {
+  if (!message) return false;
+  const label = actBoardDomRegistry?.scenes?.get(sceneId)?.card?.querySelector(
+    ':scope > .storyboard-act-board-scene-loading .storyboard-act-board-scene-loading-label',
+  );
+  if (!label) return false;
+  label.textContent = message;
+  return true;
+}
+
 function patchActBoardSceneDom(actKey, sceneId, options = {}) {
   const registry = actBoardDomRegistry;
   const entry = registry?.scenes?.get(sceneId);
@@ -23422,6 +23446,7 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
     const visualizeToken = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const hadActiveBatch = actBoardSceneVisualizeTokens.has(loadingKey);
     actBoardSceneVisualizeTokens.set(loadingKey, visualizeToken);
+    const loadingShownAt = Date.now();
     const loadingStarted = hadActiveBatch || setActBoardSceneLoading(
       actKey, sceneId, true, 'Analyzing narration and generating previews…',
     );
@@ -23494,7 +23519,20 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
           else setTimeout(resolve, 0);
         });
         if (!isCurrentBatch()) return;
-        setActBoardSceneLoading(actKey, sceneId, false);
+        // Only drop the veil once this click has put something new on screen.
+        // When shells were mounted they are painted by now, so the scene is
+        // handed back and each card reports its own media progress. When
+        // nothing was mounted the scene still looks untouched and the span
+        // analysis below is the only work in flight - dismissing there left
+        // the click with no feedback for as long as that request took.
+        if (scenePatchNeeded) {
+          await waitForActBoardSceneLoadingFloor(loadingShownAt);
+          if (!isCurrentBatch()) return;
+          setActBoardSceneLoading(actKey, sceneId, false);
+        } else {
+          setActBoardSceneLoadingMessage(sceneId,
+            'Finding filmable moments in the narration…');
+        }
         startMedia(immediate);
 
         // Start/await analysis for each narration segment concurrently. Any
@@ -23513,12 +23551,14 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
         }
       } catch (error) {
         if (isCurrentBatch()) {
+          await waitForActBoardSceneLoadingFloor(loadingShownAt);
           setActBoardSceneLoading(actKey, sceneId, false);
           if (scenePatchNeeded) queueActBoardScenePatch(actKey, sceneId, { persist: true });
         }
       } finally {
         if (isCurrentBatch()) {
           actBoardSceneVisualizeTokens.delete(loadingKey);
+          await waitForActBoardSceneLoadingFloor(loadingShownAt);
           setActBoardSceneLoading(actKey, sceneId, false);
           if (scenePatchNeeded) queueActBoardScenePatch(actKey, sceneId, { persist: true });
         }
@@ -23785,6 +23825,15 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
   rail.insertBefore(soundSection, narrationSection);
 
   rail._actBoardPosition = () => {
+    // This runs once below, before the caller has mounted the rail. A detached
+    // element measures 0 x 0 and has no parent to identify its host, so every
+    // decision here would be made against a phantom rail: the branch that
+    // reserves a band at the top of the canvas would read the scene as sitting
+    // under the rails and push it (and every node) down a few pixels on each
+    // render, which is why a scene crept down the page as footage loaded.
+    // Wait for the mounted pass scheduled on the next frame, where the
+    // measurement is real; it still lands before the browser paints.
+    if (!rail.isConnected) return;
     // Keep the compact rails in a reserved band at the top of the canvas.
     // Older versions placed them below every node, which made the canvas
     // tracks easy to miss. If existing content occupies that band, move it
