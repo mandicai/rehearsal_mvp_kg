@@ -3852,8 +3852,14 @@ def eval_run():
             for m in modes for i in range(_EVAL_ACT_PLANS_PER_MODE)
         ]
     else:
-        if not techniques or not modes or not roles:
-            return jsonify({'error': 'select at least one technique, one mode, and one track'}), 400
+        if not techniques or not modes:
+            return jsonify({'error': 'select at least one scene technique and one documentary mode'}), 400
+        # The Track axis was retired from evaluation.html, so a request can
+        # legitimately arrive without one. Default to a single Primary column
+        # rather than rejecting it with an instruction naming a control the
+        # caller no longer has.
+        if not roles:
+            roles = ['Primary']
         # Grouped by mode, then technique, then role - matches evaluation.html's grid.
         cells = [{'technique': t, 'mode': m, 'role': r} for m in modes for t in techniques for r in roles]
     if len(cells) > MAX_EVAL_CELLS:
