@@ -10858,6 +10858,9 @@ const ACT_BOARD_AUDIO_STANDARD_WIDTH = ACT_BOARD_NARRATION_STANDARD_WIDTH;
 const ACT_BOARD_AUDIO_STANDARD_HEIGHT = ACT_BOARD_NARRATION_STANDARD_HEIGHT;
 const ACT_BOARD_FOOTAGE_STANDARD_WIDTH = 190;
 const ACT_BOARD_FOOTAGE_STANDARD_HEIGHT = ACT_BOARD_NODE_STANDARD_HEIGHT;
+// Breathing room kept below a footage card when a drag extends its scene's
+// Footage lane, so the card never lands flush against the lane's bottom edge.
+const ACT_BOARD_FOOTAGE_LANE_DRAG_PADDING = 12;
 
 function actBoardNodeDuration(node) {
   if (!node) return 1;
@@ -11418,6 +11421,30 @@ function clearActBoardTrackDropPreviews() {
   });
 }
 
+// A scene's Footage lane is a grid row inside the framed scene card, so the
+// only way to make it taller is to grow the scene itself. Dragging a footage
+// card toward the bottom of the lane extends the scene rather than stopping
+// the card, which is what keeps free placement from being capped at whatever
+// height the lane happened to have when the drag began. The automatic placer
+// grows a scene the same way when it runs out of rows.
+function growActBoardFootageLaneToFit(layer, requiredBottom) {
+  if (!layer) return false;
+  const deficit = requiredBottom + ACT_BOARD_FOOTAGE_LANE_DRAG_PADDING
+    - layer.getBoundingClientRect().height;
+  if (!(deficit > 0)) return false;
+  const sceneCard = layer.closest('.storyboard-act-board-board-scene');
+  const actKey = layer.dataset.actKey
+    || sceneCard?.closest('.storyboard-act-board-column')?.dataset.actKey || '';
+  const sceneId = layer.dataset.sceneId || sceneCard?.dataset.boardSceneId || '';
+  const scene = actBoardScenesForAct(actKey).find(item => item.id === sceneId);
+  if (!scene || !sceneCard) return false;
+  const currentHeight = Math.max(116,
+    Number(scene.boardHeight) || ACT_BOARD_DEFAULT_SCENE_HEIGHT);
+  scene.boardHeight = Math.ceil(currentHeight + deficit);
+  sceneCard.style.height = `${scene.boardHeight}px`;
+  return true;
+}
+
 function wireActBoardNodeDragging(card, node, boardLayer, index) {
   if (!boardLayer) return;
   const startPosition = actBoardNodePosition(node, index);
@@ -11547,11 +11574,22 @@ function wireActBoardNodeDragging(card, node, boardLayer, index) {
     const move = moveEvent => {
       const rawX = moveEvent.clientX - boardRect.left - offsetX;
       const rawY = moveEvent.clientY - boardRect.top - offsetY;
+      // A footage card mounted in its scene-local layer owns that whole layer:
+      // its own box is the only bound. Deriving bounds from the surrounding
+      // Footage section instead used to cost the card the section's padding
+      // plus an extra inset, and a section edge measured against the layer
+      // could clamp the card well inside the lane it is supposed to roam.
+      const footageLayerDrag = node.type === 'footage'
+        && dragRoot.classList.contains('storyboard-act-board-scene-footage-node-layer');
+      // Dragging past the bottom of the lane extends it instead of stopping
+      // the card, so the reachable area is not capped at the lane height the
+      // drag started with.
+      if (footageLayerDrag) growActBoardFootageLaneToFit(dragRoot, rawY + card.offsetHeight);
       // Re-measure the active Footage lane on every move. Scene expansion can
       // grow the lane while a card is being dragged; a bound captured at
       // pointerdown would leave the card trapped in its original row.
       const currentRootRect = dragRoot.getBoundingClientRect();
-      const footageSectionRect = node.type === 'footage'
+      const footageSectionRect = node.type === 'footage' && !footageLayerDrag
         ? card.closest('.storyboard-act-board-scene-section-footage')?.getBoundingClientRect?.()
         : null;
       const footageBounds = footageSectionRect ? (() => {
@@ -11589,9 +11627,17 @@ function wireActBoardNodeDragging(card, node, boardLayer, index) {
           const childX = Math.max(0, x + deltaX);
           const childY = Math.max(0, y + deltaY);
           if (childNode.type === 'footage') {
+            // Same rule as the dragged card: a footage card living in its
+            // scene-local layer is bounded by that layer alone.
+            const childInLayer = childRoot.classList
+              ?.contains('storyboard-act-board-scene-footage-node-layer');
+            if (childInLayer) {
+              growActBoardFootageLaneToFit(childRoot, childY + childCard.offsetHeight);
+            }
             const childRect = childRoot.getBoundingClientRect();
-            const childSection = childCard.closest('.storyboard-act-board-scene-section-footage')
-              ?.getBoundingClientRect?.();
+            const childSection = childInLayer ? null
+              : childCard.closest('.storyboard-act-board-scene-section-footage')
+                ?.getBoundingClientRect?.();
             const childMinX = childSection
               ? Math.max(0, childSection.left - childRect.left) : 0;
             const childMinY = childSection
