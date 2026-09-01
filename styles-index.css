@@ -4213,6 +4213,20 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   margin: 0;
 }
 
+/* The footage-card rule further down the sheet declares `position: relative`
+   at exactly the same specificity as the rule above, so source order alone
+   decided it — and it dropped every footage card back into normal flow. There
+   `left`/`top` are offsets from a stacked row rather than coordinates in the
+   lane, so each card sat one card-height lower than the one before it and
+   could never be dragged above the row it was packed into. Re-assert the
+   layer as the containing block at a specificity the later rule cannot beat.
+   Only `position` is restated here: the footage card keeps its own flex
+   internals. */
+.storyboard-act-board-scene-footage-node-layer
+  > .storyboard-act-board-node.storyboard-act-board-node-footage:not(.storyboard-act-board-node-panel-host) {
+  position: absolute;
+}
+
 /* Music/sound has no card grid, so it only needs room for its heading and
    compact track. Avoid the shared auto top margin consuming extra row height. */
 .storyboard-act-board-scene-section-sound {
