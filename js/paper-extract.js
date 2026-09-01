@@ -27145,6 +27145,9 @@ function buildActBoardRenderPlan() {
       return (nodeOrder.get(a.id) || 0) - (nodeOrder.get(b.id) || 0);
     });
     const sequencedFootageIds = new Set();
+    // Scenes whose unowned footage has already been folded into a narration
+    // sequence, so a scene with several narration segments contributes it once.
+    const sceneOrphanFootageEmitted = new Set();
     // A fallback scene narration can represent the whole act when the user
     // has not recorded an act-board narration. Use it once; separately
     // recorded narration nodes each get their own timed umbrella track.
@@ -27159,26 +27162,53 @@ function buildActBoardRenderPlan() {
       let linked = orderedActBoardLinkedFootage(act.key, narrationNode, nodes)
         .filter(actBoardTrackNodeVisible);
       const narrationScene = actBoardSceneForNode(act.key, narrationNode);
+      const byRailOrder = (a, b) => {
+        const aSequence = Number(a.sequenceIndex);
+        const bSequence = Number(b.sequenceIndex);
+        if (Number.isFinite(aSequence) && Number.isFinite(bSequence)
+          && aSequence !== bSequence) return aSequence - bSequence;
+        return (Number(a.startSeconds) || 0) - (Number(b.startSeconds) || 0);
+      };
+      // Resolve the scene's footage once and reuse it below. This call is not
+      // a pure read - it re-packs any shot that is not manually timed - so
+      // calling it a second time for the orphan pass would silently shift
+      // timings that Smart arrange had just committed.
+      const sceneFootage = narrationScene
+        ? orderedActBoardSceneFootage(act.key, narrationScene, nodes) : [];
       if (narrationScene) {
         const linkedIds = new Set(linked.map(item => item.id));
-        orderedActBoardSceneFootage(act.key, narrationScene, nodes)
+        sceneFootage
           .filter(item => item.compositionMode === 'split-screen'
             && actBoardTrackNodeVisible(item) && !linkedIds.has(item.id))
           .forEach(item => {
             linked.push(item);
             linkedIds.add(item.id);
           });
-        linked.sort((a, b) => {
-          const aSequence = Number(a.sequenceIndex);
-          const bSequence = Number(b.sequenceIndex);
-          if (Number.isFinite(aSequence) && Number.isFinite(bSequence)
-            && aSequence !== bSequence) return aSequence - bSequence;
-          const aStart = Number(a.startSeconds) || 0;
-          const bStart = Number(b.startSeconds) || 0;
-          return aStart - bStart;
-        });
+        linked.sort(byRailOrder);
       }
       if (!linked.length) return;
+      // Footage can sit on a scene's timeline without being in any narration's
+      // footageNodeIds - anything the presenter made on the canvas themselves,
+      // a double-click spawn or an upload, then arranged on the track. Those
+      // used to fall through to the footage-only scene sweep further below,
+      // which appends its sequence after every narration sequence, so the clip
+      // played at the very end of the export instead of where it was arranged.
+      //
+      // This runs AFTER the guard above on purpose: folding orphans in earlier
+      // would let a narration that renders nothing of its own start producing a
+      // sequence, which changes timing for unrelated scenes. Footage owned by
+      // another narration is left alone - that narration renders it itself.
+      if (narrationScene && !sceneOrphanFootageEmitted.has(narrationScene.id)) {
+        sceneOrphanFootageEmitted.add(narrationScene.id);
+        const linkedIds = new Set(linked.map(item => item.id));
+        const orphans = sceneFootage
+          .filter(item => actBoardTrackNodeVisible(item) && !linkedIds.has(item.id)
+            && !actBoardNarrationForNode(act.key, item));
+        if (orphans.length) {
+          linked.push(...orphans);
+          linked.sort(byRailOrder);
+        }
+      }
       const scene = actBoardSceneForNode(act.key, narrationNode);
       const includeNarration = narrationNode.includeNarration !== false;
       let umbrellaClip = null;
