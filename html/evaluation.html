@@ -35,21 +35,31 @@
       <div class="module-card" id="eval-scene-module" style="display: none;">
         <h2>Act to evaluate</h2>
         <label class="eval-field">
-          <span>Arc part (act)</span>
+          <span>Arc title</span>
           <select id="eval-scene-act"></select>
+        </label>
+        <label class="eval-field">
+          <span>Arc description</span>
+          <textarea id="eval-scene-narration" rows="2"></textarea>
         </label>
         <label class="eval-field">
           <span>Scene title</span>
           <input type="text" id="eval-scene-title">
         </label>
         <label class="eval-field">
-          <span>Act narration</span>
-          <textarea id="eval-scene-narration" rows="2"></textarea>
-        </label>
-        <label class="eval-field">
           <span>Scene notes (paper text)</span>
           <textarea id="eval-scene-notes" rows="3"></textarea>
         </label>
+        <!-- What the presenter actually recorded, and the phrases they marked
+             filmable in it. The entities become the matrix columns. -->
+        <div class="eval-field">
+          <span>Recorded narration</span>
+          <div id="eval-recorded-narration" class="eval-recorded"></div>
+        </div>
+        <div class="eval-field">
+          <span>Highlighted entities</span>
+          <div id="eval-entity-list" class="eval-checklist eval-entity-list"></div>
+        </div>
       </div>
 
       <!-- Technique pool and legacy axes to sweep. -->
@@ -58,7 +68,7 @@
         <div class="eval-axes-grid">
           <div class="eval-axis">
             <div class="eval-axis-head">
-              <strong>Techniques</strong>
+              <strong>Scene techniques</strong>
               <span class="eval-axis-actions">
                 <button type="button" class="btn-secondary" id="eval-tech-none">None</button>
               </span>
@@ -77,10 +87,14 @@
         </div>
         <label class="eval-inline">
           <input type="checkbox" id="eval-video-toggle" checked>
-          Generate a video per cell (batched — ~1 min each)
+          Generate camera-variation videos (one seed image per entity × mode; ~1 min each)
         </label>
         <label class="eval-inline">
-          <input type="checkbox" id="eval-act-sweep" checked>
+          <input type="checkbox" id="eval-entity-matrix" checked>
+          Entity matrix (columns = highlighted entities, rows = modes ▸ scene techniques; two images per cell)
+        </label>
+        <label class="eval-inline">
+          <input type="checkbox" id="eval-act-sweep">
           Act-wide mode sweep (3 distinct shot plans per selected mode; random technique subsets)
         </label>
         <div class="eval-inline eval-wildness">

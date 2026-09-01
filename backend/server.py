@@ -3588,6 +3588,177 @@ def _eval_worker(project_id, run_id, scene, moodboard, cells, want_video, wildne
         _write('error', 0, f'Evaluation failed: {exc}')
 
 
+# The entity matrix is a different shape from the legacy sweep: columns are the
+# highlighted entities from the act's recorded narration, rows are documentary
+# modes, and each mode carries one row per moodboard-distilled technique. Every
+# (entity, mode, technique) cell renders two independently planned images so a
+# pair can be compared side by side, and each mode block seeds one set of camera
+# variations from a single image.
+MAX_EVAL_ENTITY_IMAGES = 48
+_EVAL_IMAGES_PER_CELL = 2
+_EVAL_CAMERA_VARIANTS = 3
+
+
+def _eval_entity_worker(project_id, run_id, scene, moodboard, cells, want_video, wildness,
+                        status_path, manifest_path):
+    """Daemon-thread worker for the entity x mode x technique matrix.
+
+    Phase 1 renders every cell's image pair concurrently so the grid fills in
+    quickly; phase 2 seeds one camera-variation video set per (entity, mode)
+    from the first image that succeeded there, at low concurrency because each
+    clip is far slower than an image. Every step is timed and reported, since
+    comparing generation cost across modes and techniques is the point of the
+    matrix. A failure is recorded on its own cell and the rest continue.
+    """
+    eval_dir = premiere_eval_dir(project_id, run_id)
+    total = len(cells)
+    results = [None] * total
+    video_sets = []
+
+    def _clean(entry):
+        return {k: v for k, v in entry.items() if not k.startswith('_')}
+
+    def _write(state, done, message):
+        payload = {'state': state, 'step': message, 'message': message, 'done': done,
+                   'total': total, 'matrix': 'entity',
+                   'cells': [_clean(r) for r in results if r is not None],
+                   'video_sets': [_clean(v) for v in video_sets]}
+        try:
+            tmp = status_path.parent / (status_path.name + '.tmp')
+            tmp.write_text(json.dumps(payload))
+            os.replace(tmp, status_path)
+        except OSError:
+            pass
+
+    try:
+        eval_dir.mkdir(parents=True, exist_ok=True)
+        title = scene.get('title', '')
+        scene_notes = scene.get('scene_notes', '')
+        narration = scene.get('narration', '')
+        act_title = scene.get('act_title', '')
+        abstract = scene.get('abstract', '')
+
+        def _cell_images(i_cell):
+            i, cell = i_cell
+            entity = cell['entity']
+            mode = cell['mode']
+            technique = cell['technique']
+            entry = {'index': i, 'entity': entity, 'entity_query': cell.get('entity_query', ''),
+                     'mode': mode, 'technique': technique, 'images': []}
+            for variant in range(_EVAL_IMAGES_PER_CELL):
+                image = {'variant': variant}
+                started = time.perf_counter()
+                try:
+                    # The entity is what this column is testing, so state it as
+                    # authoritative rather than hoping the planner picks it out
+                    # of the narration. The second variant is asked for a
+                    # different composition so the pair is a real comparison
+                    # rather than two near-identical frames.
+                    focus = (
+                        f"{scene_notes}\n"
+                        f"Focal entity (AUTHORITATIVE): {entity}. "
+                        f"The shot must depict {cell.get('entity_query') or entity}."
+                    ).strip()
+                    if variant:
+                        focus += (' Compose this alternative differently from the obvious reading:'
+                                  ' change the shot size, vantage, or moment within the action.')
+                    shot_plan = shot_plan_client.generate_shot_plan(
+                        title, focus, narration, act_title, mode,
+                        techniques=[technique] if technique else [], moodboard=moodboard,
+                        abstract=abstract, role='Primary', wildness=wildness)
+                    visual = (shot_plan.get('visual_description') or '').strip()[:MAX_SKETCH_VISUAL_CHARS]
+                    framing = framing_directive(shot_plan.get('shot_size'), [technique] if technique else [])
+                    image['prompt'] = _build_image_prompt(visual, mode, 'shot_frame', framing)
+                    image['shot_size'] = shot_plan.get('shot_size')
+                    image['movement'] = shot_plan.get('movement')
+                    image['narrative_operation'] = shot_plan.get('narrative_operation')
+                    image['visual_description'] = visual
+                    image['framing'] = framing
+                    png = sketch_client.generate_sketch(visual, mode, style='shot_frame', framing=framing)
+                    p = eval_dir / f'cell_{i}_{variant}.png'
+                    p.write_bytes(png)
+                    image['image_url'] = _preview_url_for(p)
+                    image['_png_path'] = str(p)
+                except Exception as exc:
+                    image['error'] = f'image failed: {exc}'
+                image['seconds'] = round(time.perf_counter() - started, 2)
+                entry['images'].append(image)
+            results[i] = entry
+            return entry
+
+        _write('running', 0, 'Generating images ...')
+        done = 0
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            for _ in pool.map(_cell_images, list(enumerate(cells))):
+                done += 1
+                _write('running', done, f'Generated {done}/{total} image pairs ...')
+
+        if want_video and animate_client.is_configured():
+            # One seed image per (entity, mode) block, taken in cell order so the
+            # choice is deterministic across reruns of the same matrix.
+            seeds = {}
+            for entry in results:
+                if not entry:
+                    continue
+                key = (entry['entity'], entry['mode'])
+                if key in seeds:
+                    continue
+                for image in entry['images']:
+                    if image.get('_png_path'):
+                        seeds[key] = (entry, image)
+                        break
+
+            variants = _EVAL_VARIANT_DIRECTIONS[:_EVAL_CAMERA_VARIANTS]
+            targets = [
+                {'entity': entity, 'mode': mode, 'cell_index': entry['index'],
+                 'technique': entry['technique'], 'variant': image['variant'],
+                 'source_image_url': image.get('image_url'),
+                 '_png_path': image['_png_path'],
+                 '_framing': image.get('framing'), 'videos': []}
+                for (entity, mode), (entry, image) in seeds.items()
+            ]
+            video_sets.extend(targets)
+
+            def _video_set(target):
+                png = Path(target['_png_path']).read_bytes()
+                for movement, operation, direction in variants:
+                    video = {'movement': movement, 'narrative_operation': operation,
+                             'direction': direction}
+                    started = time.perf_counter()
+                    try:
+                        mp4 = animate_client.generate_shot_video(
+                            png, movement, target['mode'], framing=target.get('_framing'),
+                            techniques=[target['technique']] if target['technique'] else [],
+                            narrative_operation=operation, animation_direction=direction)
+                        vp = eval_dir / f"video_{target['cell_index']}_{movement}.mp4"
+                        vp.write_bytes(mp4)
+                        remux_for_reliable_playback(vp)
+                        video['video_url'] = _preview_url_for(vp)
+                    except Exception as exc:
+                        video['error'] = f'video failed: {exc}'
+                    video['seconds'] = round(time.perf_counter() - started, 2)
+                    target['videos'].append(video)
+                return target
+
+            vdone = 0
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                for _ in pool.map(_video_set, targets):
+                    vdone += 1
+                    _write('running', total,
+                           f'Rendering camera variations {vdone}/{len(targets)} ...')
+
+        manifest = {'run_id': run_id, 'total': total, 'matrix': 'entity',
+                    'cells': [_clean(e) for e in results if e],
+                    'video_sets': [_clean(v) for v in video_sets]}
+        try:
+            manifest_path.write_text(json.dumps(manifest, indent=2))
+        except OSError:
+            pass
+        _write('ready', total, 'Done')
+    except Exception as exc:  # best-effort worker
+        _write('error', 0, f'Evaluation failed: {exc}')
+
+
 @app.route('/eval/run', methods=['POST'])
 def eval_run():
     data = request.get_json(silent=True) or {}
@@ -3612,6 +3783,59 @@ def eval_run():
             rr = _EVAL_ROLE_MAP.get(r.strip().lower(), r.strip())
             if rr in ('Primary', 'Cutaway') and rr not in roles:
                 roles.append(rr)
+    entity_matrix = bool(data.get('entity_matrix'))
+    entities = []
+    for item in (data.get('entities') or [])[:12]:
+        if not isinstance(item, dict):
+            continue
+        text = (item.get('text') or '').strip()[:240]
+        if text and not any(e['text'] == text for e in entities):
+            entities.append({'text': text, 'query': (item.get('query') or '').strip()[:240]})
+
+    if entity_matrix:
+        if not entities:
+            return jsonify({'error': 'select at least one highlighted entity'}), 400
+        if not modes:
+            return jsonify({'error': 'select at least one documentary mode'}), 400
+        if not techniques:
+            return jsonify({'error': 'select at least one scene technique'}), 400
+        # Grouped entity-major so the frontend can read columns straight off the
+        # cell order: entity, then mode, then technique.
+        cells = [
+            {'entity': e['text'], 'entity_query': e['query'], 'mode': m, 'technique': t}
+            for e in entities for m in modes for t in techniques
+        ]
+        images = len(cells) * _EVAL_IMAGES_PER_CELL
+        if images > MAX_EVAL_ENTITY_IMAGES:
+            return jsonify({'error': (
+                f'matrix too large ({len(cells)} cells x {_EVAL_IMAGES_PER_CELL} images = {images} '
+                f'> max {MAX_EVAL_ENTITY_IMAGES}); pick fewer entities, modes, or techniques')}), 400
+        want_video = bool(data.get('video'))
+        try:
+            wildness = max(0.0, min(1.0, float(data.get('wildness') or 0)))
+        except (TypeError, ValueError):
+            wildness = 0.0
+        moodboard = _parse_moodboard_profiles(data)
+        project_id = (data.get('project_id') or '').strip() or next_premiere_project_id()
+        if not (shot_plan_client.is_configured() and sketch_client.is_configured()):
+            return jsonify({'error': _SKETCH_NOT_CONFIGURED_ERROR}), 503
+        run_id = _allocate_eval_run_id(project_id)
+        eval_dir = premiere_eval_dir(project_id, run_id)
+        eval_dir.mkdir(parents=True, exist_ok=True)
+        status_path = eval_dir / 'status.json'
+        manifest_path = eval_dir / 'manifest.json'
+        status_path.write_text(json.dumps({
+            'state': 'running', 'step': 'starting', 'message': 'Starting ...', 'done': 0,
+            'total': len(cells), 'matrix': 'entity', 'cells': [], 'video_sets': []}))
+        threading.Thread(
+            target=_eval_entity_worker,
+            args=(project_id, run_id, scene, moodboard, cells, want_video, wildness,
+                  status_path, manifest_path),
+            daemon=True,
+        ).start()
+        return jsonify({'project_id': project_id, 'run_id': run_id, 'state': 'running',
+                        'total': len(cells), 'matrix': 'entity'})
+
     act_sweep = bool(data.get('act_sweep'))
     if act_sweep:
         if not modes:

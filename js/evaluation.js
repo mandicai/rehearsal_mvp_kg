@@ -25,6 +25,14 @@ let allRoles = [];             // [{key,label}]
 const selTech = new Set();
 const selMode = new Set();
 const selRole = new Set();
+const selEntity = new Set();
+
+// Read from the inherited Act Board rather than the arc part: the recorded
+// narration and the phrases marked filmable in it live on the narration nodes.
+let actBoardNodes = {};        // actKey -> nodes
+let moodboardTechniques = [];  // technique keys distilled from the moodboard
+let actEntities = [];          // [{text, query, bucket}] for the selected act
+let recordedNarration = '';
 
 let pollTimer = null;
 
@@ -44,6 +52,10 @@ function inheritSession() {
   arcParts = session.currentArcSections || [];
   assignments = session.currentAssignments || {};
   projectId = session.premiereProjectId || '';
+  actBoardNodes = session.actBoardNodes || {};
+  // The technique rows sweep what the moodboard distilled, not the whole catalog.
+  moodboardTechniques = (session.lastDistillResult?.suggested_techniques
+    || session.selectedTechniques || []).filter(t => typeof t === 'string');
 
   moodboardProfiles = (session.moodboardReferences || [])
     .filter(r => r && r.state === 'ready' && r.profile)
@@ -118,6 +130,91 @@ function fillSceneFields(idx) {
   $('eval-scene-title').value = part.label || 'Scene';
   $('eval-scene-narration').value = part.description || '';
   $('eval-scene-notes').value = notesForAct(part.key);
+  loadActNarrationAndEntities(part.key);
+}
+
+function loadActNarrationAndEntities(actKey) {
+  const narrations = (actBoardNodes[actKey] || []).filter(node =>
+    node && node.type === 'narration' && String(node.transcript || '').trim());
+  recordedNarration = narrations.map(node => String(node.transcript).trim()).join('\n\n');
+
+  const seen = new Set();
+  actEntities = [];
+  narrations.forEach(node => {
+    (node.narrationSpans || []).forEach(span => {
+      const text = String(span?.text || '').trim();
+      // 'ignore' is the classifier saying the phrase would not help pick a shot;
+      // 'pending' has not been classified yet.
+      if (!text || span.bucket === 'ignore' || span.bucket === 'pending') return;
+      const key = text.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      actEntities.push({
+        text,
+        query: String(span.query || span.visual_proxy || text).trim(),
+        bucket: span.bucket || '',
+      });
+    });
+  });
+
+  selEntity.clear();
+  // Default to the first three, so a run stays bounded with no clicking.
+  actEntities.slice(0, 3).forEach(entity => selEntity.add(entity.text));
+  renderRecordedNarration();
+  renderEntityList();
+  updateEstimate();
+}
+
+function renderRecordedNarration() {
+  const host = $('eval-recorded-narration');
+  if (!host) return;
+  host.textContent = '';
+  if (!recordedNarration) {
+    host.classList.add('eval-empty');
+    host.textContent = 'No recorded narration for this act yet — record it in the storyboard to populate entities.';
+    return;
+  }
+  host.classList.remove('eval-empty');
+  // Mark each highlighted phrase inside the transcript, so the entity list below
+  // reads as a selection out of the recording rather than a detached list.
+  const marks = actEntities
+    .map(entity => ({ entity, at: recordedNarration.toLowerCase().indexOf(entity.text.toLowerCase()) }))
+    .filter(item => item.at >= 0)
+    .sort((a, b) => a.at - b.at);
+  let cursor = 0;
+  marks.forEach(({ entity, at }) => {
+    if (at < cursor) return;
+    host.appendChild(document.createTextNode(recordedNarration.slice(cursor, at)));
+    const mark = document.createElement('mark');
+    mark.className = 'eval-entity-mark';
+    mark.textContent = recordedNarration.slice(at, at + entity.text.length);
+    host.appendChild(mark);
+    cursor = at + entity.text.length;
+  });
+  host.appendChild(document.createTextNode(recordedNarration.slice(cursor)));
+}
+
+function renderEntityList() {
+  const host = $('eval-entity-list');
+  if (!host) return;
+  if (!actEntities.length) {
+    host.innerHTML = '<span class="eval-empty">No highlighted entities — visualize the narration first.</span>';
+    return;
+  }
+  buildChecklist(host, actEntities.map(entity => ({
+    key: entity.text,
+    label: entity.bucket && entity.bucket !== 'depictable'
+      ? `${entity.text} (${entity.bucket})` : entity.text,
+  })), selEntity, () => { renderRecordedNarration(); updateEstimate(); });
+}
+
+function entityMatrixEnabled() {
+  return Boolean($('eval-entity-matrix') && $('eval-entity-matrix').checked);
+}
+
+function selectedEntities() {
+  return actEntities.filter(entity => selEntity.has(entity.text))
+    .map(entity => ({ text: entity.text, query: entity.query }));
 }
 
 function currentScenePayload() {
@@ -156,6 +253,16 @@ function buildChecklist(hostEl, items, selSet, onToggle) {
 }
 
 function renderAxes() {
+  // The technique rows are meant to sweep what the moodboard distilled, so
+  // start from that set instead of an empty (or whole-catalog) selection.
+  if (!selTech.size) {
+    moodboardTechniques
+      .filter(key => allTechniques.some(item => item.key === key))
+      .forEach(key => selTech.add(key));
+    // A distilled key the catalog no longer carries would otherwise leave the
+    // technique axis empty and the run un-startable.
+    if (!selTech.size) allTechniques.slice(0, 3).forEach(item => selTech.add(item.key));
+  }
   buildChecklist($('eval-tech-list'), allTechniques, selTech, updateEstimate);
   buildChecklist($('eval-mode-list'), allModes, selMode, updateEstimate);
   buildChecklist($('eval-role-list'), allRoles, selRole, updateEstimate);
@@ -166,16 +273,43 @@ function actSweepEnabled() {
   return Boolean($('eval-act-sweep')?.checked);
 }
 
+// Two images per cell and one 3-clip camera set per entity x mode, so the
+// entity matrix is costed differently from the legacy sweeps.
+const EVAL_IMAGES_PER_CELL = 2;
+const EVAL_CAMERA_VARIANTS = 3;
+const EVAL_MAX_ENTITY_IMAGES = 48;
+
 function updateEstimate() {
+  const est = $('eval-run-estimate');
+  const runBtn = $('eval-run-btn');
+  const video = $('eval-video-toggle').checked;
+
+  if (entityMatrixEnabled()) {
+    const cells = selEntity.size * selMode.size * selTech.size;
+    const images = cells * EVAL_IMAGES_PER_CELL;
+    const clips = video ? selEntity.size * selMode.size * EVAL_CAMERA_VARIANTS : 0;
+    if (!cells) {
+      est.textContent = 'Select at least one entity, one mode, and one scene technique.';
+      est.classList.remove('error');
+      runBtn.disabled = true;
+      return;
+    }
+    const mins = Math.max(1, Math.round((images * 15 + clips * 60) / 60));
+    const over = images > EVAL_MAX_ENTITY_IMAGES;
+    est.textContent = `${cells} cell${cells === 1 ? '' : 's'} · ${images} images`
+      + (clips ? ` · ${clips} clips` : '') + ` · ~${mins} min`
+      + (over ? ` — too many (max ${EVAL_MAX_ENTITY_IMAGES} images), narrow the axes` : '');
+    est.classList.toggle('error', over);
+    runBtn.disabled = over;
+    return;
+  }
+
   const n = actSweepEnabled()
     ? selMode.size * 3
     : selTech.size * selMode.size * selRole.size;
-  const video = $('eval-video-toggle').checked;
   const perCell = video ? 65 : 15; // rough seconds/cell
   const secs = n * perCell;
   const mins = Math.max(1, Math.round(secs / 60));
-  const est = $('eval-run-estimate');
-  const runBtn = $('eval-run-btn');
   if (!n) {
     est.textContent = 'Select at least one of each axis.';
     est.classList.remove('error');
@@ -217,6 +351,8 @@ function runMatrix() {
     modes: Array.from(selMode),
     roles: Array.from(selRole),
     video: $('eval-video-toggle').checked,
+    entity_matrix: entityMatrixEnabled(),
+    entities: selectedEntities(),
     act_sweep: actSweepEnabled(),
     wildness: parseFloat($('eval-wildness').value) || 0,
   };
@@ -243,7 +379,7 @@ function pollRun(runId) {
   fetchEvalStatus(projectId, runId)
     .then(status => {
       const statusEl = $('eval-run-status');
-      renderGrid(status.cells || []);
+      renderGrid(status.cells || [], status);
       if (status.state === 'ready') {
         const noun = actSweepEnabled() ? 'shot plan' : 'cell';
         statusEl.textContent = `Done — ${status.total} ${noun}${status.total === 1 ? '' : 's'}.`;
@@ -264,10 +400,15 @@ function pollRun(runId) {
 
 // --- Results grid (one block per mode; rows = technique, cols = role) --------
 
-function renderGrid(cells) {
+function renderGrid(cells, status = {}) {
   const grid = $('eval-grid');
   grid.innerHTML = '';
   if (!cells.length) return;
+
+  if (status.matrix === 'entity' || cells.some(cell => Array.isArray(cell.images))) {
+    renderEntityMatrix(grid, cells, status.video_sets || []);
+    return;
+  }
 
   if (cells.some(cell => cell.plan_index != null)) {
     renderActSweepGrid(grid, cells);
@@ -309,6 +450,172 @@ function renderGrid(cells) {
     block.appendChild(table);
     grid.appendChild(block);
   });
+}
+
+// Entity matrix: one block per documentary mode. Columns are the highlighted
+// entities, rows within a block are the moodboard's scene techniques, and each
+// cell holds the two generated images with their own shot plan and timing. The
+// camera-variation clips seeded from that mode's chosen image close each block.
+function renderEntityMatrix(grid, cells, videoSets) {
+  const modeLabel = key => (allModes.find(m => m.key === key) || {}).label || key;
+  const techLabel = key => (allTechniques.find(t => t.key === key) || {}).label || key || 'No technique';
+  // Preserve the order the run was built in rather than sorting, so the columns
+  // match the entity checklist the presenter ticked.
+  const entities = [...new Set(cells.map(cell => cell.entity))];
+  const modes = [...new Set(cells.map(cell => cell.mode))];
+
+  modes.forEach(mode => {
+    const modeCells = cells.filter(cell => cell.mode === mode);
+    const techniques = [...new Set(modeCells.map(cell => cell.technique))];
+
+    const block = document.createElement('div');
+    block.className = 'module-card eval-mode-block';
+    const heading = document.createElement('h2');
+    heading.textContent = modeLabel(mode);
+    block.appendChild(heading);
+
+    const table = document.createElement('div');
+    table.className = 'eval-matrix eval-entity-matrix';
+    table.style.gridTemplateColumns = `150px repeat(${entities.length}, minmax(280px, 1fr))`;
+    table.appendChild(cornerCell('Technique ╲ Entity'));
+    entities.forEach(entity => table.appendChild(headerCell(entity, false)));
+
+    techniques.forEach(technique => {
+      table.appendChild(headerCell(techLabel(technique), true));
+      entities.forEach(entity => {
+        const cell = modeCells.find(item => item.entity === entity && item.technique === technique);
+        table.appendChild(entityCell(cell));
+      });
+    });
+
+    // One camera-variation row per mode block, aligned to the same columns.
+    const modeSets = (videoSets || []).filter(set => set.mode === mode);
+    if (modeSets.length) {
+      table.appendChild(headerCell('Camera variations', true));
+      entities.forEach(entity => {
+        table.appendChild(videoSetCell(modeSets.find(set => set.entity === entity)));
+      });
+    }
+    block.appendChild(table);
+    grid.appendChild(block);
+  });
+}
+
+function entityCell(cell) {
+  const host = document.createElement('div');
+  host.className = 'eval-matrix-cell eval-entity-cell';
+  if (!cell) {
+    host.classList.add('eval-empty');
+    host.textContent = '—';
+    return host;
+  }
+  const pair = document.createElement('div');
+  pair.className = 'eval-image-pair';
+  (cell.images || []).forEach(image => pair.appendChild(imageWithPlan(cell, image)));
+  host.appendChild(pair);
+  return host;
+}
+
+// One generated image with the shot plan that produced it and how long it took.
+function imageWithPlan(cell, image) {
+  const wrap = document.createElement('div');
+  wrap.className = 'eval-image-plan';
+  if (image.image_url) {
+    const img = document.createElement('img');
+    img.src = image.image_url;
+    img.alt = `${cell.entity} — ${cell.mode}`;
+    img.loading = 'lazy';
+    img.addEventListener('click', () => openCellModal({
+      ...cell, ...image, technique: cell.technique, mode: cell.mode,
+    }));
+    wrap.appendChild(img);
+  } else {
+    const failed = document.createElement('div');
+    failed.className = 'eval-empty eval-image-failed';
+    failed.textContent = image.error || 'no image';
+    wrap.appendChild(failed);
+  }
+  const plan = document.createElement('div');
+  plan.className = 'eval-plan';
+  [
+    ['Shot', image.shot_size],
+    ['Move', image.movement],
+    ['Function', image.narrative_operation],
+  ].forEach(([key, value]) => {
+    if (!value) return;
+    const row = document.createElement('div');
+    row.innerHTML = `<span class="eval-plan-key">${key}</span> ${escapeHtml(String(value))}`;
+    plan.appendChild(row);
+  });
+  if (image.visual_description) {
+    const visual = document.createElement('div');
+    visual.className = 'eval-plan-visual';
+    visual.textContent = image.visual_description;
+    plan.appendChild(visual);
+  }
+  const seconds = document.createElement('div');
+  seconds.className = 'eval-timing';
+  seconds.textContent = image.seconds != null ? `${image.seconds}s` : '';
+  plan.appendChild(seconds);
+  wrap.appendChild(plan);
+  return wrap;
+}
+
+// The clips generated from this block's chosen image, one per camera technique.
+function videoSetCell(set) {
+  const host = document.createElement('div');
+  host.className = 'eval-matrix-cell eval-video-set';
+  if (!set || !(set.videos || []).length) {
+    host.classList.add('eval-empty');
+    host.textContent = '—';
+    return host;
+  }
+  const seed = document.createElement('div');
+  seed.className = 'eval-plan-key eval-video-seed';
+  seed.textContent = `seeded from image ${Number(set.variant || 0) + 1}`;
+  host.appendChild(seed);
+  set.videos.forEach(video => {
+    const wrap = document.createElement('div');
+    wrap.className = 'eval-video-variant';
+    if (video.video_url) {
+      const el = document.createElement('video');
+      el.src = video.video_url;
+      el.controls = true;
+      el.muted = true;
+      el.playsInline = true;
+      el.preload = 'metadata';
+      wrap.appendChild(el);
+    } else {
+      const failed = document.createElement('div');
+      failed.className = 'eval-empty eval-image-failed';
+      failed.textContent = video.error || 'no video';
+      wrap.appendChild(failed);
+    }
+    const meta = document.createElement('div');
+    meta.className = 'eval-plan';
+    meta.innerHTML =
+      `<div><span class="eval-plan-key">Camera</span> ${escapeHtml(video.movement || '')}</div>`
+      + `<div><span class="eval-plan-key">Function</span> ${escapeHtml(video.narrative_operation || '')}</div>`;
+    if (video.direction) {
+      const direction = document.createElement('div');
+      direction.className = 'eval-plan-visual';
+      direction.textContent = video.direction;
+      meta.appendChild(direction);
+    }
+    const seconds = document.createElement('div');
+    seconds.className = 'eval-timing';
+    seconds.textContent = video.seconds != null ? `${video.seconds}s` : '';
+    meta.appendChild(seconds);
+    wrap.appendChild(meta);
+    host.appendChild(wrap);
+  });
+  return host;
+}
+
+function escapeHtml(value) {
+  const div = document.createElement('div');
+  div.textContent = String(value == null ? '' : value);
+  return div.innerHTML;
 }
 
 function renderActSweepGrid(grid, cells) {
@@ -482,7 +789,16 @@ function init() {
   populateScenePicker();
   wireTechFilter();
   $('eval-video-toggle').addEventListener('change', updateEstimate);
-  $('eval-act-sweep').addEventListener('change', updateEstimate);
+  // The three run shapes are alternatives, not layers: entity matrix wins over
+  // the act sweep, which wins over the legacy technique x mode x track grid.
+  $('eval-entity-matrix').addEventListener('change', () => {
+    if ($('eval-entity-matrix').checked) $('eval-act-sweep').checked = false;
+    updateEstimate();
+  });
+  $('eval-act-sweep').addEventListener('change', () => {
+    if ($('eval-act-sweep').checked) $('eval-entity-matrix').checked = false;
+    updateEstimate();
+  });
   const wild = $('eval-wildness');
   wild.addEventListener('input', () => { $('eval-wildness-val').textContent = parseFloat(wild.value).toFixed(1); });
   $('eval-run-btn').addEventListener('click', runMatrix);
@@ -496,7 +812,7 @@ function init() {
       // The act-wide sweep defaults to all documentary modes. The technique
       // checklist supplies the pool from which each shot plan receives a
       // stable random subset; roles remain available for the legacy matrix.
-      allTechniques.slice(0, 3).forEach(t => selTech.add(t.key));
+      // renderAxes seeds the technique axis from the moodboard distillation.
       allModes.forEach(mode => selMode.add(mode.key));
       allRoles.forEach(r => selRole.add(r.key));
       renderAxes();
