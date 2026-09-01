@@ -202,6 +202,64 @@ def scene(scene_id: str, title: str, node_ids: list[str], x: int = 0, y: int = 0
     }
 
 
+ARRANGE_TRANSCRIPT = (
+    "Researchers measured coastal change across three seasons and the tidal "
+    "wetlands shifted after every storm surge"
+)
+
+
+def smart_arrange_fixture_session() -> dict[str, Any]:
+    """A recorded narration with word timestamps and four footage clips.
+
+    Three clips name a phrase that occurs in the transcript and must land on
+    that phrase's own timestamp. The fourth names nothing in it, so it exercises
+    the backend match and, when that finds nothing either, the parked path.
+    No other fixture carries `transcript`/`transcriptWords`, so this is the only
+    coverage of word-timed alignment.
+    """
+    words = ARRANGE_TRANSCRIPT.split()
+    session = fixture_session(True, False)
+    nodes = session["actBoardNodes"]["Act 1"]
+    narration = next(node for node in nodes if node["id"] == "n1")
+    narration["transcript"] = ARRANGE_TRANSCRIPT
+    # Half a second per word makes every expected time readable by eye:
+    # word i starts at i * 0.5.
+    narration["transcriptWords"] = [
+        {"word": word, "start": round(i * 0.5, 2), "end": round(i * 0.5 + 0.45, 2)}
+        for i, word in enumerate(words)
+    ]
+    narration["audioDurationSeconds"] = 8.0
+    narration["narrationSegmentDurationSeconds"] = 8.0
+    narration["durationSeconds"] = 8.0
+    narration["startSeconds"] = 0
+    narration["narrationSpans"] = []
+    narration["footageFragments"] = ["coastal change", "tidal wetlands", "storm surge"]
+    narration["footageNodeIds"] = ["f1", "f2", "f3", "f4"]
+
+    scene = session["actBoardScenes"]["Act 1"][0]
+    template = next(node for node in nodes if node["id"] == "f1")
+    template["fragment"] = "coastal change"
+    for index, (node_id, fragment) in enumerate(
+        [("f2", "tidal wetlands"), ("f3", "storm surge"), ("f4", "drone establishing shot")], start=1
+    ):
+        clip = copy.deepcopy(template)
+        clip.update({
+            "id": node_id, "fragment": fragment, "filmabilityQuery": fragment,
+            "query": fragment, "sequenceIndex": index,
+        })
+        nodes.append(clip)
+        scene["nodeIds"].append(node_id)
+    # Start every clip at the wrong time, so the assertions below can only pass
+    # if Smart arrange actually rewrote the timeline.
+    for offset, node_id in enumerate(["f1", "f2", "f3", "f4"]):
+        clip = next(node for node in nodes if node["id"] == node_id)
+        clip["startSeconds"] = 6.0 - offset
+        clip["durationSeconds"] = 1
+        clip["timingWasManuallyAdjusted"] = True
+        clip["alignedToNarration"] = False
+    return session
+
+
 def fixture_session(with_footage: bool = True, second_scene: bool = True) -> dict[str, Any]:
     first_scene_id = "scene-1"
     n1 = narration_node(first_scene_id, with_footage)
@@ -786,6 +844,26 @@ def install_backend_mocks(context, calls: list[dict[str, Any]]) -> None:
                            else span.get("text", ""))}
                 for span in spans if isinstance(span, dict) and span.get("text")
             ] or [{"text": "coastal change", "bucket": "depictable", "query": "coastal change shoreline"}]}
+        elif path.endswith("/narration/match_footage"):
+            # Place any clip the frontend could not match itself onto the
+            # phrase named in its label, echoing the ids it asked about so the
+            # assertions can prove only the unresolved clips were sent.
+            transcript = str(body.get("transcript") or "")
+            matches = []
+            for clip in body.get("clips") or []:
+                if not isinstance(clip, dict):
+                    continue
+                target = str(clip.get("query") or "")
+                found = transcript.lower().find(target.lower()) if target else -1
+                if found < 0:
+                    continue
+                matches.append({
+                    "id": clip.get("id"),
+                    "start": found,
+                    "end": found + len(target),
+                    "confidence": 0.9,
+                })
+            response = {"matches": matches, "source": "llm"}
         elif path.endswith("/paper/media_queries"):
             response = {"video_query": "coastal change shoreline", "audio_query": "coastal change"}
         elif path.endswith("/media/search_video"):
@@ -1152,34 +1230,71 @@ def run_highlight_stress(page, calls: list[dict[str, Any]]) -> None:
 
 
 def run_smart_arrange(page, calls: list[dict[str, Any]]) -> None:
+    """Smart arrange must place each clip where its phrase is actually spoken.
+
+    The old version of this simulation asserted that boardX/boardY changed.
+    Smart arrange is a timeline action and deliberately never writes those (see
+    the comment above its `syncActBoardLiveSceneSnapshots` call), so that check
+    could not pass; and its remaining assertions were satisfied by the fixture's
+    own starting values, so it could not detect a correct arrangement either.
+    """
     wait_for_board(page)
     button = page.get_by_role("button", name="Smart arrange")
     check(button.count() == 1, "Smart arrange button is missing from the open scene board.")
-    before = state_from_page(page)
-    before_f1 = next(node for node in before["actBoardNodes"]["Act 1"] if node["id"] == "f1")
     # The fixed node-content panel can overlap the right side of a wide scene
     # board in the fixture; dispatching the real click event tests the handler
     # without making this simulation depend on the panel's viewport geometry.
     button.dispatch_event("click")
-    page.wait_for_timeout(450)
+    # The action holds a loading veil for a minimum readable interval and only
+    # then persists, so wait past that floor rather than racing it.
+    page.wait_for_timeout(1400)
     check(page.locator(".storyboard-act-board-scene-sections > .storyboard-act-board-scene-section").count() == 3,
           "Scene board did not render narration, footage, and sound sections.")
-    check(page.locator(".storyboard-act-board-scene-narration-scroll-btn").count() == 2,
-          "Scene narration scroll controls are missing.")
+
     state = state_from_page(page)
     nodes = {node["id"]: node for node in state["actBoardNodes"]["Act 1"]}
-    check((nodes["f1"].get("boardX"), nodes["f1"].get("boardY")) !=
-          (before_f1.get("boardX"), before_f1.get("boardY")),
-          "Smart arrange did not change the scene node layout.")
-    track_segments = page.locator(
-        ".storyboard-act-board-canvas-playback-tracks "
-        ".storyboard-act-board-footage-track-segment"
-    ).count()
-    check(track_segments >= 3,
-          "Smart arrange did not populate the narration, footage, and audio track segments.")
-    check(nodes["f1"].get("startSeconds") == 0, "Smart arrange did not anchor the first footage shot at narration start.")
-    check(float(nodes["f1"].get("durationSeconds", 0)) >= 0.5,
-          "Smart arrange produced an invalid footage duration.")
+    words = ARRANGE_TRANSCRIPT.split()
+
+    def word_start(phrase: str) -> float:
+        first = phrase.split()[0]
+        return round(words.index(first) * 0.5, 2)
+
+    # The first shot owns the pre-roll, so it starts at 0 rather than at its own
+    # phrase; every later shot starts on its phrase's own word timestamp.
+    check(nodes["f1"].get("startSeconds") == 0,
+          "Smart arrange did not anchor the first footage shot at narration start.")
+    for node_id, phrase in [("f2", "tidal wetlands"), ("f3", "storm surge")]:
+        expected = word_start(phrase)
+        actual = float(nodes[node_id].get("startSeconds", -1))
+        check(abs(actual - expected) < 0.01,
+              f"Smart arrange put {node_id} ({phrase!r}) at {actual}s, not its word timestamp {expected}s.")
+        check(nodes[node_id].get("alignedToNarration") is True,
+              f"Smart arrange did not mark {node_id} as aligned to the narration.")
+
+    # Only the clip that names nothing in the transcript may reach the backend.
+    match_calls = [item for item in calls if item["path"].endswith("/narration/match_footage")]
+    if match_calls:
+        requested = {clip.get("id") for clip in match_calls[-1]["body"].get("clips") or []}
+        check(requested == {"f4"},
+              f"Smart arrange sent {sorted(requested)} to the matcher; only the unmatched clip should be sent.")
+
+    # Shots must not overlap, and each must be a usable length.
+    ordered = sorted((nodes[i] for i in ["f1", "f2", "f3", "f4"]),
+                     key=lambda node: float(node.get("startSeconds", 0)))
+    cursor = 0.0
+    for node in ordered:
+        start = float(node.get("startSeconds", 0))
+        duration = float(node.get("durationSeconds", 0))
+        check(duration >= 0.5, f"Smart arrange produced an invalid duration for {node['id']}.")
+        check(start >= cursor - 0.01,
+              f"Smart arrange overlapped {node['id']} with the previous shot.")
+        cursor = start + duration
+
+    summary = state["actBoardScenes"]["Act 1"][0].get("lastArrangeSummary") or {}
+    check(summary.get("alignmentSource") == "transcription timestamps",
+          f"Smart arrange reported {summary.get('alignmentSource')!r} for a narration that has word timestamps.")
+    check(int(summary.get("alignedClips") or 0) >= 3,
+          f"Smart arrange aligned only {summary.get('alignedClips')} clips; three phrases occur in the transcript.")
 
 
 def run_track_reordering(page, calls: list[dict[str, Any]]) -> None:
@@ -1503,7 +1618,7 @@ def main() -> int:
         ("footage drop creates a merged composition", footage_composition_fixture_session(),
          lambda page, calls: run_footage_composition(page, calls, "merged")),
         ("lifted track segments reorder without rebuilding the board", reorder_fixture_session(), run_track_reordering),
-        ("smart arrange aligns scene nodes to narration", fixture_session(True, False), run_smart_arrange),
+        ("smart arrange aligns scene nodes to narration", smart_arrange_fixture_session(), run_smart_arrange),
         ("edited generation inputs reach image/video APIs", fixture_session(True, False), run_generation_inputs),
         ("edited source material reaches suggest narration", fixture_session(True, False), run_suggest_narration),
         ("scene/full playback and combined export include all scenes", fixture_session(True, True), run_playback_and_export),

@@ -1878,9 +1878,23 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 }
 
 .storyboard-act-board-column-header h4 {
+  flex: 0 0 auto;
   margin: 0;
   font-size: 20px;
   font-family: var(--cd-font-heading)
+}
+
+/* The act description runs inline after the heading. It is the only flexible
+   item on this line - the heading and the scene count both keep their
+   intrinsic width - so a long description wraps inside its own column instead
+   of pushing "N board scenes" off the end or sliding underneath it. The
+   generic `span` rule above pins every other span here to `flex: 0 0 auto`,
+   which is exactly what this one must not inherit. */
+.storyboard-act-board-column-header > .storyboard-act-board-node-header-description {
+  flex: 1 1 240px;
+  min-width: 0;
+  max-width: none;
+  align-self: baseline;
 }
 
 .storyboard-act-board-column-header span {
@@ -1891,6 +1905,7 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 
 .storyboard-act-board-column-header-actions {
   display: inline-flex;
+  flex: 0 0 auto;
   min-width: 0;
   align-items: center;
   justify-content: flex-end;

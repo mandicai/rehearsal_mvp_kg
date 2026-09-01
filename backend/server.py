@@ -122,6 +122,8 @@ from paper_extraction import extract_sections, PaperExtractionError
 from narrative_arc_llm import NarrativeArcLLMClient, NarrativeArcLLMCallError
 from narration_llm import NarrationLLMClient, NarrationLLMCallError
 from media_query_llm import MediaQueryLLMClient, MediaQueryLLMCallError
+from footage_match_llm import (
+    FootageMatchLLMClient, FootageMatchLLMCallError, fallback_match_footage)
 from edit_plan_llm import EditPlanLLMClient, EditPlanLLMCallError
 from sketch_llm import SketchLLMClient, SketchLLMCallError, _build_image_prompt
 from shot_plan_llm import ShotPlanLLMClient, ShotPlanLLMCallError, framing_directive, wildness_directive
@@ -258,6 +260,8 @@ _carta_pipeline = None
 _narration_nlp = None
 _filmability_cache = {}
 _filmability_cache_lock = threading.Lock()
+_footage_match_cache = {}
+_footage_match_cache_lock = threading.Lock()
 
 
 def _get_pipeline():
@@ -379,6 +383,7 @@ narrative_arc_client = NarrativeArcLLMClient()
 narration_client = NarrationLLMClient()
 moodboard_client = MoodboardLLMClient()
 media_query_client = MediaQueryLLMClient()
+footage_match_client = FootageMatchLLMClient()
 edit_plan_client = EditPlanLLMClient()
 sketch_client = SketchLLMClient()
 shot_plan_client = ShotPlanLLMClient()
@@ -1060,6 +1065,66 @@ def narration_classify():
             _filmability_cache.pop(next(iter(_filmability_cache)))
         _filmability_cache[cache_key] = results
     return jsonify({'spans': results, 'source': source})
+
+
+# One scene's Footage lane is the practical ceiling here. Smart arrange only
+# sends the clips it could not place by exact text matching, so this bound is
+# already generous for a scene that has been fully visualized.
+MAX_FOOTAGE_MATCH_CLIPS = 24
+
+
+@app.route('/narration/match_footage', methods=['POST'])
+def narration_match_footage():
+    """Map footage clips to the transcript spans they depict, as char offsets.
+
+    Returns 200 with a `source` discriminator rather than erroring when no LLM
+    is configured, so Smart arrange still works without an API key - the
+    fallback places every clip whose label literally appears in the transcript.
+    """
+    data = request.get_json(silent=True) or {}
+    transcript = str(data.get('transcript') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS]
+    raw_clips = data.get('clips') or []
+    if not transcript or not isinstance(raw_clips, list):
+        return jsonify({'matches': [], 'source': 'empty'})
+    clips = [
+        {
+            'id': str(item.get('id') or '').strip(),
+            'label': str(item.get('label') or '').strip()[:240],
+            'query': str(item.get('query') or '').strip()[:240],
+        }
+        for item in raw_clips[:MAX_FOOTAGE_MATCH_CLIPS]
+        if isinstance(item, dict) and str(item.get('id') or '').strip()
+    ]
+    if not clips:
+        return jsonify({'matches': [], 'source': 'empty'})
+    mode = str(data.get('documentary_mode') or '').strip()[:80]
+
+    cache_key = hashlib.sha256(json.dumps(
+        {'transcript': transcript, 'clips': clips, 'mode': mode},
+        sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()
+    with _footage_match_cache_lock:
+        cached = _footage_match_cache.get(cache_key)
+    if cached is not None:
+        return jsonify({'matches': cached, 'source': 'cache'})
+
+    source = 'fallback'
+    matches = []
+    if footage_match_client.is_configured():
+        try:
+            matches = footage_match_client.match_footage(transcript, clips, mode)
+            source = 'llm'
+        except FootageMatchLLMCallError:
+            matches = []
+    if not matches:
+        matches = fallback_match_footage(transcript, clips)
+    matches.sort(key=lambda item: int(item.get('start', 0)))
+
+    with _footage_match_cache_lock:
+        # Bound this process-local cache the same way the filmability one is.
+        if len(_footage_match_cache) >= 256:
+            _footage_match_cache.pop(next(iter(_footage_match_cache)))
+        _footage_match_cache[cache_key] = matches
+    return jsonify({'matches': matches, 'source': source})
 
 
 @app.route('/paper/media_queries', methods=['POST'])

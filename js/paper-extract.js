@@ -8737,6 +8737,88 @@ function actBoardNarrationFootageWindow(timings, index, totalDuration, previousS
   };
 }
 
+// Greedy forward scan for a phrase in a list of timed words. Shared by the
+// narration aligner and by Smart arrange so there is a single definition of
+// "this phrase occurs here" rather than two that can drift apart.
+function matchActBoardPhraseInTimedWords(timedWords, phrase, searchFrom = 0) {
+  const phraseWords = normalizedBoardWords(phrase);
+  if (!phraseWords.length || !Array.isArray(timedWords)) return null;
+  for (let i = Math.max(0, searchFrom); i <= timedWords.length - phraseWords.length; i += 1) {
+    if (phraseWords.every((word, offset) => timedWords[i + offset]?.word === word)) {
+      return {
+        index: i,
+        length: phraseWords.length,
+        startSeconds: timedWords[i].start,
+        endSeconds: timedWords[i + phraseWords.length - 1].end,
+        matchedText: timedWords.slice(i, i + phraseWords.length).map(item => item.word).join(' '),
+      };
+    }
+  }
+  return null;
+}
+
+// Build the timed-word table for one narration segment.
+//
+// Whisper's word list is matched to the transcript's words BY POSITION, so a
+// tokenization mismatch would shift every timestamp without any visible error.
+// Only trust the supplied timings when the two lists are the same length, and
+// report which of the two happened so callers can say whether an arrangement is
+// word-timed or merely estimated.
+function actBoardTimedWordsFor(narrationNode) {
+  const transcript = String(narrationNode?.transcript || '').trim();
+  const duration = Math.max(0.5, Number(narrationNode?.audioDurationSeconds) > 0
+    ? Number(narrationNode.audioDurationSeconds)
+    : estimateActBoardNarrationSeconds(transcript || narrationNode?.text));
+  if (!transcript) return { words: [], duration, timed: false };
+  const transcriptWords = normalizedBoardWords(transcript);
+  const supplied = Array.isArray(narrationNode.transcriptWords)
+    ? narrationNode.transcriptWords.filter(word =>
+      Number.isFinite(Number(word?.start)) && Number.isFinite(Number(word?.end)))
+    : [];
+  const timed = supplied.length > 0 && supplied.length === transcriptWords.length;
+  const total = Math.max(transcriptWords.length, 1);
+  const words = transcriptWords.map((word, index) => ({
+    word,
+    start: timed ? Number(supplied[index].start) : (index / total) * duration,
+    end: timed ? Number(supplied[index].end) : ((index + 1) / total) * duration,
+  }));
+  return { words, duration, timed };
+}
+
+// Map a character window in the transcript onto the word range it covers, so a
+// span's saved offsets (or a match returned by the backend) can be read off the
+// same timed-word table that exact matching uses. The index convention matches
+// `appendActBoardNarrationWords`: words before the offset, counted the same way.
+function actBoardWordRangeForCharRange(transcript, start, end) {
+  const source = String(transcript || '');
+  const from = Math.max(0, Math.min(source.length, Number(start)));
+  const to = Math.max(from, Math.min(source.length, Number(end)));
+  if (!(to > from)) return null;
+  const index = normalizedBoardWords(source.slice(0, from)).length;
+  const length = normalizedBoardWords(source.slice(from, to)).length;
+  return length ? { index, length } : null;
+}
+
+// Character offsets a narration already knows for its phrases. Footage nodes
+// keep only a copy of the phrase text, so this is what recovers the position of
+// that text in the transcript without re-deriving it.
+function actBoardPhraseOffsetsFor(narrationNode) {
+  const offsets = new Map();
+  const add = item => {
+    const text = String(item?.text || item?.fragment || '').trim();
+    const start = Number(item?.start);
+    const end = Number(item?.end);
+    if (!text || !Number.isFinite(start) || !Number.isFinite(end) || end <= start) return;
+    const key = normalizedBoardWords(text).join(' ');
+    if (key && !offsets.has(key)) offsets.set(key, { start, end });
+  };
+  (narrationNode?.narrationSpans || []).forEach(add);
+  (narrationNode?.footageSuggestedPhrases || []).forEach(add);
+  (narrationNode?.selectedFootagePhrases || []).forEach(add);
+  (narrationNode?.userFilmablePhrases || []).forEach(add);
+  return offsets;
+}
+
 function alignActBoardNarrationFragments(narrationNode, fragmentOverride = null) {
   const transcript = (narrationNode.transcript || '').trim();
   const hasOverride = Array.isArray(fragmentOverride);
@@ -8767,24 +8849,15 @@ function alignActBoardNarrationFragments(narrationNode, fragmentOverride = null)
   });
   let searchFrom = 0;
   const timings = fragments.map(fragment => {
-    const phraseWords = normalizedBoardWords(fragment);
-    let match = -1;
-    for (let i = searchFrom; i <= timedWords.length - phraseWords.length; i += 1) {
-      if (phraseWords.every((word, offset) => timedWords[i + offset].word === word)) {
-        match = i;
-        break;
-      }
-    }
-    if (match >= 0) {
-      searchFrom = match + phraseWords.length;
-      return {
-        fragment,
-        startSeconds: timedWords[match].start,
-        endSeconds: timedWords[match + phraseWords.length - 1].end,
-        matchedText: timedWords.slice(match, match + phraseWords.length).map(item => item.word).join(' '),
-      };
-    }
-    return null;
+    const hit = matchActBoardPhraseInTimedWords(timedWords, fragment, searchFrom);
+    if (!hit) return null;
+    searchFrom = hit.index + hit.length;
+    return {
+      fragment,
+      startSeconds: hit.startSeconds,
+      endSeconds: hit.endSeconds,
+      matchedText: hit.matchedText,
+    };
   });
   const fallbackWords = Math.max(1, fragments.reduce((sum, fragment) =>
     sum + normalizedBoardWords(fragment).length, 0));
@@ -9260,6 +9333,157 @@ function organizeActBoardFootageNodes(scene, nodes, nodeStack) {
   return true;
 }
 
+// Smart arrange can be superseded by a second click. One controller per scene,
+// with the same identity-checked cleanup the narration analysis uses, so a
+// stale run can never write a half-finished arrangement.
+const actBoardArrangeAbortControllers = new Map();
+
+// Scenes with a Smart arrange in flight. Tearing the board down clears every
+// scene's loading count, which is correct only when nothing owns that veil;
+// Smart arrange rerenders mid-run, so it has to declare itself the owner the
+// same way a Visualize batch does or its own rerender erases its veil.
+const actBoardSceneArrangeKeys = new Set();
+
+// Ask the backend which transcript span each still-unplaced clip depicts.
+// Returns a Map of nodeId -> {start, end} character offsets, or an empty Map on
+// any failure: an unresolved clip is parked, which is a far better outcome than
+// a clip cut to the wrong words.
+async function requestActBoardFootageMatches(narrationNode, clips, signal) {
+  const transcript = String(narrationNode?.transcript || '').trim();
+  const empty = new Map();
+  if (!transcript || !clips.length) return empty;
+  const clipPayload = clips.map(node => ({
+    id: node.id,
+    label: String(node.fragment || '').trim(),
+    query: String(node.filmabilityQuery || node.query || '').trim(),
+  })).filter(clip => clip.label || clip.query);
+  if (!clipPayload.length) return empty;
+
+  // Reuse the existing 'narration' cache bucket rather than adding a kind: the
+  // three bucket names are hardcoded in loadActBoardPersistentCache, and an
+  // unknown kind silently no-ops.
+  const cacheKey = `match|${actBoardNarrationTextHash(transcript)}|${actBoardCacheKey(
+    JSON.stringify(clipPayload.map(clip => [clip.id, clip.label, clip.query])))}`;
+  const cached = readActBoardPersistentCache('narration', cacheKey);
+  const toMap = matches => new Map((matches || [])
+    .filter(match => match && match.id)
+    .map(match => [String(match.id), { start: Number(match.start), end: Number(match.end) }]));
+  if (cached?.matches) return toMap(cached.matches);
+
+  try {
+    const result = await fetchFootageMatches({
+      transcript,
+      clips: clipPayload,
+      documentaryMode: actBoardDocumentaryModeForNode(narrationNode.actKey, narrationNode),
+    }, signal);
+    const matches = Array.isArray(result?.matches) ? result.matches : [];
+    writeActBoardPersistentCache('narration', cacheKey, { matches, source: result?.source || '' });
+    return toMap(matches);
+  } catch (error) {
+    if (error?.name === 'AbortError') throw error;
+    return empty;
+  }
+}
+
+// Resolve every clip attached to one narration to a word range in its
+// transcript, without touching the timeline yet. Tier 1 is an exact
+// word-sequence match; tier 2 is the phrase offsets the narration already
+// stores. Anything still unresolved is handed back for the backend to place.
+function planActBoardFootageAlignment(narration, associated) {
+  const { words, duration, timed } = actBoardTimedWordsFor(narration);
+  const transcript = String(narration.transcript || '').trim();
+  const offsets = actBoardPhraseOffsetsFor(narration);
+  const resolved = new Map();
+  const unresolved = [];
+  let searchFrom = 0;
+  associated.forEach(node => {
+    const phrase = String(node.fragment || '').trim();
+    let range = null;
+    if (words.length && phrase) {
+      const hit = matchActBoardPhraseInTimedWords(words, phrase, searchFrom);
+      if (hit) {
+        range = { index: hit.index, length: hit.length };
+        searchFrom = hit.index + hit.length;
+      }
+    }
+    if (!range && transcript && phrase) {
+      const saved = offsets.get(normalizedBoardWords(phrase).join(' '));
+      if (saved) range = actBoardWordRangeForCharRange(transcript, saved.start, saved.end);
+    }
+    if (range) resolved.set(node.id, range);
+    else unresolved.push(node);
+  });
+  return { narration, associated, words, duration, timed, transcript, resolved, unresolved };
+}
+
+// Turn resolved word ranges into rail timing. Clips are ordered by where their
+// phrase actually falls in the narration, then handed to the shared window rule
+// so a shot runs until the next one starts - the same behaviour the narration
+// aligner produces, rather than a second definition of it.
+function applyActBoardFootageAlignment(plan, llmMatches) {
+  const { narration, associated, words, duration, transcript, resolved } = plan;
+  (llmMatches || new Map()).forEach((offsets, nodeId) => {
+    if (resolved.has(nodeId)) return;
+    const range = actBoardWordRangeForCharRange(transcript, offsets.start, offsets.end);
+    if (range) resolved.set(nodeId, range);
+  });
+
+  const placed = associated
+    .filter(node => resolved.has(node.id))
+    .map(node => {
+      const range = resolved.get(node.id);
+      const first = words[range.index];
+      const last = words[Math.min(words.length - 1, range.index + range.length - 1)];
+      return {
+        node,
+        startSeconds: Number(first?.start) || 0,
+        endSeconds: Number(last?.end) || Number(first?.start) || 0,
+      };
+    })
+    .sort((a, b) => a.startSeconds - b.startSeconds);
+  const parked = associated.filter(node => !resolved.has(node.id));
+
+  const rows = placed.map(item => ({
+    fragment: String(item.node.fragment || ''),
+    startSeconds: item.startSeconds,
+    endSeconds: item.endSeconds,
+  }));
+  const narrationStart = Number(narration.startSeconds) || 0;
+  let previousStart = 0;
+  let cursor = 0;
+  placed.forEach((item, index) => {
+    const window = actBoardNarrationFootageWindow(rows, index, duration, previousStart);
+    const start = Math.max(cursor, window.startSeconds);
+    const length = Math.max(0.5, window.endSeconds - start);
+    item.node.sequenceIndex = index;
+    item.node.startSeconds = Number((narrationStart + start).toFixed(2));
+    item.node.durationSeconds = Number(length.toFixed(2));
+    item.node.durationWasSuggested = false;
+    item.node.alignedToNarration = true;
+    // Preserve the phrase-aligned start when the scene rail is rebuilt.
+    // `orderedActBoardSceneFootage` otherwise treats a non-manual shot as a
+    // footage-only chain and packs it from 0, undoing the alignment.
+    item.node.timingWasManuallyAdjusted = true;
+    previousStart = start;
+    cursor = start + length;
+  });
+  // A clip whose phrase is nowhere in the transcript still belongs to the
+  // scene - an uploaded shot, or one whose wording changed on a re-record.
+  // Park it after the aligned clips in its existing order rather than dropping
+  // it or cutting it to words it does not name.
+  parked.forEach((node, offset) => {
+    const length = Math.max(0.5, Number(node.durationSeconds) || 0.5);
+    node.sequenceIndex = placed.length + offset;
+    node.startSeconds = Number((narrationStart + cursor).toFixed(2));
+    node.durationSeconds = Number(length.toFixed(2));
+    node.durationWasSuggested = false;
+    node.alignedToNarration = false;
+    node.timingWasManuallyAdjusted = true;
+    cursor += length;
+  });
+  return { rows, duration, placed: placed.length, parked: parked.length };
+}
+
 // Arrange a scene's timeline rails against its narration rather than against
 // the current canvas positions. Narration phrase timings are the source of
 // truth for footage; sound nodes follow their linked target when a legacy link
@@ -9267,7 +9491,7 @@ function organizeActBoardFootageNodes(scene, nodes, nodeStack) {
 // Smart arrange is an explicit timing action, so it may replace stale/manual
 // segment positions while leaving every node's spatial canvas coordinates
 // untouched.
-function smartArrangeActBoardScene(scene, nodes, nodeStack) {
+async function smartArrangeActBoardScene(scene, nodes, nodeStack, signal = null) {
   if (!scene || !nodeStack) return false;
   const included = actBoardSceneNodes(scene, nodes);
   if (!included.length) return false;
@@ -9348,29 +9572,6 @@ function smartArrangeActBoardScene(scene, nodes, nodeStack) {
     if (!queryWords.size || !phraseWords.length) return 0;
     return phraseWords.filter(word => queryWords.has(word)).length / queryWords.size;
   };
-  const phraseRowsFor = narration => {
-    const duration = Math.max(0.5,
-      actBoardNarrationSegmentDuration(narration)
-        || Number(narration.durationSeconds)
-        || estimateActBoardNarrationSeconds(narration.transcript || narration.text));
-    const existing = Array.isArray(narration.fragmentTimings)
-      ? narration.fragmentTimings.filter(row => row && row.fragment)
-      : [];
-    if (existing.length) return { duration, rows: existing };
-    const fragments = Array.isArray(narration.footageFragments)
-      ? narration.footageFragments.filter(Boolean) : [];
-    if (!fragments.length) return { duration, rows: [] };
-    const totalWords = Math.max(1, fragments.reduce((sum, item) =>
-      sum + normalizedBoardWords(item).length, 0));
-    let cursor = 0;
-    const rows = fragments.map(fragment => {
-      const length = Math.max(0.5, duration * normalizedBoardWords(fragment).length / totalWords);
-      const row = { fragment, startSeconds: cursor, endSeconds: Math.min(duration, cursor + length) };
-      cursor = row.endSeconds;
-      return row;
-    });
-    return { duration, rows };
-  };
   const rowForPhrase = (rows, phrase) => {
     const exact = normalizePhrase(phrase);
     if (!exact) return null;
@@ -9390,40 +9591,46 @@ function smartArrangeActBoardScene(scene, nodes, nodeStack) {
     return { start, end: Math.max(start + 0.5, end) };
   };
 
-  const narrationRows = new Map();
-  narrations.forEach(narration => narrationRows.set(narration.id, phraseRowsFor(narration)));
+  // Resolve every clip to a position in its narration's transcript before
+  // touching the timeline, so a clip's start comes from when its phrase is
+  // actually spoken rather than from its position in a list.
   const assignedFootage = new Set();
-  narrations.forEach(narration => {
-    const rowsData = narrationRows.get(narration.id);
-    const rows = rowsData.rows;
-    const duration = rowsData.duration;
+  const plans = narrations.map(narration => {
     const associated = footage.filter(node => node.narrationNodeId === narration.id
       || (narration.footageNodeIds || []).includes(node.id))
       .sort((a, b) => (Number(a.sequenceIndex) || 0) - (Number(b.sequenceIndex) || 0)
         || (Number(a.startSeconds) || 0) - (Number(b.startSeconds) || 0));
-    let cursor = 0;
-    associated.forEach((node, index) => {
-      assignedFootage.add(node.id);
-      node.sequenceIndex = index;
-      const row = rowForPhrase(rows, node.fragment);
-      const rowIndex = row ? rows.indexOf(row) : -1;
-      const window = rowIndex >= 0
-        ? rowWindow(rows, rowIndex, duration, cursor)
-        : { start: cursor, end: cursor + Math.max(0.5,
-          duration * Math.max(1, normalizedBoardWords(node.fragment).length)
-            / Math.max(1, normalizedBoardWords(narration.transcript || narration.text).length)) };
-      const start = Math.max(cursor, window.start);
-      const length = Math.max(0.5, window.end - start);
-      node.startSeconds = Number(((Number(narration.startSeconds) || 0) + start).toFixed(2));
-      node.durationSeconds = Number(length.toFixed(2));
-      node.durationWasSuggested = false;
-      node.alignedToNarration = Boolean(row);
-      // Preserve the phrase-aligned start when the scene rail is rebuilt.
-      // `orderedActBoardSceneFootage` otherwise treats a non-manual shot as a
-      // footage-only chain and packs it from 0, undoing Smart arrange's
-      // narration alignment on the next render.
-      node.timingWasManuallyAdjusted = true;
-      cursor = start + length;
+    associated.forEach(node => assignedFootage.add(node.id));
+    return planActBoardFootageAlignment(narration, associated);
+  });
+
+  // Only the clips that exact matching could not place reach the backend, so a
+  // scene whose footage came from its own highlights makes no request at all.
+  // One call per transcript; several narrations resolve concurrently.
+  const llmByNarration = new Map();
+  await Promise.all(plans
+    .filter(plan => plan.unresolved.length && plan.transcript)
+    .map(async plan => {
+      llmByNarration.set(plan.narration.id,
+        await requestActBoardFootageMatches(plan.narration, plan.unresolved, signal));
+    }));
+
+  const narrationRows = new Map();
+  let alignedClipCount = 0;
+  let parkedClipCount = 0;
+  let anyEstimatedTiming = false;
+  plans.forEach(plan => {
+    const applied = applyActBoardFootageAlignment(plan, llmByNarration.get(plan.narration.id));
+    narrationRows.set(plan.narration.id, { duration: applied.duration, rows: applied.rows });
+    alignedClipCount += applied.placed;
+    parkedClipCount += applied.parked;
+    if (applied.placed && !plan.timed) anyEstimatedTiming = true;
+  });
+  narrations.forEach(narration => {
+    if (narrationRows.has(narration.id)) return;
+    narrationRows.set(narration.id, {
+      duration: actBoardTimedWordsFor(narration).duration,
+      rows: [],
     });
   });
 
@@ -9489,6 +9696,15 @@ function smartArrangeActBoardScene(scene, nodes, nodeStack) {
   // Do not call organizeActBoardSceneNodes here. Smart arrange is a timeline
   // operation only; moving canvas cards or expanding the scene frame makes it
   // appear as though the action merely changed the board height.
+  // An arrangement built from word timestamps and one built from a word-count
+  // estimate look identical on the rail, so record which this was. The scene's
+  // narration already carries the same distinction in `alignmentSource`.
+  scene.lastArrangeSummary = {
+    alignedClips: alignedClipCount,
+    parkedClips: parkedClipCount,
+    alignmentSource: anyEstimatedTiming
+      ? 'estimated from transcript duration' : 'transcription timestamps',
+  };
   syncActBoardLiveSceneSnapshots(scene);
   saveDebugSession();
   rerenderActBoard();
@@ -11478,7 +11694,13 @@ function shrinkActBoardFootageLaneToFit(layer) {
     if (!(surplus > 1)) break;
     const current = Math.max(116,
       Number(scene.boardHeight) || ACT_BOARD_DEFAULT_SCENE_HEIGHT);
-    const next = Math.max(116, Math.round(current - surplus));
+    // Never shrink past the height a scene is born with. The grid's own
+    // minimum row is far shorter than that, so trimming all the way down left
+    // the lane a fraction of the size it had when the scene was first spawned.
+    // A scene deliberately resized below the default keeps that size: `next`
+    // cannot then beat `current`, and the guard below stops the pass.
+    const next = Math.max(ACT_BOARD_DEFAULT_SCENE_HEIGHT,
+      Math.round(current - surplus));
     if (next >= current) break;
     scene.boardHeight = next;
     sceneCard.style.height = `${next}px`;
@@ -12082,7 +12304,9 @@ function teardownActBoardView(board) {
   actBoardSceneMediaPatchTimers.clear();
   if (actBoardDomRegistry?.board === board) {
     actBoardDomRegistry = null;
-    if (!actBoardSceneVisualizeTokens.size) actBoardSceneLoadingCounts.clear();
+    if (!actBoardSceneVisualizeTokens.size && !actBoardSceneArrangeKeys.size) {
+      actBoardSceneLoadingCounts.clear();
+    }
     actBoardPendingPatch = null;
     if (actBoardPatchFrame != null) {
       if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(actBoardPatchFrame);
@@ -14834,7 +15058,13 @@ function buildActBoardNarrationPlayback(actKey, node, boardLayer, playbackNode =
       })
       : orderedActBoardSceneFootage(actKey, scene, sceneNodes);
   const linked = linkedAll.filter(actBoardTrackNodeVisible);
-  const sceneAudio = sceneNodes.filter(item => item.type === 'audio');
+  // Full playback spans every scene, so `playbackNode.sceneId` is unset and
+  // `sceneNodes` above is empty. Music/sound that lives on a scene's own rail
+  // carries no `linkedToNodeId`, so the linked-audio pass below cannot see it
+  // either - which silently dropped every scene-rail track from the full mix.
+  const sceneAudio = playbackNode?.sceneId
+    ? sceneNodes.filter(item => item.type === 'audio')
+    : actBoardRenderNodesForAct(actKey).filter(item => item.type === 'audio');
   const linkedNarrationAudio = narrationNodesAll.flatMap(narration =>
     orderedActBoardLinkedAudio(actKey, narration));
   // Track membership is independent from the playback toggle. Keep excluded
@@ -22509,7 +22739,41 @@ function buildActBoardBoardSceneCard(scene, nodes, nodeStack) {
     smartArrangeNodes.addEventListener('click', event => {
       event.preventDefault();
       event.stopPropagation();
-      smartArrangeActBoardScene(scene, liveNodes, nodeStack);
+      const actKey = scene.actKey;
+      const sceneId = scene.id;
+      // A second click supersedes the first. Same identity-checked cleanup as
+      // the narration analysis, so the older run cannot clear the veil or write
+      // a partial arrangement after the newer one has started.
+      actBoardArrangeAbortControllers.get(sceneId)?.abort?.();
+      const controller = typeof AbortController === 'function' ? new AbortController() : null;
+      actBoardArrangeAbortControllers.set(sceneId, controller);
+      const shownAt = Date.now();
+      const loadingKey = `${actKey}:${sceneId}`;
+      actBoardSceneArrangeKeys.add(loadingKey);
+      setActBoardSceneLoading(actKey, sceneId, true, 'Syncing footage to the narration…');
+      smartArrangeActBoardScene(scene, liveNodes, nodeStack, controller?.signal)
+        .catch(error => {
+          if (error?.name !== 'AbortError') {
+            setActBoardSceneLoadingMessage(sceneId, 'Could not sync footage to the narration.');
+          }
+        })
+        .finally(async () => {
+          // The veil is reference-counted, and this run took exactly one hold
+          // on it, so it must always release exactly one - a superseded run
+          // that simply returned here would leave the veil up forever.
+          if (actBoardArrangeAbortControllers.get(sceneId) !== controller) {
+            setActBoardSceneLoading(actKey, sceneId, false);
+            return;
+          }
+          actBoardArrangeAbortControllers.delete(sceneId);
+          // The arrange rerenders the board mid-run; the loading count survives
+          // that (see teardownActBoardView) and refreshActBoardDomRegistry
+          // re-attaches the veil to the new scene card, so there is nothing to
+          // re-assert here - only the floor to wait out.
+          await waitForActBoardSceneLoadingFloor(shownAt);
+          actBoardSceneArrangeKeys.delete(loadingKey);
+          setActBoardSceneLoading(actKey, sceneId, false);
+        });
     });
     clearNodes = document.createElement('button');
     clearNodes.type = 'button';
@@ -24081,10 +24345,14 @@ function buildActBoardView(sections, assignmentsByIndex, controlsRoot = null) {
       const description = document.createElement('span');
       description.className = 'storyboard-act-board-node-header-description';
       description.textContent = actDescription;
-      nodeHeaderLabel.appendChild(description);
+      // The description belongs to the act title line, so it sits inline after
+      // the heading rather than in a row of its own beneath the rule.
+      columnHeader.insertBefore(description, columnHeaderActions);
     }
     nodeHeader.appendChild(nodeHeaderLabel);
-    column.appendChild(nodeHeader);
+    // Without the description this header has nothing left to show; appending
+    // it anyway would leave an empty row padding the top of the canvas.
+    if (nodeHeaderLabel.childElementCount) column.appendChild(nodeHeader);
 
     // const linkingGuide = document.createElement('div');
     // linkingGuide.className = 'storyboard-act-board-linking-guide';
@@ -26801,6 +27069,9 @@ function buildActBoardRenderPlan() {
   const sequences = [];
   const narrations = [];
   const soundEffects = [];
+  // Scenes whose rail audio has already been emitted, so a scene with several
+  // narration segments contributes its music/sound exactly once.
+  const sceneRailAudioEmitted = new Set();
   let cursor = 0;
   currentArcSections.forEach(act => {
     const nodes = actBoardRenderNodesForAct(act.key);
@@ -26880,8 +27151,23 @@ function buildActBoardRenderPlan() {
         }
       }
       recomputeActBoardTiming(narrationNode);
-      const linkedAudio = orderedActBoardLinkedAudio(act.key, narrationNode, nodes)
-        .filter(actBoardTrackNodeVisible);
+      // Scene-rail music/sound is not hung off a narration segment, so
+      // collecting audio purely by `linkedToNodeId` left it out of the render
+      // payload entirely - the exported mp4 came back silent underneath.
+      // Emit a scene's rail audio with the first of its narration sequences,
+      // so several narration segments in one scene cannot duplicate it.
+      const sceneRailAudio = scene && !sceneRailAudioEmitted.has(scene.id)
+        ? nodes.filter(item => item.type === 'audio'
+          && !item.linkedToNodeId
+          && item.sceneId === scene.id)
+        : [];
+      if (scene) sceneRailAudioEmitted.add(scene.id);
+      const linkedAudio = [
+        ...orderedActBoardLinkedAudio(act.key, narrationNode, nodes),
+        ...sceneRailAudio,
+      ]
+        .filter(actBoardTrackNodeVisible)
+        .sort((a, b) => (Number(a.startSeconds) || 0) - (Number(b.startSeconds) || 0));
       const footage = linked.map(node => actBoardRenderFootageSpec(node, nodes));
       if (!footage.length) return;
       const sequenceDuration = Math.max(
