@@ -9913,15 +9913,26 @@ function actBoardFootageNodeTitleParts(actKey, node) {
   }
   const narrationAnchor = actBoardNarrationForNode(actKey, node);
   const fragment = String(node.fragment || '').trim();
-  const hasAnchor = Boolean(narrationAnchor && fragment
-    && fragment.toLocaleLowerCase() !== 'new footage idea');
-  if (!hasAnchor) return { hasTitle: false, uploaded: false, narration: '', detail: '' };
+  // 'new footage idea' is the placeholder a blank card carries, not a phrase.
+  const phrase = fragment.toLocaleLowerCase() === 'new footage idea' ? '' : fragment;
   const detail = actBoardVisualDisplayPhrase(node, visual)
-    || String(node.query || node.filmabilityQuery || fragment).trim();
+    || String(node.query || node.filmabilityQuery || phrase).trim();
+  // A pasted card, or one spawned by double-clicking the canvas, has no
+  // narration parent - but it still carries the phrase it depicts. Gating the
+  // whole title on the anchor hid that phrase entirely on those cards. The
+  // anchor governs the "Narration:" row, not whether there is a label at all.
+  if (!narrationAnchor || !phrase) {
+    return {
+      hasTitle: Boolean(detail || phrase),
+      uploaded: false,
+      narration: '',
+      detail: detail || phrase,
+    };
+  }
   return {
     hasTitle: true,
     uploaded: false,
-    narration: fragment,
+    narration: phrase,
     detail,
   };
 }
@@ -10213,8 +10224,21 @@ function clearActBoardFootageDropHover(boardLayer) {
   return hover;
 }
 
+// `data-node-id` is carried by BOTH a node's canvas card and the scene's
+// node-list chips, and the chips sit earlier in the scene card than the Footage
+// lane the cards were moved into. A bare attribute query therefore returns a
+// 102x17 chip rather than the card - which is what silently broke the footage
+// drop menu: the source card it suppressed for hit-testing was never the card
+// actually under the pointer, so a drop target always resolved to the source
+// itself and the hover was cleared on every move.
+function actBoardNodeCard(root, nodeId) {
+  if (!root || !nodeId) return null;
+  return root.querySelector(
+    `.storyboard-act-board-node[data-node-id="${String(nodeId).replace(/"/g, '\\"')}"]`) || null;
+}
+
 function actBoardDropElementsAt(boardLayer, source, clientX, clientY) {
-  const sourceCard = boardLayer?.querySelector?.(`[data-node-id="${source?.id}"]`);
+  const sourceCard = actBoardNodeCard(boardLayer, source?.id);
   const previousPointerEvents = sourceCard?.style.pointerEvents || '';
   if (sourceCard) sourceCard.style.pointerEvents = 'none';
   const elements = typeof document.elementsFromPoint === 'function'
@@ -10242,7 +10266,7 @@ function updateActBoardFootageDropHover(boardLayer, source, clientX, clientY) {
     if (current && current.target?.id === target.id && current.source?.id === source.id) return;
     clearActBoardFootageDropHover(boardLayer);
     const hover = { source, target, sourceCard: null, targetCard, ready: false, timer: null };
-    hover.sourceCard = boardLayer.querySelector(`[data-node-id="${source.id}"]`);
+    hover.sourceCard = actBoardNodeCard(boardLayer, source.id);
     hover.sourceCard?.classList.add('footage-drop-hover');
     targetCard.classList.add('footage-drop-hover');
     hover.timer = setTimeout(() => {
@@ -10281,9 +10305,9 @@ function updateActBoardLinkDropHover(boardLayer, source, elements) {
   if (current && current.source?.id === source.id
     && current.sourceId === sourceId && current.targetId === targetId) return;
   clearActBoardLinkDropHover(boardLayer);
-  const sourceCard = boardLayer.querySelector(`[data-node-id="${source.id}"]`);
+  const sourceCard = actBoardNodeCard(boardLayer, source.id);
   const targetCards = [sourceId, targetId]
-    .map(id => boardLayer.querySelector(`[data-node-id="${id}"]`))
+    .map(id => actBoardNodeCard(boardLayer, id))
     .filter(Boolean);
   const hover = {
     source, sourceId, targetId, sourceCard, targetCards, ready: false, timer: null,
@@ -11792,7 +11816,7 @@ function wireActBoardNodeDragging(card, node, boardLayer, index) {
       ? connectedNodeIds
         .map(id => {
           const childNode = actBoardNodesForAct(node.actKey).find(item => item.id === id);
-          const childCard = childNode && boardLayer.querySelector(`[data-node-id="${id}"]`);
+          const childCard = childNode && actBoardNodeCard(boardLayer, id);
           if (!childNode || !childCard) return null;
           return {
             node: childNode,
@@ -11822,7 +11846,7 @@ function wireActBoardNodeDragging(card, node, boardLayer, index) {
           const selectedNode = actBoardNodesForAct(node.actKey)
             .find(item => item.id === id);
           const selectedCard = selectedNode
-            && boardLayer.querySelector(`[data-node-id="${id}"]`);
+            && actBoardNodeCard(boardLayer, id);
           if (!selectedNode || !selectedCard) return null;
           return {
             node: selectedNode,
@@ -11950,7 +11974,19 @@ function wireActBoardNodeDragging(card, node, boardLayer, index) {
         if (trackUnderPointer && typeof trackUnderPointer._actBoardCanDropNode === 'function'
           && trackUnderPointer._actBoardCanDropNode(node)) {
           trackUnderPointer.classList.add('drop-target');
-          trackUnderPointer._actBoardShowDropPreview?.(node, moveEvent.clientX);
+          const ghost = trackUnderPointer._actBoardShowDropPreview?.(node, moveEvent.clientX);
+          // Line the dragged card up with the ghost while the pointer is over a
+          // rail, so the card reads as the segment being placed rather than
+          // floating wherever it happened to be grabbed. Horizontal only - the
+          // card stays in its own lane vertically.
+          const ghostRect = ghost?.getBoundingClientRect?.();
+          if (ghostRect?.width) {
+            const centered = ghostRect.left + ghostRect.width / 2
+              - currentRootRect.left - card.offsetWidth / 2;
+            card.style.left = `${node.type === 'footage'
+              ? Math.max(footageBounds.minX, Math.min(centered, footageBounds.maxX))
+              : Math.max(0, centered)}px`;
+          }
         }
       }
       // Pointer events can arrive much faster than layout can be measured.
@@ -12037,8 +12073,8 @@ function wireActBoardNodeDragging(card, node, boardLayer, index) {
           const hover = boardLayer._actBoardFootageDropHover;
           clearActBoardFootageDropHover(boardLayer);
           if (hover?.ready && hover.source?.id === node.id && hover.target?.id === droppedNode.id) {
-            const sourceCard = boardLayer.querySelector(`[data-node-id="${node.id}"]`);
-            const targetCard = boardLayer.querySelector(`[data-node-id="${droppedNode.id}"]`);
+            const sourceCard = actBoardNodeCard(boardLayer, node.id);
+            const targetCard = actBoardNodeCard(boardLayer, droppedNode.id);
             sourceCard?.classList.add('footage-drop-shaking');
             targetCard?.classList.add('footage-drop-shaking');
             setTimeout(() => {
@@ -15689,7 +15725,7 @@ function buildActBoardNarrationPlayback(actKey, node, boardLayer, playbackNode =
       }
       return;
     }
-    const card = boardLayer.querySelector(`[data-node-id="${current.id}"]`);
+    const card = actBoardNodeCard(boardLayer, current.id);
     if (card) {
       card.classList.add('act-board-playback-active');
       state.activeCards.push(card);
@@ -16609,7 +16645,9 @@ function buildActBoardFootageTrack(actKey, narrationNode, boardLayer, linkedOver
     dropPreview.style.width = `${widthPercent}%`;
     dropPreview.title = `Drop ${duration.toFixed(1)}s footage segment here`;
     dropPreview.hidden = false;
-    return true;
+    // Return the ghost itself (still truthy for existing callers) so the drag
+    // can line the card up with where the segment will actually land.
+    return dropPreview;
   };
   const footageCoverageNarration = footage =>
     actBoardNarrationForNode(actKey, footage)
@@ -16758,7 +16796,7 @@ function buildActBoardFootageTrack(actKey, narrationNode, boardLayer, linkedOver
     segment.addEventListener('dblclick', event => {
       event.preventDefault();
       event.stopPropagation();
-      const card = boardLayer.querySelector(`[data-node-id="${footage.id}"]`);
+      const card = actBoardNodeCard(boardLayer, footage.id);
       card?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, view: window }));
     });
     const entry = {
@@ -17372,7 +17410,7 @@ function buildActBoardPlaybackAudioTrack({
     dropPreview.style.width = `${widthPercent}%`;
     dropPreview.title = `Drop ${duration.toFixed(1)}s ${kind} segment here`;
     dropPreview.hidden = false;
-    return true;
+    return dropPreview;
   };
 
   const updateTrackLayout = () => {
@@ -17460,7 +17498,7 @@ function buildActBoardPlaybackAudioTrack({
       if (node.selectedAudio) node.selectedAudio.durationSeconds = node.durationSeconds;
       refreshActBoardAudioTimingForNode(node);
     }
-    const card = boardLayer?.querySelector(`[data-node-id="${node.id}"]`);
+    const card = actBoardNodeCard(boardLayer, node.id);
     const timing = card?.querySelector('.storyboard-act-board-node-timing');
     if (timing) setActBoardNodeTimingText(timing,
       actBoardPlaybackTimingLabel(safeStart, safeDuration));
@@ -19547,7 +19585,7 @@ function buildActBoardAudioResults(actKey, node) {
 }
 
 function refreshActBoardAudioSearchDom(actKey, node) {
-  const card = document.querySelector(`[data-node-id="${node.id}"]`);
+  const card = actBoardNodeCard(document, node.id);
   if (!card) return false;
   // Detailed audio content is mounted in the selected-node panel, while the
   // canvas card intentionally keeps only its compact SVG shell. Always update
@@ -22968,7 +23006,7 @@ function buildActBoardBoardSceneCard(scene, nodes, nodeStack) {
         node.boardX = Math.max(0, initial.x + deltaX);
         node.boardY = Math.max(0, initial.y + deltaY);
         node.boardPositionMode = 'manual';
-        const nodeCard = nodeStack.querySelector(`[data-node-id="${node.id}"]`);
+        const nodeCard = actBoardNodeCard(nodeStack, node.id);
         if (nodeCard) {
           nodeCard.style.left = `${node.boardX}px`;
           nodeCard.style.top = `${node.boardY}px`;
