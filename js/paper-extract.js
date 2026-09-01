@@ -12048,8 +12048,36 @@ function scheduleActBoardLinkPathRefresh(boardLayer) {
 // Explicitly release observers/listeners owned by the old board first so
 // repeated highlighting, selection, and generation cannot accumulate work on
 // detached cards.
+// A rebuilt board discards its old cards, but a removed <video>/<audio> keeps
+// its decoded media alive until GC happens to collect it. With a Footage lane
+// full of clips that is tens of megabytes per rebuild, and rearranging or
+// spawning nodes rebuilds constantly - which is what made a long editing
+// session climb in memory even though the DOM node count stayed flat. Detach
+// the source explicitly so the media pipeline goes with the element.
+function releaseActBoardMediaElements(root) {
+  if (!root?.querySelectorAll) return;
+  root.querySelectorAll('video, audio').forEach(media => {
+    // Playback deliberately carried across a rebuild still owns its element.
+    // The two references cover the transports this module tracks; `paused` is
+    // the catch-all for anything else that is genuinely mid-playback, so a
+    // rebuild can never cut off audio or video that is actually running.
+    if (media === actBoardNativeAudioElement
+      || media === actBoardPlaybackState?.audio
+      || media.paused === false) return;
+    try {
+      media.pause();
+      media.removeAttribute('src');
+      media.srcObject = null;
+      // Drop any <source> children too, or load() just re-selects one of them.
+      media.querySelectorAll('source').forEach(source => source.remove());
+      media.load();
+    } catch (err) { /* a detached element can refuse; nothing to recover */ }
+  });
+}
+
 function teardownActBoardView(board) {
   if (!board) return;
+  releaseActBoardMediaElements(board);
   actBoardSceneMediaPatchTimers.forEach(timer => clearTimeout(timer));
   actBoardSceneMediaPatchTimers.clear();
   if (actBoardDomRegistry?.board === board) {
@@ -12248,9 +12276,15 @@ function patchActBoardSceneDom(actKey, sceneId, options = {}) {
   // Mount the replacement DOM before removing the old scene. This keeps the
   // canvas painted continuously and avoids the black flash users saw when a
   // new footage batch arrived.
-  oldNodeCards.forEach(card => card.remove());
+  oldNodeCards.forEach(card => {
+    releaseActBoardMediaElements(card);
+    card.remove();
+  });
   oldTracks.forEach(track => track.remove());
-  if (oldSceneCard && oldSceneCard !== sceneCard) oldSceneCard.remove();
+  if (oldSceneCard && oldSceneCard !== sceneCard) {
+    releaseActBoardMediaElements(oldSceneCard);
+    oldSceneCard.remove();
+  }
   refineActBoardRenderedGeometry(nodeStack, ordered, {
     ...options,
     preserveFootageNodeIds,
