@@ -1348,7 +1348,9 @@ def run_track_reordering(page, calls: list[dict[str, Any]]) -> None:
         pointer = {"pointerId": 7, "pointerType": "mouse", "button": 0,
                    "buttons": 1, "clientX": origin_x, "clientY": origin_y}
         segment.dispatch_event("pointerdown", pointer)
-        page.wait_for_timeout(800)
+        # Must exceed ACT_BOARD_TRACK_LIFT_DELAY_MS in js/paper-extract.js; this
+        # hold is what distinguishes a lift from an ordinary timing drag.
+        page.wait_for_timeout(1200)
         ghost = page.locator(".storyboard-act-board-track-floating-ghost")
         try:
             ghost.wait_for(state="attached", timeout=2_000)
@@ -1366,7 +1368,7 @@ def run_track_reordering(page, calls: list[dict[str, Any]]) -> None:
         segment.dispatch_event("pointerup", {
             **pointer, "buttons": 0, "clientX": drop_x, "clientY": origin_y,
         })
-        page.wait_for_timeout(1200)
+        page.wait_for_timeout(800)
         return dragged_id
 
     # Lift the last segment of each rail and move it before the first segment.

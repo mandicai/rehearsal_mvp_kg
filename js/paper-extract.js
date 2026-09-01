@@ -9395,15 +9395,27 @@ function planActBoardFootageAlignment(narration, associated) {
   const offsets = actBoardPhraseOffsetsFor(narration);
   const resolved = new Map();
   const unresolved = [];
-  let searchFrom = 0;
+  // Each phrase is searched from the start of the transcript, not from a cursor
+  // that advances with the clip list. A cursor would make the result depend on
+  // the order the clips happen to be in: a clip whose phrase comes late in the
+  // narration would push the cursor past an earlier phrase, and the earlier
+  // clip could then never be found - which is precisely the mis-ordering Smart
+  // arrange exists to repair. Occurrences already taken by another clip are
+  // skipped, so a phrase repeated in the narration still gets successive ones.
+  const claimed = [];
+  const overlapsClaimed = hit => claimed.some(range =>
+    hit.index < range.index + range.length && range.index < hit.index + hit.length);
   associated.forEach(node => {
     const phrase = String(node.fragment || '').trim();
     let range = null;
     if (words.length && phrase) {
-      const hit = matchActBoardPhraseInTimedWords(words, phrase, searchFrom);
+      let hit = matchActBoardPhraseInTimedWords(words, phrase, 0);
+      while (hit && overlapsClaimed(hit)) {
+        hit = matchActBoardPhraseInTimedWords(words, phrase, hit.index + 1);
+      }
       if (hit) {
         range = { index: hit.index, length: hit.length };
-        searchFrom = hit.index + hit.length;
+        claimed.push(range);
       }
     }
     if (!range && transcript && phrase) {
@@ -9952,7 +9964,7 @@ function actBoardFootageOriginLabels(node) {
 const ACT_BOARD_DROP_HOVER_DELAY_MS = 750;
 // Track segments can move immediately; a deliberate press-and-hold lifts the
 // segment into its elevated/free-placement state for longer moves.
-const ACT_BOARD_TRACK_LIFT_DELAY_MS = 750;
+const ACT_BOARD_TRACK_LIFT_DELAY_MS = 1000;
 
 // Shared pointer interaction for narration, footage, and audio rails. A
 // normal drag edits the segment's time immediately; holding for the lift

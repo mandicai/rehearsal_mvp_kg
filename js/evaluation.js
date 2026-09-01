@@ -21,10 +21,8 @@ let projectId = '';
 // --- Catalog + selection state ---
 let allTechniques = [];        // [{key,label}]
 let allModes = [];             // [{key,label}]
-let allRoles = [];             // [{key,label}]
 const selTech = new Set();
 const selMode = new Set();
-const selRole = new Set();
 const selEntity = new Set();
 
 // Read from the inherited Act Board rather than the arc part: the recorded
@@ -265,7 +263,6 @@ function renderAxes() {
   }
   buildChecklist($('eval-tech-list'), allTechniques, selTech, updateEstimate);
   buildChecklist($('eval-mode-list'), allModes, selMode, updateEstimate);
-  buildChecklist($('eval-role-list'), allRoles, selRole, updateEstimate);
   updateEstimate();
 }
 
@@ -304,22 +301,21 @@ function updateEstimate() {
     return;
   }
 
-  const n = actSweepEnabled()
-    ? selMode.size * 3
-    : selTech.size * selMode.size * selRole.size;
+  // With the Track axis retired, anything that is not the entity matrix is the
+  // act-wide mode sweep.
+  const n = selMode.size * 3;
   const perCell = video ? 65 : 15; // rough seconds/cell
   const secs = n * perCell;
   const mins = Math.max(1, Math.round(secs / 60));
   if (!n) {
-    est.textContent = 'Select at least one of each axis.';
+    est.textContent = 'Select at least one documentary mode.';
     est.classList.remove('error');
     runBtn.disabled = true;
     return;
   }
   const over = n > 24;
-  est.textContent = actSweepEnabled()
-    ? `${n} shot plan${n === 1 ? '' : 's'} · ~${mins} min${over ? ' — too many (max 24), narrow the modes' : ''}`
-    : `${n} cell${n === 1 ? '' : 's'} · ~${mins} min${over ? ' — too many (max 24), narrow the axes' : ''}`;
+  est.textContent =
+    `${n} shot plan${n === 1 ? '' : 's'} · ~${mins} min${over ? ' — too many (max 24), narrow the modes' : ''}`;
   est.classList.toggle('error', over);
   runBtn.disabled = over;
 }
@@ -349,11 +345,10 @@ function runMatrix() {
     moodboard: moodboardProfiles,
     techniques: Array.from(selTech),
     modes: Array.from(selMode),
-    roles: Array.from(selRole),
     video: $('eval-video-toggle').checked,
     entity_matrix: entityMatrixEnabled(),
     entities: selectedEntities(),
-    act_sweep: actSweepEnabled(),
+    act_sweep: !entityMatrixEnabled(),
     wildness: parseFloat($('eval-wildness').value) || 0,
   };
   const statusEl = $('eval-run-status');
@@ -416,7 +411,9 @@ function renderGrid(cells, status = {}) {
   }
 
   const modeLabel = k => (allModes.find(m => m.key === k) || {}).label || k;
-  const roles = allRoles.length ? allRoles.map(r => r.key) : ['Primary', 'Cutaway'];
+  // Roles are no longer an axis in this UI, but a previously saved run can still
+  // carry them, so take the columns from the cells themselves.
+  const roles = [...new Set(cells.map(cell => cell.role).filter(Boolean))];
   const byMode = {};
   cells.forEach(c => { (byMode[c.mode] = byMode[c.mode] || []).push(c); });
 
@@ -805,16 +802,14 @@ function init() {
   $('eval-cell-modal').querySelector('.eval-modal-backdrop').addEventListener('click', hideCellModal);
 
   fetchCatalogs()
-    .then(({ modes, techniques, roles }) => {
+    .then(({ modes, techniques }) => {
       allModes = modes || [];
       allTechniques = techniques || [];
-      allRoles = roles || [];
       // The act-wide sweep defaults to all documentary modes. The technique
       // checklist supplies the pool from which each shot plan receives a
-      // stable random subset; roles remain available for the legacy matrix.
+      // stable random subset.
       // renderAxes seeds the technique axis from the moodboard distillation.
       allModes.forEach(mode => selMode.add(mode.key));
-      allRoles.forEach(r => selRole.add(r.key));
       renderAxes();
     })
     .catch(err => {
