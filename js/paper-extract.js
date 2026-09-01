@@ -9630,13 +9630,17 @@ async function smartArrangeActBoardScene(scene, nodes, nodeStack, signal = null)
   const narrationRows = new Map();
   let alignedClipCount = 0;
   let parkedClipCount = 0;
-  let anyEstimatedTiming = false;
+  // Report on whether the narration actually carried word timings, not on
+  // whether clips happened to land. A scene with no recording placed nothing,
+  // and calling that result "transcription timestamps" would be a plain
+  // falsehood about where its footage came from.
+  let anyEstimatedTiming = !plans.length;
   plans.forEach(plan => {
     const applied = applyActBoardFootageAlignment(plan, llmByNarration.get(plan.narration.id));
     narrationRows.set(plan.narration.id, { duration: applied.duration, rows: applied.rows });
     alignedClipCount += applied.placed;
     parkedClipCount += applied.parked;
-    if (applied.placed && !plan.timed) anyEstimatedTiming = true;
+    if (!plan.timed) anyEstimatedTiming = true;
   });
   narrations.forEach(narration => {
     if (narrationRows.has(narration.id)) return;
