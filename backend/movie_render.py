@@ -331,9 +331,45 @@ def render_shot(shot, output_path, tmp_dir):
     start_path = shot.get('start_visual_path')
     end_path = shot.get('end_visual_path')
     two_still = bool(start_path and end_path and Path(start_path).is_file() and Path(end_path).is_file())
+    split_visual_paths = [
+        str(path) for path in (shot.get('split_visual_paths') or [])
+        if path and Path(path).is_file()
+    ]
     source_audio = False
 
-    if len(cutaway_paths) >= 2:
+    if len(split_visual_paths) >= 2:
+        # Act-board split-screen shots are rendered as a single normalized
+        # frame so the selected composition survives both scene playback and
+        # the final MP4. Each source keeps its own still/clip behavior; source
+        # audio is intentionally omitted because the board mixes narration and
+        # sound-effect tracks independently.
+        n = len(split_visual_paths)
+        pane_width = max(1, _WIDTH // n)
+        source_starts = shot.get('split_source_start_seconds') or []
+        video_input = []
+        parts = []
+        for index, path in enumerate(split_visual_paths):
+            source_start = max(0.0, float(source_starts[index] or 0)) if index < len(source_starts) else 0.0
+            if _is_still(path):
+                video_input += ['-loop', '1', '-t', f'{seconds:.3f}', '-i', path]
+            else:
+                video_input += ['-stream_loop', '-1']
+                if source_start > 0:
+                    video_input += ['-ss', f'{source_start:.3f}']
+                video_input += ['-i', path]
+            parts.append(
+                f'[{index}:v]scale={pane_width}:{_HEIGHT}:force_original_aspect_ratio=decrease,'
+                f'pad={pane_width}:{_HEIGHT}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={_FPS},format=yuv420p'
+                f'[split{index}]')
+        split_inputs = ''.join(f'[split{index}]' for index in range(n))
+        parts.append(f'{split_inputs}hstack=inputs={n}:shortest=1[vcat]')
+        if overlay_file is not None:
+            parts.append(f'[vcat]{_drawtext_expr(overlay_file)},format=yuv420p[vout]')
+        else:
+            parts.append('[vcat]format=yuv420p[vout]')
+        video_part = ';'.join(parts)
+        audio_base = n
+    elif len(cutaway_paths) >= 2:
         # Expository cutaways: every cutaway still shown in sequence, hard cuts,
         # each held for an equal slice of the shot (seconds/N); the concat filter
         # joins them into one continuous stream and the audio mix (inputs after
@@ -354,14 +390,21 @@ def render_shot(shot, output_path, tmp_dir):
         video_part = ';'.join(parts)
         audio_base = n
     elif two_still:
-        # Two frames, hard cut at the midpoint - each held for half the shot
-        # (-loop 1 -t bounds each looped still); the concat filter joins them
-        # into one continuous video stream, and the audio mix (from input
-        # index 2, after the two image inputs) plays over the whole shot.
-        half = max(seconds / 2.0, 0.1)
+        # Two frames, hard cut at the midpoint. Derive the two holds from the
+        # output frame count rather than independently rounded second values:
+        # this guarantees that the final encoded frame belongs to the end
+        # still (rather than the concat filter ending one frame early). The
+        # total duration remains the requested shot duration.
+        total_frames = max(int(round(seconds * _FPS)), 1)
+        first_frames = max(1, total_frames // 2)
+        if total_frames > 1:
+            first_frames = min(first_frames, total_frames - 1)
+        second_frames = max(1, total_frames - first_frames)
+        first_duration = first_frames / _FPS
+        second_duration = second_frames / _FPS
         video_input = [
-            '-loop', '1', '-t', f'{half:.3f}', '-i', str(start_path),
-            '-loop', '1', '-t', f'{half:.3f}', '-i', str(end_path),
+            '-loop', '1', '-t', f'{first_duration:.6f}', '-i', str(start_path),
+            '-loop', '1', '-t', f'{second_duration:.6f}', '-i', str(end_path),
         ]
         parts = [f'[0:v]{_STILL_NORM_CHAIN}[v0]', f'[1:v]{_STILL_NORM_CHAIN}[v1]']
         if overlay_file is not None:
@@ -391,7 +434,13 @@ def render_shot(shot, output_path, tmp_dir):
                 video_input += ['-ss', f'{source_start:.3f}']
             video_input += ['-i', str(visual_path)]
             video_filter = _video_filter_for_clip(overlay_file)
-            source_audio = _has_audio_stream(visual_path)
+            # Some generated video models return an incidental soundtrack.
+            # The caller can explicitly suppress it while keeping separate
+            # narration/SFX inputs available to the mix.
+            source_audio = (
+                _has_audio_stream(visual_path)
+                and not bool(shot.get('mute_source_audio'))
+            )
         video_part = f'[0:v]{video_filter}[vout]'
         audio_base = 1
 

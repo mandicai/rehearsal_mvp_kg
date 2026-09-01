@@ -1,5 +1,7 @@
-// evaluation.html — generate a MATRIX of shot examples for one fixed scene
-// across documentary technique × mode × track (Primary/Cutaway), reusing the
+// evaluation.html — generate a MATRIX of shot examples for one selected act
+// and its narration. The act-wide mode sweep maps several shot plans per mode;
+// the legacy documentary technique × mode × track matrix remains available.
+// Both paths reuse the
 // same backend prompt construction storyboard.html uses. Standalone: depends
 // only on js/helpers.js (fetchCatalogs / fetchEvalRun / fetchEvalStatus) plus
 // the paper+moodboard+arc it inherits from the shared localStorage session.
@@ -160,8 +162,14 @@ function renderAxes() {
   updateEstimate();
 }
 
+function actSweepEnabled() {
+  return Boolean($('eval-act-sweep')?.checked);
+}
+
 function updateEstimate() {
-  const n = selTech.size * selMode.size * selRole.size;
+  const n = actSweepEnabled()
+    ? selMode.size * 3
+    : selTech.size * selMode.size * selRole.size;
   const video = $('eval-video-toggle').checked;
   const perCell = video ? 65 : 15; // rough seconds/cell
   const secs = n * perCell;
@@ -175,7 +183,9 @@ function updateEstimate() {
     return;
   }
   const over = n > 24;
-  est.textContent = `${n} cell${n === 1 ? '' : 's'} · ~${mins} min${over ? ' — too many (max 24), narrow the axes' : ''}`;
+  est.textContent = actSweepEnabled()
+    ? `${n} shot plan${n === 1 ? '' : 's'} · ~${mins} min${over ? ' — too many (max 24), narrow the modes' : ''}`
+    : `${n} cell${n === 1 ? '' : 's'} · ~${mins} min${over ? ' — too many (max 24), narrow the axes' : ''}`;
   est.classList.toggle('error', over);
   runBtn.disabled = over;
 }
@@ -207,6 +217,7 @@ function runMatrix() {
     modes: Array.from(selMode),
     roles: Array.from(selRole),
     video: $('eval-video-toggle').checked,
+    act_sweep: actSweepEnabled(),
     wildness: parseFloat($('eval-wildness').value) || 0,
   };
   const statusEl = $('eval-run-status');
@@ -234,7 +245,8 @@ function pollRun(runId) {
       const statusEl = $('eval-run-status');
       renderGrid(status.cells || []);
       if (status.state === 'ready') {
-        statusEl.textContent = `Done — ${status.total} cell${status.total === 1 ? '' : 's'}.`;
+        const noun = actSweepEnabled() ? 'shot plan' : 'cell';
+        statusEl.textContent = `Done — ${status.total} ${noun}${status.total === 1 ? '' : 's'}.`;
         $('eval-run-btn').disabled = false;
         updateEstimate();
       } else if (status.state === 'error' || status.state === 'unknown') {
@@ -256,6 +268,11 @@ function renderGrid(cells) {
   const grid = $('eval-grid');
   grid.innerHTML = '';
   if (!cells.length) return;
+
+  if (cells.some(cell => cell.plan_index != null)) {
+    renderActSweepGrid(grid, cells);
+    return;
+  }
 
   const modeLabel = k => (allModes.find(m => m.key === k) || {}).label || k;
   const roles = allRoles.length ? allRoles.map(r => r.key) : ['Primary', 'Cutaway'];
@@ -290,6 +307,65 @@ function renderGrid(cells) {
     });
 
     block.appendChild(table);
+    grid.appendChild(block);
+  });
+}
+
+function renderActSweepGrid(grid, cells) {
+  const modeLabel = key => (allModes.find(mode => mode.key === key) || {}).label || key;
+  const byMode = {};
+  cells.forEach(cell => { (byMode[cell.mode] = byMode[cell.mode] || []).push(cell); });
+  Object.keys(byMode).forEach(mode => {
+    const block = document.createElement('div');
+    block.className = 'module-card eval-mode-block eval-act-sweep-block';
+    const heading = document.createElement('h2');
+    heading.textContent = modeLabel(mode);
+    block.appendChild(heading);
+    const cards = document.createElement('div');
+    cards.className = 'eval-sweep-grid';
+    byMode[mode].sort((a, b) => (a.plan_index || 0) - (b.plan_index || 0));
+    byMode[mode].forEach(cell => {
+      const card = document.createElement('article');
+      card.className = 'eval-sweep-card';
+      const title = document.createElement('strong');
+      title.textContent = `Shot plan ${cell.plan_index || ''}`.trim();
+      card.appendChild(title);
+      const technique = document.createElement('div');
+      technique.className = 'eval-sweep-techniques';
+      technique.textContent = `Techniques: ${cell.technique || 'None'}`;
+      card.appendChild(technique);
+      if (cell.image_url) {
+        const image = document.createElement('img');
+        image.src = cell.image_url;
+        image.loading = 'lazy';
+        image.alt = `${modeLabel(mode)} shot plan ${cell.plan_index || ''}`;
+        card.appendChild(image);
+      } else if (cell.error) {
+        const error = document.createElement('div');
+        error.className = 'eval-cell-error';
+        error.textContent = '⚠';
+        error.title = cell.error;
+        card.appendChild(error);
+      } else {
+        const pending = document.createElement('div');
+        pending.className = 'eval-cell-pending';
+        pending.textContent = '…';
+        card.appendChild(pending);
+      }
+      const motion = document.createElement('div');
+      motion.className = 'eval-sweep-motion';
+      motion.textContent = [cell.narrative_operation, cell.movement].filter(Boolean).join(' · ');
+      card.appendChild(motion);
+      if (cell.video_url) {
+        const badge = document.createElement('span');
+        badge.className = 'eval-cell-video-badge';
+        badge.textContent = '▶ video';
+        card.appendChild(badge);
+      }
+      card.addEventListener('click', () => openCellModal(cell));
+      cards.appendChild(card);
+    });
+    block.appendChild(cards);
     grid.appendChild(block);
   });
 }
@@ -347,7 +423,10 @@ function openCellModal(cell) {
 
   const head = document.createElement('div');
   head.className = 'eval-modal-head';
-  head.textContent = `${cell.technique} · ${(allModes.find(m => m.key === cell.mode) || {}).label || cell.mode} · ${cell.role}`;
+  const modeLabel = (allModes.find(m => m.key === cell.mode) || {}).label || cell.mode;
+  head.textContent = cell.plan_index != null
+    ? `Shot plan ${cell.plan_index} · ${modeLabel}`
+    : `${cell.technique} · ${modeLabel} · ${cell.role}`;
   body.appendChild(head);
 
   if (cell.image_url) {
@@ -368,6 +447,8 @@ function openCellModal(cell) {
   const meta = document.createElement('div');
   meta.className = 'eval-modal-meta';
   const parts = [
+    ['Techniques', Array.isArray(cell.techniques) ? cell.techniques.join(', ') : ''],
+    ['Narrative operation', cell.narrative_operation],
     ['Shot size', cell.shot_size],
     ['Movement', cell.movement],
     ['Scene description', cell.scene_description],
@@ -401,6 +482,7 @@ function init() {
   populateScenePicker();
   wireTechFilter();
   $('eval-video-toggle').addEventListener('change', updateEstimate);
+  $('eval-act-sweep').addEventListener('change', updateEstimate);
   const wild = $('eval-wildness');
   wild.addEventListener('input', () => { $('eval-wildness-val').textContent = parseFloat(wild.value).toFixed(1); });
   $('eval-run-btn').addEventListener('click', runMatrix);
@@ -411,9 +493,11 @@ function init() {
       allModes = modes || [];
       allTechniques = techniques || [];
       allRoles = roles || [];
-      // Sensible small defaults: first 3 techniques, first mode, both tracks.
+      // The act-wide sweep defaults to all documentary modes. The technique
+      // checklist supplies the pool from which each shot plan receives a
+      // stable random subset; roles remain available for the legacy matrix.
       allTechniques.slice(0, 3).forEach(t => selTech.add(t.key));
-      if (allModes[0]) selMode.add(allModes[0].key);
+      allModes.forEach(mode => selMode.add(mode.key));
       allRoles.forEach(r => selRole.add(r.key));
       renderAxes();
     })

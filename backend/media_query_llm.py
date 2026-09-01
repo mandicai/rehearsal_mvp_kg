@@ -41,6 +41,7 @@ Rules:
 - abstract: academic jargon, an invisible process, a dataset, theory, metric, or idea that is not literal stock footage. Supply a concrete visual_proxy and query that metaphorically or observationally represents it (for example, researchers comparing charts, hands annotating data, or a close-up of a computer screen).
 - ignore: filler, vague connective language, or a phrase that would not help choose a shot.
 - Preserve the supplied character offsets exactly. Do not invent offsets or return candidates that were not supplied.
+- A candidate with kind "user_selection" is an explicit presenter request. Always return a classification for it (even if it is abstract or otherwise weak), preserve its offsets exactly, and provide the best literal query or visual_proxy available.
 - Prefer phrases that are specific, visually salient, and useful for a coherent documentary sequence. Avoid returning multiple overlapping or redundant beats.
 """
 

@@ -13,16 +13,7 @@
      vs. the deployed Netlify site) - nothing to configure here. -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link
-    href="https://fonts.googleapis.com/css2?family=Cabin+Sketch:wght@400;700&family=Source+Sans+3:wght@400;600;700&display=swap"
-    rel="stylesheet">
-  <link
-    href="https://fonts.googleapis.com/css2?family=Coral+Pixels&family=Parastoo:wght@400..700&family=Rubik+80s+Fade&display=swap"
-    rel="stylesheet">
-  <!-- Monospace for the data-journalism (The Markup / Blacklight) styling -
-       headings, kickers, labels, badges (see styles-index.css theme block). -->
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap"
-    rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,200..900;1,200..900&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap"
     rel="stylesheet">
   <script>document.write('<link rel="stylesheet" href="/styles-index.css?t=' + window.CACHE_BUST + '">');</script>
@@ -52,29 +43,27 @@
 
     <div class="main-column">
 
-      <!-- Page 1 of 2 (see html/storyboard.html for the rest) - record/
-       choose intent, then upload + edit the paper's extracted sections.
-       A real page, not a same-page view swap - state that needs to survive
-       the navigation to storyboard.html is persisted via localStorage (see
+      <!-- First setup step (see html/moodboard.html and
+       html/storyboard.html for the later steps) - upload + edit the paper's
+       extracted sections. A real page flow, not a same-page view swap - state
+       that needs to survive navigation is persisted via localStorage (see
        js/paper-extract.js's saveDebugSession/restoreDebugSession, which
        both pages call). -->
 
-      <!-- Upload panel - the next step after stating intent above. -->
+      <!-- Upload panel - the first setup step. -->
       <aside id="upload-sidebar" class="upload-sidebar upload-sidebar-doc upload-sidebar-inline">
         <div class="upload-sidebar-header">
-          <h2>Your research paper</h2>
+          <h2>Your research study</h2>
           <!-- <button id="upload-sidebar-toggle" class="sidebar-toggle-btn" type="button" title="Collapse">&raquo;</button> -->
         </div>
 
         <div class="upload-sidebar-body">
           <div class="source-material">
             <p style="font-size: 13px; margin: 0 0 12px;">
-              Upload a PDF of your research paper, which will serve as source material.
+              Upload a PDF describing your study's rough motivation, research questions, related work, and experimental protocol—like a study proposal. The study should be in its early stages and pre-data collection.
             </p>
             <div class="input-group">
               <input type="file" id="paper-file-input" accept=".pdf,.txt,.md">
-              <button id="extract-paper-btn" class="btn-primary">Extract</button> 
-              <!-- style="margin-top: 16px; -->
             </div>
             <div id="paper-status" class="status-line"></div>
           </div>
@@ -88,39 +77,6 @@
           <div id="paper-sections"></div>
         </div>
       </aside>
-
-      <!-- Documentary intent module: a moodboard of reference documentaries.
-       The presenter adds references (a documentary name, a YouTube link, or an
-       uploaded clip); each is deep-analyzed in the background and the whole
-       moodboard is later distilled into suggested arcs/mode/techniques (see
-       js/paper-extract.js's moodboard flow + runDistillMoodboard). This
-       replaced the old narration recorder as the entry point. -->
-      <div class="module-card" id="documentary-intent-module">
-        <h2>What documentaries capture the feel you're going for?</h2>
-        <p style="font-size: 13px; margin: 0 0 14px;">
-          Build a moodboard of reference documentaries—name one, paste a YouTube link, or upload a clip.
-          We'll study their style and suggest a narrative arc, mode, and techniques for your paper.
-        </p>
-
-        <div id="moodboard-add-row" class="moodboard-add-row">
-          <div class="moodboard-add-group">
-            <input type="text" id="moodboard-name-input" placeholder="Name a documentary (e.g. Free Solo)">
-            <button type="button" id="moodboard-add-name-btn" class="btn-secondary">Add</button>
-          </div>
-          <div class="moodboard-add-group">
-            <input type="url" id="moodboard-url-input" placeholder="Paste a YouTube link">
-            <button type="button" id="moodboard-add-url-btn" class="btn-secondary">Add</button>
-          </div>
-          <div class="moodboard-add-group">
-            <input type="file" id="moodboard-file-input" accept="video/*">
-          </div>
-        </div>
-
-        <!-- One card per reference (see renderMoodboardList): thumbnail, source
-         badge, analyzing/ready status, optional note, remove. -->
-        <div id="moodboard-list" class="moodboard-list"></div>
-        <div id="moodboard-status" class="status-line"></div>
-      </div><!-- /#documentary-intent-module -->
 
       <!-- 3D reconstruction entry point: upload a photo (flat or panoramic) or
        footage and explore it as an interactive 3D scene INLINE in the card
@@ -158,15 +114,11 @@
         <div id="reconstruct-status" class="status-line"></div>
       </div><!-- /#reconstruct-module -->
 
-      <!-- Hidden until both a stated intent (a recording or a chosen focus
-       chip) and at least one extracted section exist (see
-       js/paper-extract.js's updateComposeStoryboardVisibility). Fixed to
-       the bottom-right of the viewport, above everything else on the page
-       (see #compose-storyboard-row in styles-index.css). Navigates to
-       html/storyboard.html once clicked - see composeStoryboardBtn's
-       handler. -->
-      <div id="compose-storyboard-row" style="display: none;">
-        <button type="button" id="compose-storyboard-btn" class="btn-primary">NEXT STEP: CHOOSE ARC</button>
+      <!-- Always available as the next setup step. Fixed to the bottom-right
+       of the viewport (see #compose-storyboard-row in styles-index.css) and
+       navigates to the separate documentary-reference page. -->
+      <div id="compose-storyboard-row">
+        <button type="button" id="compose-storyboard-btn" class="btn-primary">NEXT STEP: MOODBOARD</button>
         <div id="compose-storyboard-status" class="status-line"></div>
       </div>
 

@@ -46,6 +46,46 @@
   background: rgba(0, 0, 0, 0.6); border-radius: 3px; padding: 1px 4px;
 }
 
+/* Act-wide sweep: one mode block containing the distinct plans generated
+   from the same act narration. */
+.eval-sweep-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.eval-sweep-card {
+  position: relative;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--cd-border);
+  border-radius: 6px;
+  background: var(--cd-card-bg, #fff);
+  cursor: pointer;
+}
+.eval-sweep-card:hover { outline: 2px solid var(--cd-accent-hover); }
+.eval-sweep-card > strong { display: block; margin-bottom: 5px; font-size: 12px; }
+.eval-sweep-card > img,
+.eval-sweep-card > .eval-cell-pending,
+.eval-sweep-card > .eval-cell-error {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 4px;
+  background: #0e0e10;
+}
+.eval-sweep-techniques,
+.eval-sweep-motion {
+  margin: 4px 0;
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.eval-sweep-motion { opacity: .72; text-transform: capitalize; }
+
+@media (max-width: 720px) {
+  .eval-sweep-grid { grid-template-columns: 1fr; }
+}
+
 /* Cell modal */
 .eval-modal { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; }
 .eval-modal-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.6); }

@@ -87,9 +87,11 @@ import hashlib
 import io
 import json
 import os
+import random
 import re
 import threading
 import time
+import tempfile
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -595,6 +597,38 @@ def _parse_techniques(data):
     return out
 
 
+def _parse_technique_variants(data):
+    """Read optional per-image technique subsets for Act Board example batches.
+
+    Each variant is a small list from the shared documentary-technique
+    vocabulary. Invalid values are discarded so a malformed client payload
+    cannot leak arbitrary prompt text into the image-generation request.
+    """
+    raw = data.get('technique_variants')
+    if not isinstance(raw, list):
+        return []
+    variants = []
+    for variant in raw[:20]:
+        if not isinstance(variant, list):
+            variants.append([])
+            continue
+        cleaned = []
+        for value in variant:
+            if isinstance(value, str):
+                technique = value.strip()[:MAX_TECHNIQUE_CHARS]
+                if technique in DOCUMENTARY_TECHNIQUE_KEYS and technique not in cleaned:
+                    cleaned.append(technique)
+                    # Act Board image options are intentionally single-technique
+                    # variants so each generated image has one clear visual
+                    # direction. Ignore any extra values from older clients.
+                    if len(cleaned) >= 1:
+                        break
+            if len(cleaned) >= MAX_TECHNIQUES:
+                break
+        variants.append(cleaned)
+    return variants
+
+
 def _parse_generation_context(data):
     """Read the Act Board's visual context as distinct API fields.
 
@@ -635,6 +669,43 @@ def _generation_context_notes(scene_notes, specific_phrase='', parent_narration=
     if (scene_notes or '').strip():
         parts.append(scene_notes.strip())
     return '\n'.join(parts)[:MAX_STORYBOARD_SECTION_CHARS]
+
+
+def _unified_shot_visual_field(user_visual='', generated_visual='', animation_direction=''):
+    """Combine the editable visual field and camera direction into one
+    generation-ready shot-plan description.
+
+    The shot-plan LLM is asked to rewrite the user's visual field and camera
+    choice as one coherent generation-ready description. Prefer that rewritten
+    value when it exists; the deterministic fallback is used only when the
+    planner did not return a visual description.
+    """
+    generated = str(generated_visual or '').strip()
+    motion = str(animation_direction or '').strip()
+    if generated:
+        if not motion or motion.casefold() in generated.casefold():
+            return generated[:MAX_SKETCH_VISUAL_CHARS]
+        # The planner normally integrates the motion itself. If it omitted
+        # the exact user wording, retain that direction explicitly rather than
+        # allowing the old planner movement to become the only motion cue.
+        return (
+            f'{generated.rstrip(".").strip()}. '
+            f'Camera animation: {motion.rstrip(".").strip()}.'
+        )[:MAX_SKETCH_VISUAL_CHARS]
+    visual = str(user_visual or '').strip()
+    if not visual and not motion:
+        return ''
+    if not visual:
+        return f'Camera animation: {motion.rstrip(".").strip()}.'
+    if not motion:
+        return visual
+    # Avoid repeating a motion the user already included in the visual field.
+    if motion.casefold() in visual.casefold():
+        return visual[:MAX_SKETCH_VISUAL_CHARS]
+    return (
+        f'{visual.rstrip(".").strip()}. '
+        f'Camera animation: {motion.rstrip(".").strip()}.'
+    )[:MAX_SKETCH_VISUAL_CHARS]
 
 
 ACT_BOARD_CAMERA_MOVEMENT_TO_PLAN = {
@@ -701,15 +772,21 @@ def paper_suggest_arcs():
     sections_raw = data.get('sections')
     if isinstance(sections_raw, list):
         sections = [
-            {'index': s['index'], 'title': (s.get('title') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]}
+            {
+                'index': s['index'],
+                'title': (s.get('title') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS],
+                'snippet': (s.get('snippet') or '').strip()[:MAX_SECTION_SNIPPET_CHARS],
+            }
             for s in sections_raw[:MAX_STORYBOARD_SECTIONS]
             if isinstance(s, dict) and isinstance(s.get('index'), int)
         ]
 
-    # At least one focus statement is required (abstract/sections are grounding
-    # enrichment, never the sole signal - see narrative_arc_llm.py's docstring).
-    if not focus_statements:
-        return jsonify({'error': 'focus_statements is required'}), 400
+    # Focus statements are optional when the paper itself is available. The
+    # paper-only setup path asks the model to infer a fitting documentary arc
+    # from the extracted abstract/sections; explicit focus statements remain
+    # an optional creative override.
+    if not focus_statements and not abstract and not sections:
+        return jsonify({'error': 'focus_statements, abstract, or sections is required'}), 400
 
     if not narrative_arc_client.is_configured():
         return jsonify({'error': _NARRATIVE_ARC_NOT_CONFIGURED_ERROR}), 503
@@ -738,13 +815,20 @@ def paper_suggest_narration():
     act_description = (data.get('act_description') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
     abstract = (data.get('abstract') or '').strip()[:MAX_ABSTRACT_CHARS]
     mode = (data.get('documentary_mode') or '').strip()[:80]
+    max_sentences = data.get('max_sentences')
+    try:
+        max_sentences = int(max_sentences) if max_sentences is not None else None
+    except (TypeError, ValueError):
+        max_sentences = None
+    if max_sentences is not None:
+        max_sentences = max(1, min(max_sentences, 4))
     if not section_text and not section_title:
         return jsonify({'error': 'section_title or section_text is required'}), 400
     if not narration_client.is_configured():
         return jsonify({'error': _STORYBOARD_NOT_CONFIGURED_ERROR}), 503
     try:
         narration = narration_client.suggest(
-            section_title, section_text, act_title, act_description, abstract, mode)
+            section_title, section_text, act_title, act_description, abstract, mode, max_sentences)
     except NarrationLLMCallError as exc:
         return jsonify({'error': str(exc)}), 500
     return jsonify({'narration': narration})
@@ -951,6 +1035,24 @@ def narration_classify():
             for span in spans
         ]
     results = _normalise_filmability_results(raw_results, spans)
+    # A presenter-authored selection is an explicit request, so never let a
+    # malformed or incomplete model response silently drop it. Preserve any
+    # valid model results and fill only the missing user-selection ranges with
+    # the deterministic fallback query.
+    result_ranges = {(int(item.get('start', -1)), int(item.get('end', -1)))
+                     for item in results}
+    for span in spans:
+        if span.get('kind') != 'user_selection':
+            continue
+        key = (int(span.get('start', -1)), int(span.get('end', -1)))
+        if key in result_ranges:
+            continue
+        results.append({
+            **span,
+            **_narration_span_fallback(span),
+        })
+        result_ranges.add(key)
+    results.sort(key=lambda item: int(item.get('start', 0)))
     with _filmability_cache_lock:
         # Bound this process-local cache so long-running browser sessions do
         # not retain every prior narration forever.
@@ -1242,13 +1344,28 @@ def paper_generate_shot_plan():
         return err
     scene_techniques = [technique for technique in _parse_techniques(data)
                         if technique in ACT_BOARD_CAMERA_MOVEMENT_TO_PLAN]
+    animation_direction = (data.get('animation_direction') or '').strip()[:500]
+    user_visual_description = (data.get('visual_description') or '').strip()[:MAX_SKETCH_VISUAL_CHARS]
     camera_movement = str(data.get('camera_movement') or '').strip()
     requested_movement = ACT_BOARD_CAMERA_MOVEMENT_TO_PLAN.get(camera_movement)
     if camera_movement and not requested_movement:
         return jsonify({'error': 'camera_movement must be a valid Camera movement technique'}), 400
     if camera_movement:
+        camera_direction_label = (
+            'Supporting camera movement hint'
+            if animation_direction else 'Requested camera movement (AUTHORITATIVE)'
+        )
         scene_notes = (
-            f'{scene_notes}\nRequested camera movement (AUTHORITATIVE): {camera_movement}'
+            f'{scene_notes}\n{camera_direction_label}: {camera_movement}'
+        ).strip()[:MAX_STORYBOARD_SECTION_CHARS]
+    if animation_direction:
+        scene_notes = (
+            f'Derived animation direction (AUTHORITATIVE): {animation_direction}\n{scene_notes}'
+        ).strip()[:MAX_STORYBOARD_SECTION_CHARS]
+    if user_visual_description:
+        scene_notes = (
+            'User-edited visual field (AUTHORITATIVE; integrate this with the requested camera motion): '
+            f'{user_visual_description}\n{scene_notes}'
         ).strip()[:MAX_STORYBOARD_SECTION_CHARS]
 
     project_id = (data.get('project_id') or '').strip() or next_premiere_project_id()
@@ -1258,8 +1375,27 @@ def paper_generate_shot_plan():
             techniques=scene_techniques, count=1, return_all=False)
     except ShotPlanLLMCallError as exc:
         return jsonify({'error': str(exc)}), 500
+    shot_plan['visual_description'] = _unified_shot_visual_field(
+        user_visual_description,
+        shot_plan.get('visual_description'),
+        animation_direction,
+    )
+    if user_visual_description:
+        # Preserve the raw edited field separately so the animation request can
+        # enforce explicit subject/object actions without confusing them with
+        # the planner's rewritten visual description.
+        shot_plan['user_visual_field'] = user_visual_description
+        shot_plan['subject_action'] = user_visual_description
     if requested_movement:
-        shot_plan['movement'] = requested_movement
+        if animation_direction:
+            shot_plan['supporting_movement'] = requested_movement
+        else:
+            shot_plan['movement'] = requested_movement
+    if animation_direction:
+        # Keep the derived motion direction in the returned shot plan so it
+        # remains the canonical instruction when the plan is saved and used
+        # for the subsequent image-to-video request.
+        shot_plan['animation_direction'] = animation_direction
     return jsonify({'project_id': project_id, 'shot_plan': shot_plan})
 
 
@@ -1378,8 +1514,12 @@ def paper_generate_shot():
 @app.route('/paper/generate_shot_video', methods=['POST'])
 def paper_generate_shot_video():
     # Animate the exact image the presenter selected from the examples gallery.
-    # No new shot-plan or image-generation hop: the selected plan's movement,
-    # narrative operation, notes, and scene-only techniques guide image-to-video.
+    # No new image-generation hop: the selected plan's composition, narrative
+    # operation, notes, and scene-only techniques guide image-to-video. When a
+    # derived animation direction is present, it is the canonical motion
+    # instruction and the planner's movement is only metadata.
+    # Act Board callers may optionally provide start_image_url and
+    # end_image_url to render a two-frame start/end clip instead.
     data = request.get_json(silent=True) or {}
 
     try:
@@ -1397,19 +1537,23 @@ def paper_generate_shot_video():
 
     project_id = (data.get('project_id') or '').strip() or next_premiere_project_id()
 
-    if not animate_client.is_configured():
-        return jsonify({'error': _ANIMATE_NOT_CONFIGURED_ERROR}), 503
-
     scene_techniques = [technique for technique in _parse_techniques(data)
                         if technique in ACT_BOARD_CAMERA_MOVEMENT_TO_PLAN]
-    chosen_path = resolve_static_preview_path(data.get('chosen_image_url'))
+    # In two-frame mode the start frame is the primary image input. Accept it
+    # independently of the legacy chosen_image_url field so API callers can
+    # provide the two image fields without duplicating the start URL.
+    start_image_url = (data.get('start_image_url') or '').strip()
+    chosen_path = resolve_static_preview_path(
+        start_image_url or data.get('chosen_image_url'))
     if not _is_readable_image(chosen_path):
         return jsonify({'error': 'Choose, generate, or upload an image before generating a video'}), 400
 
+    animation_direction = (data.get('animation_direction') or '').strip()[:500]
+    subject_action = (data.get('subject_action') or '').strip()[:MAX_SKETCH_VISUAL_CHARS]
     movement = (data.get('movement') or '').strip()
     requested_movement = ACT_BOARD_CAMERA_MOVEMENT_TO_PLAN.get(
         str(data.get('camera_movement') or '').strip())
-    if requested_movement:
+    if requested_movement and not animation_direction:
         movement = requested_movement
     narrative_operation = (data.get('narrative_operation') or '').strip()[:80]
     shot_size = (data.get('shot_size') or '').strip()
@@ -1423,14 +1567,59 @@ def paper_generate_shot_video():
         'purpose': purpose,
         'visual_description': visual_description,
     }
+    if animation_direction:
+        shot_plan['animation_direction'] = animation_direction
+    if subject_action:
+        shot_plan['subject_action'] = subject_action
+    # Optional two-frame mode: when both a start and end image are supplied,
+    # render a deterministic, continuous MP4 from the pair. This keeps the
+    # feature independent of the single-reference video model and reuses the
+    # same start/end-frame renderer already used by the regular timeline
+    # export. The existing one-image AI animation path remains unchanged.
+    start_url = start_image_url
+    end_url = (data.get('end_image_url') or '').strip()
+    start_path = resolve_static_preview_path(start_url) if start_url else chosen_path
+    end_path = resolve_static_preview_path(end_url) if end_url else None
+    if start_url and not _is_readable_image(start_path):
+        return jsonify({'error': 'The selected start frame is not a readable image'}), 400
+    if end_url and not _is_readable_image(end_path):
+        return jsonify({'error': 'The selected end frame is not a readable image'}), 400
+    two_frame = bool(end_path and _is_readable_image(start_path) and _is_readable_image(end_path))
+    generation_mode = 'single-image'
     try:
-        chosen_image_bytes = chosen_path.read_bytes()
-        mp4_bytes = animate_client.generate_shot_video(
-            chosen_image_bytes, movement, documentary_mode, framing=framing,
-            scene_notes=scene_notes, techniques=scene_techniques,
-            narrative_operation=narrative_operation,
-            visual_description=visual_description)
-    except (OSError, AnimateLLMCallError) as exc:
+        chosen_image_bytes = start_path.read_bytes() if start_path else chosen_path.read_bytes()
+        if two_frame:
+            # Keep this clip at the same maximum duration as AI-generated
+            # videos. render_shot hard-cuts at the midpoint while preserving
+            # an exact, playable 8-second output.
+            with tempfile.TemporaryDirectory(prefix='act-board-two-frame-') as temp_dir:
+                temp_output = Path(temp_dir) / 'two_frame.mp4'
+                movie_render.render_shot({
+                    'start_visual_path': str(start_path),
+                    'end_visual_path': str(end_path),
+                    'duration_seconds': 8,
+                    'ken_burns': {'enabled': False, 'pan': None},
+                    'text_overlay': None,
+                    'narration_audio_path': None,
+                    'sfx_audio_path': None,
+                }, temp_output, Path(temp_dir))
+                mp4_bytes = temp_output.read_bytes()
+            generation_mode = 'two-frame'
+        else:
+            if not animate_client.is_configured():
+                return jsonify({'error': _ANIMATE_NOT_CONFIGURED_ERROR}), 503
+            # Once the presenter has edited the shot-plan motion direction,
+            # omit the planner's structured movement from the animation call so
+            # it cannot compete with the canonical freeform instruction.
+            motion_hint = '' if animation_direction else movement
+            mp4_bytes = animate_client.generate_shot_video(
+                chosen_image_bytes, motion_hint, documentary_mode, framing=framing,
+                scene_notes=scene_notes, techniques=scene_techniques,
+                narrative_operation=narrative_operation,
+                visual_description=visual_description,
+                animation_direction=animation_direction,
+                subject_action=subject_action)
+    except (OSError, movie_render.MovieRenderError, AnimateLLMCallError) as exc:
         return jsonify({'error': str(exc)}), 500
 
     animated_dir = premiere_animated_sketch_dir(project_id)
@@ -1450,13 +1639,14 @@ def paper_generate_shot_video():
         'shot_plan': shot_plan,
         'preview_url': '/' + saved_path.relative_to(PREMIERE_EXPORTS_DIR.parent).as_posix(),
         'thumbnail_url': '/' + poster_path.relative_to(PREMIERE_EXPORTS_DIR.parent).as_posix(),
+        'generation_mode': generation_mode,
     })
 
 
 # Batch of example options per shot (see js/paper-extract.js's Generate-examples
 # flow): ~N cheap still frames + one Veo clip, all from the same shot plan and
 # framing, for the presenter to pick from.
-MAX_SHOT_EXAMPLES = 6
+MAX_SHOT_EXAMPLES = 20
 
 
 @app.route('/paper/generate_shot_examples', methods=['POST'])
@@ -1480,6 +1670,7 @@ def paper_generate_shot_examples():
     if err:
         return err
     scene_techniques = _parse_techniques(data)
+    technique_variants = _parse_technique_variants(data)
 
     narration = (data.get('narration') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS]
     if parent_narration:
@@ -1510,12 +1701,29 @@ def paper_generate_shot_examples():
 
     # Ask the planner for distinct narrative operations and camera pairings in
     # one call. Narration grounds them when present; without it, the prompt
-    # deliberately samples a varied set of possibilities.
+    # deliberately samples a varied set of possibilities. Per-option technique
+    # assignments keep the larger image batch varied without requiring one LLM
+    # request per image.
+    image_scene_notes = scene_notes
+    planner_scene_notes = scene_notes
+    planner_techniques = list(scene_techniques)
+    if technique_variants:
+        for technique in (item for variant in technique_variants for item in variant):
+            if technique not in planner_techniques and len(planner_techniques) < MAX_TECHNIQUES:
+                planner_techniques.append(technique)
+        assignments = [
+            f'Option {index + 1}: {", ".join(variant) if variant else "no additional technique"}'
+            for index, variant in enumerate(technique_variants[:MAX_SHOT_EXAMPLES])
+        ]
+        planner_scene_notes = (
+            f'{scene_notes}\n\nPER-OPTION TECHNIQUE ASSIGNMENTS (apply only the listed subset to each option):\n'
+            + '\n'.join(assignments)
+        ).strip()
     example_wildness = 0.7
     try:
         shot_plans = shot_plan_client.generate_shot_plan(
-            title, scene_notes, narration, act_title, documentary_mode,
-            techniques=scene_techniques, moodboard=_parse_moodboard_profiles(data),
+            title, planner_scene_notes, narration, act_title, documentary_mode,
+            techniques=planner_techniques, moodboard=_parse_moodboard_profiles(data),
             abstract=abstract, role=role, reference_subject=reference_subject,
             wildness=example_wildness, count=count, return_all=True)
     except ShotPlanLLMCallError as exc:
@@ -1523,15 +1731,16 @@ def paper_generate_shot_examples():
 
     boldness = wildness_directive(example_wildness, reference_subject)
     specs = []
-    for plan in shot_plans:
+    for index, plan in enumerate(shot_plans):
+        plan_techniques = technique_variants[index] if index < len(technique_variants) else scene_techniques
         visual = (plan.get('visual_description') or '').strip() or abstract
         if boldness:
             visual = f'{visual}\n\n{boldness}'
         visual = _subject_locked_visual(
-            reference_subject, visual, scene_notes, scene_techniques)
+            reference_subject, visual, image_scene_notes, plan_techniques)
         specs.append({
             'visual': visual,
-            'framing': framing_directive(plan['shot_size'], scene_techniques),
+            'framing': framing_directive(plan['shot_size'], plan_techniques),
         })
 
     try:
@@ -1565,6 +1774,7 @@ def paper_generate_shot_examples():
             'narrative_operation': plan['narrative_operation'],
             'purpose': plan['purpose'],
             'visual_description': plan['visual_description'],
+            'techniques': technique_variants[i] if i < len(technique_variants) else scene_techniques,
         })
 
     return jsonify({
@@ -2161,6 +2371,34 @@ def premiere_upload_media_bank_item():
 def premiere_export():
     data = request.get_json(silent=True) or {}
     sections = data.get('sections')
+    board_sequences = data.get('board_sequences') or []
+    if board_sequences and isinstance(board_sequences, list):
+        # The Act Board sends its graph separately from Timeline + Scenes.
+        # Flatten it into Premiere shot records while retaining composition
+        # metadata for split-screen footage nodes.
+        board_sections = []
+        for sequence_index, sequence in enumerate(board_sequences):
+            if not isinstance(sequence, dict):
+                continue
+            act_label = str(sequence.get('act_key') or f'Act {sequence_index + 1}')
+            sequence_start = float(sequence.get('start_seconds') or 0)
+            for footage_index, footage in enumerate(sequence.get('footage') or []):
+                if not isinstance(footage, dict):
+                    continue
+                board_sections.append({
+                    'index': sequence_index * 1000 + footage_index,
+                    'title': str(footage.get('fragment') or f'Footage {footage_index + 1}'),
+                    'act': act_label,
+                    'start_seconds': sequence_start + float(footage.get('start_seconds') or 0),
+                    'visual_preview_url': footage.get('media_url') or '',
+                    'edit_plan': {'duration_seconds': footage.get('duration_seconds')},
+                    '_board_mode': True,
+                    '_board_composition': footage.get('composition_mode') or '',
+                    '_board_split_visuals': footage.get('split_visuals') or [],
+                    '_board_mute_audio': bool(footage.get('mute_audio')),
+                })
+        if board_sections:
+            sections = board_sections
     sound_effect_specs = data.get('sound_effects') or []
     narration_specs = data.get('narrations') or []
 
@@ -2187,6 +2425,25 @@ def premiere_export():
         selected_audio = section.get('selected_audio') or {}
         uploaded_path = section.get('uploaded_footage_path') or None
         footage_path = uploaded_path if uploaded_path and Path(uploaded_path).is_file() else None
+        split_footage_paths = []
+        split_source_start_seconds = []
+        if section.get('_board_mode'):
+            resolved_board_media = _resolve_board_media(
+                section.get('visual_preview_url'), project_id, i, 0)
+            footage_path = str(resolved_board_media) if resolved_board_media else None
+            split_visuals = section.get('_board_split_visuals') or []
+            if section.get('_board_composition') == 'split-screen' and isinstance(split_visuals, list):
+                for split_index, split_visual in enumerate(split_visuals[:4]):
+                    if not isinstance(split_visual, dict):
+                        continue
+                    resolved_split = _resolve_board_media(
+                        split_visual.get('media_url'), project_id, i, split_index + 1)
+                    if resolved_split is not None:
+                        split_footage_paths.append(str(resolved_split))
+                        split_source_start_seconds.append(
+                            max(0, float(split_visual.get('source_start_seconds') or 0)))
+                if footage_path is None and split_footage_paths:
+                    footage_path = split_footage_paths[0]
         if footage_path is None:
             visual = resolve_static_preview_path(section.get('visual_preview_url'))
             if visual is None:
@@ -2215,6 +2472,7 @@ def premiere_export():
             # narration remains shot-scoped for backward compatibility.
             'narration_audio_path': str(narration) if narration else None,
             'narration_duration_seconds': section.get('narration_duration_seconds'),
+            'mute_source_audio': bool(section.get('_board_mute_audio')),
             # Uploaded footage (a real local path this machine's Premiere can
             # import directly) takes priority; otherwise this just notes
             # which Pexels clip was picked - the file itself isn't
@@ -2222,6 +2480,9 @@ def premiere_export():
             'footage_path': footage_path,
             'stock_video_source_url': selected_video.get('source_url'),
             'stock_audio_preview_url': selected_audio.get('preview_url'),
+            'composition_mode': 'split-screen' if len(split_footage_paths) >= 2 else '',
+            'split_footage_paths': split_footage_paths,
+            'split_source_start_seconds': split_source_start_seconds,
             'edit_plan': section.get('edit_plan') or None,
         })
 
@@ -2277,7 +2538,12 @@ def premiere_export():
         })
 
     edit_plan_path = project_dir_path / 'edit_plan.json'
-    edit_plan_path.write_text(json.dumps({'shots': shots, 'narrations': narrations, 'sound_effects': sound_effects}, indent=2))
+    edit_plan_path.write_text(json.dumps({
+        'shots': shots,
+        'narrations': narrations,
+        'sound_effects': sound_effects,
+        **({'board_sequences': board_sequences} if board_sequences else {}),
+    }, indent=2))
 
     return jsonify({
         'project_id': project_id,
@@ -2453,8 +2719,24 @@ def render_start():
                         render_duration,
                         float(sequence_duration) - float(start_seconds),
                     )
+                split_visual_paths = []
+                split_source_start_seconds = []
+                split_visuals = footage.get('split_visuals') or []
+                if footage.get('composition_mode') == 'split-screen' and isinstance(split_visuals, list):
+                    for split_index, split_visual in enumerate(split_visuals[:4]):
+                        if not isinstance(split_visual, dict):
+                            continue
+                        resolved_split = _resolve_board_media(
+                            split_visual.get('media_url'), project_id, sequence_index,
+                            footage_index * 10 + split_index)
+                        if resolved_split is not None:
+                            split_visual_paths.append(str(resolved_split))
+                            split_source_start_seconds.append(
+                                max(0, float(split_visual.get('source_start_seconds') or 0)))
                 visual = _resolve_board_media(
                     footage.get('media_url'), project_id, sequence_index, footage_index)
+                if visual is None and split_visual_paths:
+                    visual = Path(split_visual_paths[0])
                 if visual is None:
                     return jsonify({'error': f'board_sequence {sequence_index} footage {footage_index} has no usable media'}), 400
                 shots.append({
@@ -2467,6 +2749,13 @@ def render_start():
                     'sfx_audio_path': None,
                     'duration_seconds': render_duration,
                     'source_start_seconds': float(source_start_seconds),
+                    # Generated Act Board videos may contain an incidental
+                    # model soundtrack. Narration and sound-effect tracks are
+                    # mixed separately, so keep that embedded audio muted.
+                    'mute_source_audio': bool(footage.get('mute_audio')),
+                    'composition_mode': 'split-screen' if len(split_visual_paths) >= 2 else '',
+                    'split_visual_paths': split_visual_paths,
+                    'split_source_start_seconds': split_source_start_seconds,
                     # Board footage timings are relative to the complete
                     # narration-led sequence. The renderer uses this to
                     # preserve any gap between spoken fragments instead of
@@ -2556,6 +2845,7 @@ def render_start():
             'start_visual_path': str(start_frame_resolved) if two_frame else None,
             'end_visual_path': str(end_frame_resolved) if two_frame else None,
             'cutaway_paths': cutaway_paths,
+            'mute_source_audio': bool(section.get('mute_source_audio')),
             # Narration is mixed as an independently timed global event after
             # the shots are joined. Lower any embedded footage audio whenever
             # that voice track exists so it remains intelligible in the MP4.
@@ -3057,6 +3347,15 @@ def reconstruct_status():
 MAX_EVAL_CELLS = 24  # bound the batch (each cell is an LLM call + image [+ ~1min video])
 _EVAL_ROLE_MAP = {'primary': 'Primary', 'cutaway': 'Cutaway', 'aroll': 'Primary', 'broll': 'Cutaway',
                   'a-roll': 'Primary', 'b-roll': 'Cutaway'}
+_EVAL_ACT_PLANS_PER_MODE = 3
+_EVAL_VARIANT_DIRECTIONS = (
+    ('orient', 'pan', 'Gently pan across the scene to orient the viewer.'),
+    ('inspect', 'push_in', 'Slowly push toward the key subject or detail so the viewer can inspect it.'),
+    ('reveal', 'pull_out', 'Pull back gradually to reveal the wider context around the subject.'),
+    ('accompany', 'tracking', 'Track smoothly alongside the subject as the action unfolds.'),
+    ('observe', 'static', 'Hold the composition with only subtle environmental motion.'),
+    ('connect', 'tilt', 'Tilt deliberately to connect the subject with the surrounding space.'),
+)
 
 
 @app.route('/catalogs', methods=['GET'])
@@ -3083,9 +3382,11 @@ def _allocate_eval_run_id(project_id):
     return f'run-{max(existing, default=0) + 1}'
 
 
-def _eval_worker(project_id, run_id, scene, moodboard, cells, want_video, wildness, status_path, manifest_path):
-    """Daemon-thread worker: one image (+ optional video) per technique×mode×track
-    cell. Best-effort per cell (a failure is recorded and the rest continue).
+def _eval_worker(project_id, run_id, scene, moodboard, cells, want_video, wildness, status_path, manifest_path,
+                 act_sweep=False, technique_pool=None):
+    """Daemon-thread worker: one image (+ optional video) per legacy
+    technique×mode×track cell, or per act-mode shot plan in act_sweep mode.
+    Best-effort per cell (a failure is recorded and the rest continue).
     Two phases so the grid is usable quickly: all images concurrently, then the
     heavier Veo videos at low concurrency. Writes the growing cell list to
     status.json after each step so the page can render partial results live."""
@@ -3121,19 +3422,48 @@ def _eval_worker(project_id, run_id, scene, moodboard, cells, want_video, wildne
         # reflects that mode/role/technique, exactly like the storyboard).
         def _image_cell(i_cell):
             i, cell = i_cell
-            technique, mode, role = cell['technique'], cell['mode'], cell['role']
+            technique, mode, role = cell.get('technique', ''), cell['mode'], cell.get('role', 'Act plan')
             entry = {'index': i, 'technique': technique, 'mode': mode, 'role': role,
                      'image_url': None, 'video_url': None}
             try:
+                variant_index = int(cell.get('plan_index', 0)) if act_sweep else 0
+                if act_sweep:
+                    # Use a stable per-run seed so retries/reloads do not make
+                    # the same matrix jump between technique combinations.
+                    pool = [t for t in (technique_pool or []) if t]
+                    rng = random.Random(f'{run_id}:{mode}:{variant_index}')
+                    rng.shuffle(pool)
+                    subset_size = min(len(pool), 1 + (variant_index % 3))
+                    selected_techniques = pool[:subset_size] or []
+                    operation, movement, animation_direction = _EVAL_VARIANT_DIRECTIONS[
+                        variant_index % len(_EVAL_VARIANT_DIRECTIONS)]
+                    variant_notes = (
+                        f"{scene_notes}\nVariant direction (AUTHORITATIVE): narrative operation={operation}; "
+                        f"camera movement={movement}. {animation_direction}"
+                    ).strip()
+                    entry['plan_index'] = variant_index + 1
+                    entry['techniques'] = selected_techniques
+                    entry['technique'] = ', '.join(selected_techniques) or 'No selected techniques'
+                    entry['role'] = 'Act plan'
+                else:
+                    selected_techniques = [technique]
+                    variant_notes = scene_notes
+                    operation = movement = animation_direction = ''
                 shot_plan = shot_plan_client.generate_shot_plan(
-                    title, scene_notes, narration, act_title, mode,
-                    techniques=[technique], moodboard=moodboard, abstract=abstract, role=role,
+                    title, variant_notes, narration, act_title, mode,
+                    techniques=selected_techniques, moodboard=moodboard, abstract=abstract, role=role,
                     wildness=wildness)
+                if act_sweep:
+                    # Enforce distinct operation/movement pairings even if the
+                    # planner returns a duplicate after a transient retry.
+                    shot_plan['narrative_operation'] = operation
+                    shot_plan['movement'] = movement
                 visual = (shot_plan.get('visual_description') or '').strip()[:MAX_SKETCH_VISUAL_CHARS]
-                framing = framing_directive(shot_plan.get('shot_size'), [technique])
+                framing = framing_directive(shot_plan.get('shot_size'), selected_techniques)
                 entry['prompt'] = _build_image_prompt(visual, mode, 'shot_frame', framing)
                 entry['shot_size'] = shot_plan.get('shot_size')
                 entry['movement'] = shot_plan.get('movement')
+                entry['narrative_operation'] = shot_plan.get('narrative_operation')
                 entry['visual_description'] = visual
                 entry['framing'] = framing
                 png = sketch_client.generate_sketch(visual, mode, style='shot_frame', framing=framing)
@@ -3162,7 +3492,14 @@ def _eval_worker(project_id, run_id, scene, moodboard, cells, want_video, wildne
                 try:
                     png = Path(entry['_png_path']).read_bytes()
                     mp4 = animate_client.generate_shot_video(
-                        png, entry.get('movement'), entry['mode'], framing=entry.get('framing'))
+                        png, entry.get('movement'), entry['mode'], framing=entry.get('framing'),
+                        techniques=entry.get('techniques') or [],
+                        narrative_operation=entry.get('narrative_operation') or '',
+                        animation_direction=(
+                            next((d for op, mv, d in _EVAL_VARIANT_DIRECTIONS
+                                  if op == entry.get('narrative_operation') and mv == entry.get('movement')), '')
+                            if act_sweep else ''),
+                    )
                     vp = eval_dir / f"cell_{entry['index']}.mp4"
                     vp.write_bytes(mp4)
                     remux_for_reliable_playback(vp)
@@ -3210,11 +3547,26 @@ def eval_run():
             rr = _EVAL_ROLE_MAP.get(r.strip().lower(), r.strip())
             if rr in ('Primary', 'Cutaway') and rr not in roles:
                 roles.append(rr)
-    if not techniques or not modes or not roles:
-        return jsonify({'error': 'select at least one technique, one mode, and one track'}), 400
-
-    # Grouped by mode, then technique, then role - matches evaluation.html's grid.
-    cells = [{'technique': t, 'mode': m, 'role': r} for m in modes for t in techniques for r in roles]
+    act_sweep = bool(data.get('act_sweep'))
+    if act_sweep:
+        if not modes:
+            return jsonify({'error': 'select at least one documentary mode'}), 400
+        # An empty checklist still produces varied plans by sampling from the
+        # complete documentary-technique catalog.
+        if not techniques:
+            techniques = list(DOCUMENTARY_TECHNIQUE_KEYS)
+        # The selected techniques form the pool; every plan receives a stable,
+        # random non-empty subset of that pool. Three plans per mode provide
+        # distinct operation/movement pairings without exploding the run size.
+        cells = [
+            {'mode': m, 'plan_index': i, 'role': 'Act plan', 'technique': ''}
+            for m in modes for i in range(_EVAL_ACT_PLANS_PER_MODE)
+        ]
+    else:
+        if not techniques or not modes or not roles:
+            return jsonify({'error': 'select at least one technique, one mode, and one track'}), 400
+        # Grouped by mode, then technique, then role - matches evaluation.html's grid.
+        cells = [{'technique': t, 'mode': m, 'role': r} for m in modes for t in techniques for r in roles]
     if len(cells) > MAX_EVAL_CELLS:
         return jsonify({'error': f'matrix too large ({len(cells)} cells > max {MAX_EVAL_CELLS}); pick fewer options'}), 400
 
@@ -3238,7 +3590,8 @@ def eval_run():
         {'state': 'running', 'step': 'starting', 'message': 'Starting ...', 'done': 0, 'total': len(cells), 'cells': []}))
     threading.Thread(
         target=_eval_worker,
-        args=(project_id, run_id, scene, moodboard, cells, want_video, wildness, status_path, manifest_path),
+        args=(project_id, run_id, scene, moodboard, cells, want_video, wildness, status_path, manifest_path,
+              act_sweep, techniques),
         daemon=True,
     ).start()
     return jsonify({'project_id': project_id, 'run_id': run_id, 'state': 'running', 'total': len(cells)})

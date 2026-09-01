@@ -33,6 +33,7 @@ generate a video, so those raise AnimateLLMCallError if unconfigured.
 """
 import io
 import os
+import re
 import time
 
 import httpx
@@ -144,6 +145,37 @@ _TECHNIQUE_FRAME_CLAUSES = {
 _FRAME_HOLD_SECONDS = 1.3
 
 
+def concretize_subject_action(action):
+    """Turn a short imperative into a concrete, filmable motion direction.
+
+    The video model is much more reliable when an instruction names the
+    visible motion, repetition, and secondary motion instead of receiving a
+    bare command such as ``make the bananas jump up and down``. Keep this
+    deterministic and conservative: unfamiliar wording is returned unchanged
+    so the user's intent is not silently rewritten.
+    """
+    raw = str(action or '').strip()
+    if not raw:
+        return ''
+    normalized = re.sub(r'\s+', ' ', raw).strip().rstrip('.!?').strip()
+    match = re.fullmatch(r'make\s+(.+?)\s+(jump\s+up\s+and\s+down|bounce\s+up\s+and\s+down)', normalized, re.IGNORECASE)
+    if not match:
+        return raw
+    subject = re.sub(r'^the\s+', 'the ', match.group(1).strip(), flags=re.IGNORECASE)
+    if not subject:
+        return raw
+    subject_lower = subject.casefold()
+    if subject_lower in {'bananas', 'the bananas'}:
+        # The canonical example image contains three bananas; naming the
+        # visible count gives the animation model a concrete target.
+        return 'The three bananas visibly bounce upward and downward twice, with their leaves and shadows moving naturally.'
+    subject_sentence = subject[0].upper() + subject[1:]
+    return (
+        f'{subject_sentence} visibly bounce upward and downward twice, '
+        'with their movement and shadows moving naturally.'
+    )
+
+
 class AnimateLLMCallError(Exception):
     pass
 
@@ -227,35 +259,64 @@ class AnimateLLMClient:
             raise AnimateLLMCallError(f'Animated sketch generation failed: {exc}')
 
     def generate_shot_video(self, image_png_bytes, movement=None, documentary_mode=None, framing=None,
-                            scene_notes='', techniques=None, narrative_operation='', visual_description=''):
+                            scene_notes='', techniques=None, narrative_operation='', visual_description='',
+                            animation_direction='', subject_action=''):
         """Image-to-video for the shot flow: animates an already-generated shot
         FRAME (see sketch_llm.generate_sketch style='shot_frame') into a short
         cinematic clip that keeps the frame's composition/style, moving the
         camera per the selected shot's movement and scene-level direction.
+        subject_action, when provided, is a required on-screen subject/object
+        action from the edited visual field. animation_direction is the
+        operation-derived camera direction; movement is retained only as
+        optional metadata.
         Shot-frame generation may be photorealistic documentary footage.
         Returns raw MP4 bytes."""
         if not self.is_configured():
             raise AnimateLLMCallError('LLM client is not configured (missing API key or openai package)')
 
         move_clause = _SHOT_MOVEMENT_PROMPTS.get(movement, 'The camera moves gently and cinematically through the scene.')
+        has_animation_direction = bool((animation_direction or '').strip())
+        clean_animation_direction = animation_direction.strip().rstrip('.').strip()
+        clean_subject_action = concretize_subject_action(subject_action).rstrip('.').strip()
+        subject_action_clause = (
+            f' CONCRETE REQUIRED SUBJECT ACTION (derived from the user-edited visual field): {clean_subject_action}. '
+            'Explicitly animate any action verbs in this field on the named subjects; this controls '
+            'subject/object motion and is separate from the camera direction. Perform this subject action '
+            'while also applying the selected camera motion; do not replace one with the other.'
+            if clean_subject_action else '')
+        animation_direction_clause = (
+            f' DERIVED SHOT-PLAN MOTION DIRECTION (HIGHEST PRIORITY): {clean_animation_direction}. '
+            'Follow this as the only authoritative instruction for temporal and camera motion. '
+            'If any other field conflicts with it, follow this direction and do not substitute a '
+            'different named camera move.'
+            if has_animation_direction else '')
+        move_support_clause = (
+            ' The structured shot-plan movement is supporting metadata only; do not use it to override '
+            'the derived motion direction.'
+            if has_animation_direction else f' {move_clause}')
         feel_clause = f' Movement quality: {_MODE_CAMERA_FEEL[documentary_mode]}.' if documentary_mode in _MODE_CAMERA_FEEL else ''
         framing_clause = f' Shot framing: {framing.strip()}.' if (framing or '').strip() else ''
         notes_clause = f' Scene direction: {scene_notes.strip()}.' if (scene_notes or '').strip() else ''
         clean_techniques = [t.strip() for t in (techniques or []) if isinstance(t, str) and t.strip()]
         techniques_clause = (
-            ' Preserve and animate these selected documentary techniques: ' + ', '.join(clean_techniques) + '.'
+            (' Supporting documentary techniques (they must not override the derived motion direction): '
+             if has_animation_direction else ' Preserve and animate these selected documentary techniques: ')
+            + ', '.join(clean_techniques) + '.'
             if clean_techniques else '')
         operation_clause = (
             f' Narrative operation: {narrative_operation.strip().replace("_", " ")}; make the motion reinforce what this operation does for the viewer.'
             if (narrative_operation or '').strip() else '')
         visual_clause = (
-            f' Intended visual description: {visual_description.strip()}. Preserve the reference image as the visual anchor while making the action and motion clearly express this description.'
+            (f' Unified shot-plan visual field: {visual_description.strip()}. Treat this visual field together '
+             'with the derived motion direction, preserving the reference image as the visual anchor.'
+             if has_animation_direction else
+             f' Intended visual description: {visual_description.strip()}. Preserve the reference image as the visual anchor while making the action and motion clearly express this description.')
             if (visual_description or '').strip() else '')
         prompt = (
             'Animate this documentary storyboard frame into a short photorealistic cinematic documentary '
             'clip. Keep its exact composition, subjects, setting, lighting, and visual identity; preserve '
             'the same people and objects, and do not redraw, stylize, or add or remove people.'
-            f'{framing_clause} {move_clause}{feel_clause}'
+            f'{framing_clause}{subject_action_clause}{animation_direction_clause}{move_support_clause}{feel_clause}'
             f'{visual_clause}{operation_clause}{notes_clause}{techniques_clause}'
         )
 

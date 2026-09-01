@@ -97,6 +97,8 @@ Keep CONTENT separate from DIRECTION:
 
 For every option, write one `visual_description` that an image generator can use directly. Describe the visible subject, setting, action, staging, lighting, camera angle, and composition. It must clearly embody that option's narrative operation, shot size, movement, and selected techniques. Do not describe a second frame or a cut.
 
+If the scene notes include a USER-EDITED VISUAL FIELD or a DERIVED ANIMATION DIRECTION, preserve the user's visual intent and integrate the derived camera motion into that same single `visual_description`. Treat imperative/action wording in the visual field (for example, "make the bananas jump") as required on-screen subject motion, not merely a static description. Do not leave the visual and motion as competing alternatives or silently replace the edited visual with a generic one.
+
 Return exactly the requested number of options in this JSON shape:
 {"shots": [{"shot_size": "<ELS|LS|MLS|MS|MCU|CU|ECU>", "movement": "<static|pan|tilt|push_in|pull_out|tracking|handheld>", "narrative_operation": "<orient|contextualize|introduce|observe|accompany|connect|reveal|direct_attention|inspect|humanize|react|expand|narrow>", "purpose": "<one short sentence explaining what this shot does for the viewer>", "visual_description": "<one concrete, generation-ready description of this option>", "duration_seconds": <number, typically 4-10>}]}
 Respond with only the JSON object."""
@@ -293,7 +295,10 @@ class ShotPlanLLMClient:
             raise ShotPlanLLMCallError('LLM client is not configured (missing API key or openai package)')
 
         try:
-            count = max(1, min(8, int(count)))
+            # Example galleries can request a larger set of alternatives. Keep
+            # the same bounded behavior for other callers while allowing
+            # larger gallery batches through.
+            count = max(1, min(20, int(count)))
         except (TypeError, ValueError):
             count = 1
 
@@ -390,8 +395,14 @@ class ShotPlanLLMClient:
                 if not isinstance(shots_raw, list):
                     legacy = parsed.get('shot')
                     shots_raw = [legacy] if isinstance(legacy, dict) else []
-                if len(shots_raw) != count:
-                    raise ValueError(f'expected {count} shots, got {len(shots_raw)}: {parsed!r}')
+                if len(shots_raw) < count:
+                    raise ValueError(f'expected at least {count} shots, got {len(shots_raw)}: {parsed!r}')
+                # Models occasionally follow the requested format but return
+                # one or more extra options. Extras are harmless, and keeping
+                # the requested prefix prevents a single-image request from
+                # failing just because the model over-produced alternatives.
+                if len(shots_raw) > count:
+                    shots_raw = shots_raw[:count]
 
                 plans = []
                 for shot in shots_raw:
@@ -415,7 +426,12 @@ class ShotPlanLLMClient:
                         'duration_seconds': duration if isinstance(duration, (int, float)) and duration > 0 else _DEFAULT_DURATION,
                     })
 
-                if count > 1:
+                # For small batches, retain the strict distinctness guarantee.
+                # Once the requested set exceeds the operation vocabulary,
+                # repeated operations are unavoidable; the prompt still asks
+                # for meaningful variation, but rejecting the whole 20-shot
+                # batch would make the gallery unusable.
+                if 1 < count <= 8:
                     operations = [p['narrative_operation'] for p in plans]
                     pairings = [(p['shot_size'], p['movement']) for p in plans]
                     if len(set(operations)) != count or len(set(pairings)) != count:

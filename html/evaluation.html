@@ -20,8 +20,8 @@
     <div class="main-column">
       <h1 style="margin-bottom: 4px; text-align: center;">Shot-example evaluation matrix</h1>
       <p style="font-size: 12px; opacity: 0.75; margin: 0 0 18px; text-align: center;">
-        Generate an image + video for one scene across combinations of documentary technique × mode ×
-        track — using the same prompts <a href="/html/storyboard.html">storyboard</a> builds.
+        Generate illustrative shot plans for an act's narration across documentary modes, with randomized
+        technique combinations and distinct motion directions for the optional videos.
       </p>
 
       <!-- Inherited from your last main-app session (paper + moodboard + arc). -->
@@ -31,9 +31,9 @@
         <div id="eval-setup-missing" class="status-line" style="display: none;"></div>
       </div>
 
-      <!-- Pick one arc part as the fixed scene; its content anchors every cell. -->
+      <!-- Pick one arc part as the act; its narration and source text anchor every plan. -->
       <div class="module-card" id="eval-scene-module" style="display: none;">
-        <h2>Scene to evaluate</h2>
+        <h2>Act to evaluate</h2>
         <label class="eval-field">
           <span>Arc part (act)</span>
           <select id="eval-scene-act"></select>
@@ -43,7 +43,7 @@
           <input type="text" id="eval-scene-title">
         </label>
         <label class="eval-field">
-          <span>Narration prompt</span>
+          <span>Act narration</span>
           <textarea id="eval-scene-narration" rows="2"></textarea>
         </label>
         <label class="eval-field">
@@ -52,7 +52,7 @@
         </label>
       </div>
 
-      <!-- The three axes to sweep. -->
+      <!-- Technique pool and legacy axes to sweep. -->
       <div class="module-card" id="eval-axes-module" style="display: none;">
         <h2>Axes</h2>
         <div class="eval-axes-grid">
@@ -78,6 +78,10 @@
         <label class="eval-inline">
           <input type="checkbox" id="eval-video-toggle" checked>
           Generate a video per cell (batched — ~1 min each)
+        </label>
+        <label class="eval-inline">
+          <input type="checkbox" id="eval-act-sweep" checked>
+          Act-wide mode sweep (3 distinct shot plans per selected mode; random technique subsets)
         </label>
         <div class="eval-inline eval-wildness">
           <span>Wildness</span>

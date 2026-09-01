@@ -62,6 +62,7 @@ function fetchSuggestArcs(focusStatements, abstract, sections) {
   })
     .then(handleJsonResponse)
     .catch(err => {
+      if (err?.name === 'AbortError') throw err;
       if (err.isServerError) throw err;
       throw new Error(
         `Could not reach the arc-suggestion server at ${SUGGEST_ARCS_API_URL} (${err.message}). Check that the backend is running and reachable.`
@@ -75,7 +76,7 @@ function fetchSuggestArcs(focusStatements, abstract, sections) {
 // requires the presenter to record the actual voice track.
 const SUGGEST_NARRATION_API_URL = `${API_BASE_URL}/paper/suggest_narration`;
 
-function fetchSuggestNarration({ sectionTitle, sectionText, actTitle, actDescription, abstract, documentaryMode, signal }) {
+function fetchSuggestNarration({ sectionTitle, sectionText, actTitle, actDescription, abstract, documentaryMode, maxSentences, signal }) {
   return fetch(SUGGEST_NARRATION_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -87,10 +88,12 @@ function fetchSuggestNarration({ sectionTitle, sectionText, actTitle, actDescrip
       act_description: actDescription || '',
       abstract: abstract || '',
       documentary_mode: documentaryMode || '',
+      ...(Number.isFinite(Number(maxSentences)) ? { max_sentences: Number(maxSentences) } : {}),
     }),
   })
     .then(handleJsonResponse)
     .catch(err => {
+      if (err?.name === 'AbortError') throw err;
       if (err.isServerError) throw err;
       throw new Error(
         `Could not reach the narration-suggestion server at ${SUGGEST_NARRATION_API_URL} (${err.message}). Check that the backend is running and reachable.`
@@ -214,7 +217,9 @@ function fetchCatalogs() {
 }
 
 // Kicks off a matrix run. payload: {project_id?, scene, moodboard, techniques,
-// modes, roles, video}. Returns {project_id, run_id, state, total} - poll
+// modes, roles, video, act_sweep?}. act_sweep maps three distinct shot plans
+// per selected documentary mode, each with a random technique subset. Returns
+// {project_id, run_id, state, total} - poll
 // fetchEvalStatus.
 function fetchEvalRun(payload) {
   return fetch(EVAL_RUN_API_URL, {
@@ -224,6 +229,7 @@ function fetchEvalRun(payload) {
   })
     .then(handleJsonResponse)
     .catch(err => {
+      if (err?.name === 'AbortError') throw err;
       if (err.isServerError) throw err;
       throw new Error(`Could not reach ${EVAL_RUN_API_URL} (${err.message}). Check that the backend is running.`);
     });
@@ -257,6 +263,7 @@ function fetchDistillMoodboard(references, abstract, sections) {
   })
     .then(handleJsonResponse)
     .catch(err => {
+      if (err?.name === 'AbortError') throw err;
       if (err.isServerError) throw err;
       throw new Error(
         `Could not reach the moodboard-distill server at ${MOODBOARD_DISTILL_API_URL} (${err.message}). Check that the backend is running and reachable.`
@@ -1734,6 +1741,7 @@ function fetchNarrationSpans(text, signal) {
     ...(signal ? { signal } : {}),
     body: JSON.stringify({ text: String(text || '') }),
   }).then(handleJsonResponse).catch(err => {
+    if (err?.name === 'AbortError') throw err;
     if (err.isServerError) throw err;
     throw new Error(`Could not reach the narration-span server at ${NARRATION_SPANS_API_URL} (${err.message}).`);
   });
@@ -1750,6 +1758,7 @@ function fetchNarrationFilmability({ narration, spans, documentaryMode, signal }
       documentary_mode: documentaryMode || '',
     }),
   }).then(handleJsonResponse).catch(err => {
+    if (err?.name === 'AbortError') throw err;
     if (err.isServerError) throw err;
     throw new Error(`Could not reach the narration-filmability server at ${NARRATION_FILMABILITY_API_URL} (${err.message}).`);
   });
@@ -1762,6 +1771,7 @@ function fetchMediaQueries(scene, signal) {
     ...(signal ? { signal } : {}),
     body: JSON.stringify(scene),
   }).then(handleJsonResponse).catch(err => {
+    if (err?.name === 'AbortError') throw err;
     if (err.isServerError) throw err;
     throw new Error(`Could not reach the media-query server at ${MEDIA_QUERIES_API_URL} (${err.message}).`);
   });
@@ -1782,6 +1792,7 @@ function fetchStoryboard(sections, documentaryGoal, arcSections, documentaryMode
   })
     .then(handleJsonResponse)
     .catch(err => {
+      if (err?.name === 'AbortError') throw err;
       if (err.isServerError) throw err;
       throw new Error(
         `Could not reach the storyboard server at ${STORYBOARD_API_URL} (${err.message}). Check that the backend is running and reachable.`
@@ -1809,6 +1820,7 @@ function fetchEditPlan(sections, documentaryGoal, arcSections, documentaryMode) 
   })
     .then(handleJsonResponse)
     .catch(err => {
+      if (err?.name === 'AbortError') throw err;
       if (err.isServerError) throw err;
       throw new Error(
         `Could not reach the edit-plan server at ${EDIT_PLAN_API_URL} (${err.message}). Check that the backend is running and reachable.`
@@ -1979,6 +1991,7 @@ function fetchGenerateShot({ sectionIndex, title, sceneNotes, specificPhrase, pa
   })
     .then(handleJsonResponse)
     .catch(err => {
+      if (err?.name === 'AbortError') throw err;
       if (err.isServerError) throw err;
       throw new Error(
         `Could not reach the shot server at ${GENERATE_SHOT_API_URL} (${err.message}). Check that the backend is running and reachable.`
@@ -1988,9 +2001,10 @@ function fetchGenerateShot({ sectionIndex, title, sceneNotes, specificPhrase, pa
 
 // Animates the exact image selected in the examples gallery. The selected
 // plan's direction is forwarded; the backend does not regenerate a seed frame.
+// Optional startImageUrl/endImageUrl enable the Act Board's two-frame mode.
 const GENERATE_SHOT_VIDEO_API_URL = `${API_BASE_URL}/paper/generate_shot_video`;
 const GENERATE_SHOT_PLAN_API_URL = `${API_BASE_URL}/paper/generate_shot_plan`;
-function fetchGenerateShotPlan({ sectionIndex, title, sceneNotes, specificPhrase, parentNarration, linkedFootagePhrases, documentaryMode, techniques, projectId, cameraMovement, signal }) {
+function fetchGenerateShotPlan({ sectionIndex, title, sceneNotes, specificPhrase, parentNarration, linkedFootagePhrases, documentaryMode, techniques, projectId, cameraMovement, animationDirection, visualDescription, signal }) {
   return fetch(GENERATE_SHOT_PLAN_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2005,11 +2019,14 @@ function fetchGenerateShotPlan({ sectionIndex, title, sceneNotes, specificPhrase
       ...(documentaryMode ? { documentary_mode: documentaryMode } : {}),
       ...(techniques && techniques.length ? { techniques } : {}),
       ...(cameraMovement ? { camera_movement: cameraMovement } : {}),
+      ...(animationDirection ? { animation_direction: animationDirection } : {}),
+      ...(visualDescription !== undefined ? { visual_description: visualDescription } : {}),
       ...(projectId ? { project_id: projectId } : {}),
     })
   })
     .then(handleJsonResponse)
     .catch(err => {
+      if (err?.name === 'AbortError') throw err;
       if (err.isServerError) throw err;
       throw new Error(
         `Could not reach the shot-plan server at ${GENERATE_SHOT_PLAN_API_URL} (${err.message}). Check that the backend is running and reachable.`
@@ -2017,7 +2034,16 @@ function fetchGenerateShotPlan({ sectionIndex, title, sceneNotes, specificPhrase
     });
 }
 
-function fetchGenerateShotVideo({ sectionIndex, chosenImageUrl, sceneNotes, specificPhrase, parentNarration, linkedFootagePhrases, documentaryMode, techniques, projectId, shotPlan, cameraMovement, signal }) {
+function fetchGenerateShotVideo({ sectionIndex, chosenImageUrl, startImageUrl, endImageUrl, sceneNotes, specificPhrase, parentNarration, linkedFootagePhrases, documentaryMode, techniques, projectId, shotPlan, cameraMovement, animationDirection, subjectAction, signal }) {
+  // The shot plan's derived motion direction is canonical. Keep the helper
+  // tolerant of callers that only provide the plan object, and avoid sending
+  // a competing structured movement when that field is present.
+  const canonicalAnimationDirection = String(
+    animationDirection || shotPlan?.animation_direction || shotPlan?.animationDirection || '',
+  ).trim();
+  const canonicalSubjectAction = String(
+    subjectAction || shotPlan?.subject_action || shotPlan?.user_visual_field || '',
+  ).trim();
   return fetch(GENERATE_SHOT_VIDEO_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2025,12 +2051,16 @@ function fetchGenerateShotVideo({ sectionIndex, chosenImageUrl, sceneNotes, spec
     body: JSON.stringify({
       section_index: sectionIndex,
       chosen_image_url: chosenImageUrl || '',
+      ...(startImageUrl ? { start_image_url: startImageUrl } : {}),
+      ...(endImageUrl ? { end_image_url: endImageUrl } : {}),
       scene_notes: sceneNotes || '',
       ...(specificPhrase ? { specific_phrase: specificPhrase } : {}),
       ...(parentNarration ? { parent_narration: parentNarration } : {}),
       ...(linkedFootagePhrases && linkedFootagePhrases.length ? { linked_footage_phrases: linkedFootagePhrases } : {}),
       ...(cameraMovement ? { camera_movement: cameraMovement } : {}),
-      movement: (shotPlan && shotPlan.movement) || '',
+      ...(canonicalAnimationDirection ? { animation_direction: canonicalAnimationDirection } : {}),
+      ...(canonicalSubjectAction ? { subject_action: canonicalSubjectAction } : {}),
+      movement: canonicalAnimationDirection ? '' : ((shotPlan && shotPlan.movement) || ''),
       narrative_operation: (shotPlan && shotPlan.narrative_operation) || '',
       shot_size: (shotPlan && shotPlan.shot_size) || '',
       purpose: (shotPlan && shotPlan.purpose) || '',
@@ -2042,6 +2072,7 @@ function fetchGenerateShotVideo({ sectionIndex, chosenImageUrl, sceneNotes, spec
   })
     .then(handleJsonResponse)
     .catch(err => {
+      if (err?.name === 'AbortError') throw err;
       if (err.isServerError) throw err;
       throw new Error(
         `Could not reach the shot-video server at ${GENERATE_SHOT_VIDEO_API_URL} (${err.message}). Check that the backend is running and reachable.`
@@ -2053,7 +2084,7 @@ function fetchGenerateShotVideo({ sectionIndex, chosenImageUrl, sceneNotes, spec
 // ~count cheap still frames + one Veo clip, all from the same shot plan/framing,
 // for the presenter to pick from. Same inputs as fetchGenerateShot.
 const GENERATE_SHOT_EXAMPLES_API_URL = `${API_BASE_URL}/paper/generate_shot_examples`;
-function fetchGenerateShotExamples({ sectionIndex, title, sceneNotes, specificPhrase, parentNarration, linkedFootagePhrases, narration, actTitle, documentaryMode, techniques, moodboard, count, video, projectId, abstract, role, referenceSubject, referenceSketchUrl, referenceFigureDataUrl, referenceVideoUrl, referenceVideoThumbnailUrl, signal }) {
+function fetchGenerateShotExamples({ sectionIndex, title, sceneNotes, specificPhrase, parentNarration, linkedFootagePhrases, narration, actTitle, documentaryMode, techniques, techniqueVariants, moodboard, count, video, projectId, abstract, role, referenceSubject, referenceSketchUrl, referenceFigureDataUrl, referenceVideoUrl, referenceVideoThumbnailUrl, signal }) {
   return fetch(GENERATE_SHOT_EXAMPLES_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2077,6 +2108,8 @@ function fetchGenerateShotExamples({ sectionIndex, title, sceneNotes, specificPh
       ...(projectId ? { project_id: projectId } : {}),
       ...(documentaryMode ? { documentary_mode: documentaryMode } : {}),
       ...(techniques && techniques.length ? { techniques } : {}),
+      ...(Array.isArray(techniqueVariants) && techniqueVariants.length
+        ? { technique_variants: techniqueVariants } : {}),
       ...(moodboard && moodboard.length ? { moodboard } : {}),
       ...(typeof count === 'number' ? { count } : {}),
       ...(video === false ? { video: false } : {}),
@@ -2084,6 +2117,7 @@ function fetchGenerateShotExamples({ sectionIndex, title, sceneNotes, specificPh
   })
     .then(handleJsonResponse)
     .catch(err => {
+      if (err?.name === 'AbortError') throw err;
       if (err.isServerError) throw err;
       throw new Error(
         `Could not reach the examples server at ${GENERATE_SHOT_EXAMPLES_API_URL} (${err.message}). Check that the backend is running and reachable.`
@@ -2190,11 +2224,17 @@ function fetchGenerateSketchSequence(sectionIndex, visual, technique, projectId,
     });
 }
 
-function fetchPremiereExport(sections, projectId, soundEffects, narrations) {
+function fetchPremiereExport(sections, projectId, soundEffects, narrations, boardSequences) {
   return fetch(PREMIERE_EXPORT_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sections, sound_effects: soundEffects || [], narrations: narrations || [], project_id: projectId || '' })
+    body: JSON.stringify({
+      sections,
+      sound_effects: soundEffects || [],
+      narrations: narrations || [],
+      board_sequences: boardSequences || [],
+      project_id: projectId || '',
+    })
   })
     .then(handleJsonResponse)
     .catch(err => {
@@ -2247,10 +2287,11 @@ function fetchRenderStatus(projectId) {
 // export path (the Premiere plugin or the ffmpeg render) can use a URL
 // directly, so this downloads it to a real local file at pick-time.
 // Mirrors fetchUploadFootage's projectId in/out convention above.
-function fetchDownloadStockMedia(sectionIndex, kind, url, projectId, minDurationSeconds = 0, assetId = '') {
+function fetchDownloadStockMedia(sectionIndex, kind, url, projectId, minDurationSeconds = 0, assetId = '', signal = null) {
   return fetch(DOWNLOAD_STOCK_MEDIA_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    ...(signal ? { signal } : {}),
     body: JSON.stringify({
       section_index: sectionIndex,
       kind,
@@ -2262,6 +2303,7 @@ function fetchDownloadStockMedia(sectionIndex, kind, url, projectId, minDuration
   })
     .then(handleJsonResponse)
     .catch(err => {
+      if (err?.name === 'AbortError') throw err;
       if (err.isServerError) throw err;
       throw new Error(
         `Could not reach the stock-media-download server at ${DOWNLOAD_STOCK_MEDIA_API_URL} (${err.message}). Check that the backend is running and reachable.`
@@ -2290,6 +2332,7 @@ function fetchVideoOptions(query, minDurationSeconds = 0, signal) {
   })
     .then(handleJsonResponse)
     .catch(err => {
+      if (err?.name === 'AbortError') throw err;
       if (err.isServerError) throw err;
       throw new Error(
         `Could not reach the video-search server at ${SEARCH_VIDEO_API_URL} (${err.message}). Check that the backend is running and reachable.`

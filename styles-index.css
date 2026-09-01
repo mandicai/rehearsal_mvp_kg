@@ -22,26 +22,52 @@
   display: none !important;
 }
 
+/* ============================================================
+   THE MARKUP / BLACKLIGHT EDITORIAL THEME
+   A data-journalism layer over the base styles: stark white +
+   near-black, a monospace display face (IBM Plex Mono) for
+   headings/kickers/labels, flat boxy hairline-bordered cards, and
+   uppercase mono tags. Appended last so it overrides cleanly; delete
+   this block to revert. (See the IBM Plex Mono <link> in the HTML heads.)
+   ============================================================ */
 body {
-  --cd-bg: #F7F5F0;
-  --cd-panel-bg: #E5E3DE;
-  --cd-card-bg: #FFFFFF;
-  --cd-border: rgba(38, 37, 35, 0.14);
-  --cd-border-strong: rgba(38, 37, 35, 0.28);
-  --cd-text: #262523;
-  --cd-accent: #686c89;
-  --cd-accent-active: #686c89;
-  --cd-accent-hover: #f18700;
-  --cd-accent-text: #FFFFFF;
-  --cd-success: #2E7D32;
-  --cd-font-heading: 'Coral Pixels', cursive;
+  --cd-bg: #ffffff;
+  --cd-panel-bg: #f3f3f1;
+  --cd-card-bg: #ffffff;
+  --cd-border: rgba(17, 17, 17, 0.16);
+  --cd-border-strong: #111111;
+  --cd-text: #111111;
+  --cd-button-text: #6a6a6a;
+  --cd-font-heading: 'Playfair Display', ui-monospace, 'SF Mono', Menlo, monospace;
+  --cd-font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
   --cd-font-body: 'Source Sans 3', sans-serif;
+  --cd-accent: #e4e4e4;
+  --cd-accent-hover: #cbcbcb;
+  --cd-accent-special: #c76b4a;
+  --cd-accent-text: #FFFFFF;
+  --cd-narration: #ddae5b;
+  --cd-footage: #cbcbcb; /* #d9a8a8 */
+  --cd-audio: #d9a8a8; /* #aabba3 */
+  --cd-organic: #874900;
 
-  background: var(--cd-bg);
-  color: var(--cd-text);
+  background: linear-gradient(rgba(17, 17, 17, .035) 1px, transparent 1px),
+  linear-gradient(90deg, rgba(17, 17, 17, .035) 1px, transparent 1px),
+  var(--cd-panel-bg);
+  background-size: 22px 22px;
   font-family: var(--cd-font-body);
-  margin: 0;
 }
+
+/* Monospace, uppercase headings - the signature Markup "terminal/data" voice. */
+h1,
+h2,
+h3,
+.module-card h2 {
+  font-family: var(--cd-font-heading);
+  /* text-transform: uppercase; */
+  letter-spacing: 0.04em;
+  font-weight: 700;
+}
+
 
 .main-column {
   flex: 1 1 auto;
@@ -61,10 +87,64 @@ body {
 
 /* #region INTENT/LANDING PAGE */
 .module-card {
+  position: relative;
   max-width: 700px;
   margin: 10px auto 30px;
-  padding: 20px;
-  border-radius: 5px;
+  padding: 10px 20px 20px 20px;
+  border: 1.5px solid var(--cd-border-strong);
+  border-radius: 4px 6px 3px 5px;
+  /* The outline layers sit outside the card without changing its measured
+     width/height. This keeps sidebar sizing and collapsible module layout
+     unchanged while allowing the hand-drawn edge to remain visible. */
+  overflow: visible;
+  isolation: isolate;
+}
+
+/* Two slightly misregistered outlines create a playful, hand-drawn edge
+   without an image asset or a dependency. Keep them behind the module's
+   content and non-interactive so controls remain fully clickable. */
+.module-card::before,
+.module-card::after,
+#upload-sidebar::before,
+#upload-sidebar::after {
+  position: absolute;
+  z-index: 0;
+  pointer-events: auto;
+  content: '';
+}
+
+.module-card::before {
+  inset: -3px;
+  border: 1.5px solid rgba(38, 37, 35, .52);
+  border-radius: 7px 3px 6px 4px;
+  transform: rotate(-.35deg);
+}
+
+#upload-sidebar::before {
+  inset: -3px;
+  border: 1.5px solid rgba(38, 37, 35, .52);
+  border-radius: 7px 3px 6px 4px;
+  transform: rotate(-.35deg);
+}
+
+/* .module-card::after {
+  inset: -1px;
+  border: 1px dashed rgba(212, 119, 0, .7);
+  border-radius: 3px 7px 4px 6px;
+  transform: rotate(.25deg);
+} */
+
+/* #upload-sidebar::after {
+  inset: -1px;
+  border: 1px dashed rgba(212, 119, 0, .7);
+  border-radius: 3px 7px 4px 6px;
+  transform: rotate(.25deg);
+} */
+
+.module-card > *,
+#upload-sidebar > * {
+  position: relative;
+  z-index: 1;
 }
 
 /* Once relocated into the sidebar (see js/paper-extract.js's
@@ -85,7 +165,6 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 16px;
 }
 
 .module-card.module-card--in-sidebar .sidebar-module-header h2 {
@@ -120,13 +199,13 @@ body {
 .module-card h2 {
   font-family: var(--cd-font-heading);
   font-size: 20px;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   margin: 0 0 16px;
 }
 
-/* --- html/index.html only: the documentary-intent module (a .module-card)
-   and the extracted-sections feed both live in .main-column, to the right
-   of the collapsible "Your research paper" upload-sidebar. */
+/* --- Setup pages: the documentary-intent module (a .module-card) lives on
+   html/moodboard.html, while the extracted-sections feed remains alongside
+   the collapsible "Your research paper" upload-sidebar on html/index.html. */
 .chip-row {
   display: flex;
   flex-wrap: wrap;
@@ -209,21 +288,31 @@ body {
 
 .upload-sidebar {
   text-align: center;
-  margin: auto;
+  /* Match the vertical offset used by .module-card. The other setup
+     modules reserve a little space above their content (often for a page
+     action button); keeping the paper module on the same 10px top rhythm
+     prevents its header from sitting higher than its neighbors. */
+  margin: 45px auto 30px;
   width: 700px;
-  padding: 24px 24px 0px 24px;
+  padding: 10px 20px 20px 20px;
   overflow: hidden;
   border-radius: 5px;
-  background: linear-gradient(rgba(17, 17, 17, .035) 1px, transparent 1px),
-  linear-gradient(90deg, rgba(17, 17, 17, .035) 1px, transparent 1px),
-  var(--cd-panel-bg);
-  background-size: 22px 22px;
+}
+
+/* Match the hand-drawn treatment used by .module-card while allowing the
+   offset outlines to extend beyond this upload module's box. */
+#upload-sidebar {
+  position: relative;
+  border: 1.5px solid var(--cd-border-strong);
+  border-radius: 4px 6px 3px 5px;
+  overflow: visible;
+  isolation: isolate;
 }
 
 .upload-sidebar-header h2 {
   font-family: var(--cd-font-heading);
   font-size: 20px;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   margin: 0;
   white-space: nowrap;
   padding-bottom: 10px;
@@ -406,6 +495,31 @@ input[type="file"]::file-selector-button:hover {
   background: rgba(38, 37, 35, 0.12);
 }
 
+/* Custom upload triggers use the same visual language as the native file
+   selector button, while still opening the hidden file input on click. */
+.btn-secondary.upload-file-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: auto;
+  min-height: 31px;
+  padding: 6px 14px;
+  border: 1px solid var(--cd-border-strong);
+  border-radius: 4px;
+  background: var(--cd-panel-bg);
+  color: var(--cd-text);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.btn-secondary.upload-file-button:hover,
+.btn-secondary.upload-file-button:focus-visible {
+  background: rgba(38, 37, 35, 0.12);
+}
+
 /* #endregion */
 
 /* #region EXTRACTED SOURCE MATERIAL */
@@ -440,7 +554,7 @@ input[type="file"]::file-selector-button:hover {
 #paper-sections h2 {
   font-family: var(--cd-font-heading);
   font-size: 20px;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   margin: 16px 0 16px;
   text-align: center;
 }
@@ -592,8 +706,15 @@ input[type="file"]::file-selector-button:hover {
 }
 
 .status-line.render-movie-status {
-  font-size: 12px;
+  font-size: 8px;
+  line-height: 1.2;
   margin-top: 0px;
+  display: block;
+  width: 100%;
+  /* Status text should never become an invisible hit target over the
+     download control while the export group is relocated into the Act Board
+     playback panel. */
+  pointer-events: none;
 }
 
 .render-movie-download {
@@ -601,6 +722,16 @@ input[type="file"]::file-selector-button:hover {
   white-space: nowrap;
   font-weight: 700;
   margin-bottom: 5px;
+  position: relative;
+  z-index: 2;
+  pointer-events: auto;
+}
+
+/* The playback-panel layout intentionally gives the link a display rule,
+   which would otherwise override the browser's default [hidden] behavior.
+   Keep it genuinely absent until the MP4 render has completed. */
+.render-movie-download[hidden] {
+  display: none !important;
 }
 
 .paper-section-image {
@@ -617,7 +748,6 @@ input[type="file"]::file-selector-button:hover {
 }
 
 .paper-section-text {
-  margin-bottom: 10px;
   margin-top: 10px;
   font-size: 13px;
   line-height: 1.5;
@@ -641,6 +771,7 @@ input[type="file"]::file-selector-button:hover {
    reasoning (top pick only), an accept button, alternative chips, and a
    "suggest your own" row. */
 .arc-suggestion-card {
+  margin-top: 14px;
   padding: 14px 20px;
   border-radius: 3px;
   background: var(--cd-card-bg);
@@ -651,7 +782,7 @@ input[type="file"]::file-selector-button:hover {
 .arc-suggestion-title {
   font-family: var(--cd-font-heading);
   font-size: 16px;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
   margin-bottom: 12px;
   font-weight: 700;
 }
@@ -668,14 +799,58 @@ input[type="file"]::file-selector-button:hover {
   line-height: 1.4;
 }
 
+.arc-suggestion-part-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .arc-suggestion-part-name {
   font-weight: 700;
+}
+
+.arc-suggestion-part-controls {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 3px;
+}
+
+.arc-suggestion-part-control {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--cd-border);
+  border-radius: 3px;
+  background: var(--cd-card-bg);
+  color: var(--cd-text);
+  cursor: pointer;
+  font: 14px/1 var(--cd-font-mono);
+}
+
+.arc-suggestion-part-control:hover:not(:disabled),
+.arc-suggestion-part-control:focus-visible:not(:disabled) {
+  border-color: var(--cd-accent-hover);
+  color: var(--cd-accent-hover);
+}
+
+.arc-suggestion-part-control:disabled {
+  cursor: default;
+  opacity: .3;
+}
+
+.arc-suggestion-part-delete {
+  color: #a33a20;
 }
 
 .arc-suggestion-part-narration {
   margin-top: 4px;
   padding-left: 10px;
-  border-left: 2px solid var(--cd-border-strong);
+  border-left: 2px solid var(--cd-narration);
   line-height: 1.5;
 }
 
@@ -686,7 +861,7 @@ input[type="file"]::file-selector-button:hover {
   opacity: 0.7;
   margin-top: 2px;
   padding-left: 10px;
-  border-left: 2px solid var(--cd-accent-hover);
+  border-left: 2px solid var(--cd-accent-special);
   line-height: 1.4;
 }
 
@@ -699,9 +874,17 @@ input[type="file"]::file-selector-button:hover {
 
 .arc-suggestion-custom-row {
   display: flex;
-  gap: 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
   margin-top: 14px;
+}
+
+.arc-suggestion-custom-controls {
+  display: flex;
   align-items: center;
+  gap: 8px;
+  width: 100%;
 }
 
 .arc-suggestion-custom-input {
@@ -713,6 +896,12 @@ input[type="file"]::file-selector-button:hover {
   border: 1px solid var(--cd-border);
   background: var(--cd-card-bg);
   color: var(--cd-text);
+}
+
+.arc-suggestion-custom-row > .status-line {
+  width: 100%;
+  min-height: 16px;
+  margin-top: 0;
 }
 
 /* Always shown above the arc rows once arranged (see renderMovieEditor) -
@@ -797,6 +986,575 @@ body.pub-to-doc-page .action-bar {
   min-width: 0;
 }
 
+/* The Act Board's full-document playback/outline lives as a right-side
+   overlay, matching the left sidebar's module-card treatment without
+   consuming canvas width. */
+.storyboard-act-board-full-playback-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  /* This is a viewport-level player/outline, so keep it above every board,
+     sidebar, technique preview, sticky control, and modal-like overlay. */
+  z-index: 2147483647;
+  display: flex;
+  flex-direction: column;
+  width: min(425px, calc(100vw - 20px));
+  height: 57vh;
+  max-height: none;
+  box-sizing: border-box;
+  padding: 5px 12px 12px 12px;
+  overflow: hidden;
+  background: rgba(255, 253, 246, 1);
+}
+
+.storyboard-act-board-full-playback-panel h2 {
+  margin: 0 !important;
+}
+
+.storyboard-act-board-full-playback-panel.collapsed {
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  max-height: 44px;
+  padding: 8px;
+}
+
+.storyboard-act-board-full-playback-panel.collapsed .storyboard-act-board-full-playback-header {
+  margin: 0;
+}
+
+.storyboard-act-board-full-playback-panel.collapsed .storyboard-act-board-full-playback-header h2 {
+  display: none;
+}
+
+.storyboard-act-board-full-playback-panel.collapsed .storyboard-act-board-full-playback-view-toggle {
+  display: none;
+}
+
+.storyboard-act-board-full-playback-panel.collapsed .storyboard-act-board-full-playback-body {
+  display: none;
+}
+
+.storyboard-act-board-full-playback-panel.collapsed
+  .storyboard-act-board-selected-scene-playback-panel {
+  display: none !important;
+}
+
+.storyboard-act-board-full-playback-panel.collapsed .storyboard-act-board-full-playback-header {
+  justify-content: center;
+}
+
+.storyboard-act-board-full-playback-header {
+  align-items: center;
+  width: 100%;
+  min-height: 20px;
+  margin: 0 0 5px;
+  flex: 0 0 auto;
+}
+
+.storyboard-act-board-full-playback-view-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin: 0;
+}
+
+/* The panel has two independent view switchers (outline/content and
+   scene/full playback). Keep the current choice obvious even when the
+   buttons share the same compact button treatment. */
+.storyboard-act-board-full-playback-view-btn.selected,
+.storyboard-act-board-full-playback-view-btn.active,
+.storyboard-act-board-full-playback-view-btn[aria-pressed="true"] {
+  border-color: var(--cd-organic) !important;
+  background: var(--cd-organic) !important;
+  color: #fff !important;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .24), 0 1px 0 rgba(0, 0, 0, .16);
+}
+
+.storyboard-act-board-full-playback-view-btn:not(.selected):not(.active)[aria-pressed="false"] {
+  opacity: .72;
+}
+
+/* Scene titles in both the framed header and Story outline are intentionally
+   count-free. Keep this compatibility rule for any stale markup created by
+   an older cached renderer. */
+.storyboard-act-board-full-playback-scene-node-count {
+  display: none !important;
+}
+
+.storyboard-act-board-full-playback-view[hidden],
+.storyboard-act-board-full-playback-node-details[hidden] {
+  display: none !important;
+}
+
+.storyboard-act-board-full-playback-header h2 {
+  margin: 0;
+  font-family: var(--cd-font-heading);
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.storyboard-act-board-full-playback-body {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  border: 1.5px solid var(--cd-border-strong);
+  border-radius: 4px 6px 3px 5px;
+  overflow: visible;
+  isolation: isolate;
+  background: linear-gradient(rgba(17, 17, 17, .035) 1px, transparent 1px),
+  linear-gradient(90deg, rgba(17, 17, 17, .035) 1px, transparent 1px),
+  var(--cd-panel-bg);
+  background-size: 22px 22px;
+}
+
+/* Give the scrolling playback body the same lightly irregular, hand-drawn
+   edge used by the setup modules. Keep the outline inside the body bounds so
+   its overflow clipping never hides the border. */
+.storyboard-act-board-full-playback-body::before {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  inset: -3px;
+  border: 1.5px solid rgba(38, 37, 35, .52);
+  border-radius: 7px 3px 6px 4px;
+  pointer-events: none;
+  transform: rotate(-.35deg);
+}
+
+.storyboard-act-board-full-playback-body > * {
+  position: relative;
+  z-index: 1;
+}
+
+.storyboard-act-board-full-playback-view {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+}
+
+.storyboard-act-board-full-playback-outline {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+
+.storyboard-act-board-full-playback-outline > strong {
+  color: var(--cd-text);
+  font-size: 12px;
+}
+
+.storyboard-act-board-full-playback-node-details {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  padding: 10px;
+}
+
+.storyboard-act-board-full-playback-node-details .storyboard-act-board-node-text {
+  font-size: 12px;
+  color: var(--cd-button-text);
+}
+
+.storyboard-act-board-full-playback-node-details h3 {
+  margin: 0 0 7px;
+  color: var(--cd-text);
+  font: 700 14px/1.2 var(--cd-font-heading);
+}
+
+/* A selected node's scene transport is kept as its own panel beneath the
+   node details. It deliberately shares the all-acts panel's paper-card
+   treatment while using the regular scene playback controls and tracks. */
+.storyboard-act-board-selected-scene-playback-panel {
+  position: fixed;
+  top: 58vh;
+  right: 0;
+  bottom: auto;
+  z-index: 2147483647;
+  display: flex;
+  flex-direction: column;
+  width: min(425px, calc(100vw - 20px));
+  height: 42vh;
+  flex: 0 0 auto;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  margin: 0;
+  padding: 9px;
+  box-sizing: border-box;
+  background: rgba(255, 253, 246, 1);
+}
+
+.storyboard-act-board-selected-scene-playback-panel h3 {
+  margin: 0 0 7px;
+  color: var(--cd-text);
+  font: 700 14px/1.2 var(--cd-font-heading);
+}
+
+.storyboard-act-board-selected-scene-playback-mount {
+  min-width: 0;
+}
+
+.storyboard-act-board-selected-playback-view-toggle {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 0 auto;
+  margin: 0 0 7px;
+}
+
+.storyboard-act-board-selected-playback-collapse-btn {
+  margin-left: auto;
+}
+
+.storyboard-act-board-selected-scene-playback-panel.collapsed {
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  max-height: 44px;
+  padding: 8px;
+  overflow: hidden;
+}
+
+.storyboard-act-board-selected-scene-playback-panel.collapsed
+  .storyboard-act-board-full-playback-view-btn,
+.storyboard-act-board-selected-scene-playback-panel.collapsed
+  .storyboard-act-board-selected-scene-playback-mount,
+.storyboard-act-board-selected-scene-playback-panel.collapsed
+  > .storyboard-act-board-full-playback-player {
+  display: none !important;
+}
+
+.storyboard-act-board-selected-scene-playback-panel.collapsed
+  .storyboard-act-board-selected-playback-view-toggle {
+  justify-content: center;
+  margin: 0;
+}
+
+.storyboard-act-board-selected-scene-playback-panel.collapsed
+  .storyboard-act-board-selected-playback-collapse-btn {
+  margin-left: 0;
+}
+
+.storyboard-act-board-selected-scene-playback-panel
+  > .storyboard-act-board-full-playback-player {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding-top: 7px;
+  border-top: 1px solid rgba(38, 37, 35, .16);
+}
+
+.storyboard-act-board-selected-scene-playback-mount
+  > .storyboard-act-board-playback {
+  padding: 0;
+  border-top: 0;
+  background: transparent;
+}
+
+.storyboard-act-board-selected-scene-playback-empty {
+  color: var(--cd-text);
+  font: 12px/1.4 var(--cd-font-body);
+  opacity: .7;
+}
+
+.storyboard-act-board-full-playback-node-details-content,
+.storyboard-act-board-full-playback-node-detail-content {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* The selected node body is the same live DOM used in the card. Reuse the
+   node/type classes for identical control styling, while neutralizing board
+   positioning/scroll behavior inside the fixed panel. */
+.storyboard-act-board-node-panel-host {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  min-height: 0;
+  margin: 0;
+  padding: 9px;
+  box-sizing: border-box;
+  overflow: visible !important;
+  cursor: default;
+  touch-action: auto;
+}
+
+/* The selected node body is mounted in this element, so it needs to remain
+   the scroll container for long narration/footage/audio controls. The generic
+   panel-host rule keeps canvas content visible, but must not disable scrolling
+   in the fixed full-playback details panel. */
+.storyboard-act-board-full-playback-node-details-content.storyboard-act-board-node-panel-host {
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+}
+
+.storyboard-act-board-node-panel-host.storyboard-act-board-node-footage {
+  margin-left: 0;
+}
+
+.storyboard-act-board-node-panel-host.storyboard-act-board-node-narration::before,
+.storyboard-act-board-node-panel-host.storyboard-act-board-node-narration::after,
+.storyboard-act-board-node-panel-host.storyboard-act-board-node-footage::before,
+.storyboard-act-board-node-panel-host.storyboard-act-board-node-footage::after,
+.storyboard-act-board-node-panel-host.storyboard-act-board-node-audio::before,
+.storyboard-act-board-node-panel-host.storyboard-act-board-node-audio::after {
+  display: none;
+}
+
+.storyboard-act-board-node-panel-host.storyboard-act-board-node-narration,
+.storyboard-act-board-node-panel-host.storyboard-act-board-node-audio {
+  background: transparent;
+}
+
+.storyboard-act-board-node-body {
+  min-width: 0;
+}
+
+.storyboard-act-board-node-panel-host > .storyboard-act-board-node-action-row {
+  justify-content: flex-start;
+}
+
+.storyboard-act-board-full-playback-node-detail-field {
+  display: grid;
+  grid-template-columns: minmax(82px, 34%) minmax(0, 1fr);
+  gap: 7px;
+  color: var(--cd-text);
+  font: 12px/1.35 var(--cd-font-body);
+}
+
+.storyboard-act-board-full-playback-node-detail-field strong {
+  font-weight: 700;
+}
+
+.storyboard-act-board-full-playback-node-detail-field span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.storyboard-act-board-full-playback-node-detail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  color: var(--cd-text);
+  font: 11px/1.35 var(--cd-font-mono);
+}
+
+.storyboard-act-board-full-playback-node-detail-list > strong {
+  font-family: var(--cd-font-body);
+  font-size: 12px;
+}
+
+.storyboard-act-board-full-playback-node-detail-content img,
+.storyboard-act-board-full-playback-node-detail-content video {
+  display: block;
+  width: 100%;
+  max-height: 190px;
+  border-radius: 3px;
+  background: #111;
+  object-fit: contain;
+}
+
+.storyboard-act-board-full-playback-node-detail-audio {
+  width: 100%;
+  height: 30px;
+}
+
+.storyboard-act-board-full-playback-node-detail-empty {
+  margin: 0;
+  color: var(--cd-text);
+  font: 12px var(--cd-font-mono);
+  opacity: 0.55;
+  /* position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center; */
+}
+
+.storyboard-act-board-full-playback-node-detail-field.error span {
+  color: #a1271c;
+}
+
+.storyboard-act-board-full-playback-act {
+  border-top: 1px solid rgba(38, 37, 35, .12);
+}
+
+.storyboard-act-board-full-playback-act > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 7px;
+  padding-left: 18px;
+  position: relative;
+  color: var(--cd-text);
+  cursor: pointer;
+  font: 700 13px var(--cd-font-heading);
+}
+
+.storyboard-act-board-full-playback-act > summary::before {
+  content: "";
+  flex: 0 0 5px;
+  width: 5px;
+  height: 5px;
+  margin-left: -13px;
+  border-right: 1.5px solid var(--cd-button-text);
+  border-bottom: 1.5px solid var(--cd-button-text);
+  transform: rotate(-45deg);
+  transition: transform 120ms ease;
+}
+
+.storyboard-act-board-full-playback-act[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.storyboard-act-board-full-playback-act > summary::marker,
+.storyboard-act-board-full-playback-act > summary::-webkit-details-marker {
+  display: none;
+}
+
+.storyboard-act-board-full-playback-scene {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 6px;
+  border: 0;
+  border-left: 2px solid transparent;
+  background: white !important;
+  color: var(--cd-text) !important;
+  cursor: pointer;
+  font: 12px/1.3 var(--cd-font-body);
+  text-align: left;
+  overflow-wrap: anywhere;
+  font-weight: 700;
+}
+
+.storyboard-act-board-full-playback-scene:hover,
+.storyboard-act-board-full-playback-scene:focus-visible {
+  border-left-color: var(--cd-accent-hover);
+  background: rgba(241, 135, 0, .1);
+  outline: none;
+}
+
+.storyboard-act-board-full-playback-scene-node-count {
+  color: inherit;
+  font: 11px/1.3 var(--cd-font-mono);
+  font-weight: 400;
+  opacity: .6;
+}
+
+.storyboard-act-board-full-playback-empty {
+  padding: 3px 6px 6px;
+  color: var(--cd-text);
+  font-size: 12px;
+  opacity: .65;
+}
+
+.storyboard-act-board-full-playback-player {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(38, 37, 35, .16);
+}
+
+.storyboard-act-board-full-playback-player[hidden] {
+  display: none !important;
+}
+
+.storyboard-act-board-full-playback-player .status-line {
+  margin-top: 0px;
+}
+
+.storyboard-act-board-full-playback-player video {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  background: #111;
+  object-fit: contain;
+}
+
+.storyboard-act-board-full-playback-stage {
+  min-height: 72px;
+  display: grid;
+  place-items: center;
+  padding: 10px;
+  background: rgba(38, 37, 35, .06);
+  color: var(--cd-text);
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.storyboard-act-board-full-playback-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.storyboard-act-board-full-playback-btn {
+  width: 100%;
+}
+
+.storyboard-act-board-full-playback-actions .render-movie-btn {
+  width: 100%;
+  margin-left: 0 !important;
+}
+
+.storyboard-act-board-full-playback-player > .render-movie-download {
+  align-self: flex-start;
+  display: block;
+  width: 100%;
+  margin-bottom: 0;
+  /* Keep the link in its own flex item above any wrapping status text. */
+  flex: 0 0 auto;
+}
+
+.storyboard-act-board-full-playback-status {
+  display: block;
+  width: 100%;
+  flex: 0 0 auto;
+  margin: 0;
+  font-size: 8px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+
+@media (max-width: 560px) {
+  .storyboard-act-board-full-playback-panel {
+    top: 52px;
+    width: min(330px, calc(100vw - 12px));
+    height: calc(58vh - 52px);
+    max-height: none;
+  }
+
+  .storyboard-act-board-selected-scene-playback-panel {
+    top: calc(58vh);
+    height: calc(42vh - 0px);
+    width: min(330px, calc(100vw - 12px));
+  }
+
+  .storyboard-act-board-selected-scene-playback-panel.collapsed {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+    max-height: 44px;
+    padding: 8px;
+  }
+}
+
 /* The moodboard is a setup-page input. Keep it out of the storyboard/suggest
    narrative arc page so the Act Board is the first working surface there. */
 .storyboard-page #moodboard-summary-module {
@@ -815,7 +1573,7 @@ body.act-board-active .storyboard-act-board-container {
   min-width: 0;
   max-width: none;
   overflow: auto;
-  padding: 40px 8px 0px 8px;
+  padding: 0px 8px 0px 8px;
   background: var(--cd-panel-bg);
 }
 
@@ -827,38 +1585,72 @@ body.act-board-active .storyboard-act-board-container > .storyboard-act-board-vi
   border-radius: 0;
 }
 
-/* Back/setup and panel controls are outside the board in storyboard.html,
-   so pin them over the board rather than leaving them behind its viewport
-   layer. */
+/* The Act Board moves the page-level controls into its sticky jump bar. Keep
+   them in normal bar flow while the board is active; renderMovieEditor
+   restores their original locations when Timeline + Scenes is selected. */
 body.act-board-active #back-to-setup-btn,
 body.act-board-active #toggle-panels-btn {
-  position: fixed;
-  top: 14px;
-  z-index: 1200;
+  position: static;
+  top: auto;
+  left: auto;
+  z-index: auto;
   margin: 0;
 }
 
-body.act-board-active #back-to-setup-btn {
-  left: 20px;
+body.act-board-active .storyboard-act-board-sticky-left {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 6px;
+  margin-right: 8px;
 }
 
-body.act-board-active #toggle-panels-btn {
-  left: 135px;
+body.act-board-active .storyboard-act-board-sticky-spacer {
+  flex: 1 1 auto;
+  min-width: 12px;
 }
 
-/* Export is generated inside #paper-sections, not inside the board layer.
-   Float its action group over the board in the same top control band. */
+body.act-board-active .storyboard-act-board-sticky-export {
+  /* Flatten the old button/status/download wrapper into the sticky bar so
+     Export participates in the same top row as the other controls. */
+  display: contents;
+}
+
+body.act-board-active .storyboard-act-board-sticky-export .render-movie-btn {
+  align-self: center;
+  margin-left: auto;
+}
+
+body.act-board-active .storyboard-act-board-sticky-export .render-movie-status,
+body.act-board-active .storyboard-act-board-sticky-export .render-movie-download {
+  flex: 0 0 100%;
+  width: 100%;
+  box-sizing: border-box;
+  margin-left: 0;
+  text-align: left;
+}
+
+body.act-board-active .storyboard-act-board-sticky-export .render-movie-status {
+  order: 1000;
+  margin-top: 2px;
+  font-size: 8px;
+  line-height: 1.2;
+}
+
+body.act-board-active .storyboard-act-board-sticky-export .render-movie-status:empty,
+body.act-board-active .storyboard-act-board-sticky-export .render-movie-download[hidden] {
+  display: none;
+}
+
+body.act-board-active .storyboard-act-board-sticky-export .render-movie-download {
+  order: 1001;
+  margin-bottom: 0;
+}
+
+/* The export group is relocated into the sticky bar while the Act Board is
+   active, so the old heading row no longer needs to float over the canvas. */
 body.act-board-active .storyboard-heading-row {
-  position: fixed;
-  top: 14px;
-  right: 20px;
-  z-index: 1200;
-  margin: 0;
-  pointer-events: none;
-}
-
-body.act-board-active .storyboard-heading-row .storyboard-heading-actions {
-  pointer-events: auto;
+  display: none;
 }
 
 /* If the presenter chooses Show panels while on the full-window board, keep
@@ -866,15 +1658,13 @@ body.act-board-active .storyboard-heading-row .storyboard-heading-actions {
    board surface. */
 body.act-board-active .sidebar-stack:not(.collapsed) {
   position: fixed;
-  top: 54px;
+  top: 35px;
   left: 0;
   z-index: 1100;
   width: min(380px, calc(100vw - 20px));
   max-height: calc(100vh - 64px);
   overflow-y: auto;
   padding: 10px;
-  background: var(--cd-bg);
-  box-shadow: 4px 0 14px rgba(17, 17, 17, .16);
 }
 
 .storyboard-act-board-view {
@@ -928,17 +1718,22 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 .storyboard-act-board-act-jump-nav {
   position: sticky;
   top: 0;
-  z-index: 50;
+  z-index: 10000000;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
-  margin: -2px -2px 10px;
-  padding: 7px 8px;
-  /* border: 1px solid var(--cd-border-strong); */
+  margin: 0px;
+  padding-bottom: 5px;
   border-radius: 4px;
-  background: rgba(255, 253, 246, .96);
-  box-shadow: 0 2px 6px rgba(17, 17, 17, .2);
+}
+
+/* The top-of-storyboard act jump controls are redundant with the act outline,
+   but the same bar also carries Back to setup, Show panels, and export. Hide
+   only the jump label/buttons while preserving those neighboring controls. */
+.storyboard-page .storyboard-act-board-act-jump-label,
+.storyboard-page .storyboard-act-board-act-jump-btn {
+  display: none;
 }
 
 .storyboard-act-board-act-jump-label {
@@ -962,13 +1757,97 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   color: var(--cd-accent-hover);
 }
 
+.storyboard-act-board-act-jump-clear-btn {
+  margin-left: auto;
+}
+
 .storyboard-act-board-canvas {
+  position: relative;
   display: grid;
   /* grid-template-columns: repeat(auto-fit, minmax(560px, 1fr)); */
   align-items: start;
   gap: 14px;
   overflow-x: auto;
   padding-bottom: 4px;
+}
+
+/* Covers only the Act Board canvas while first-arc starter media finishes.
+   The canvas remains in the document flow so its columns do not jump when
+   the veil is removed. Incremental Visualize passes use the scene-scoped veil
+   below and never block unrelated panels. */
+.storyboard-act-board-autopopulate-loading {
+  position: absolute;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  align-items: start;
+  justify-items: center;
+  padding: 24px;
+  box-sizing: border-box;
+  background: rgba(255, 253, 246, .76);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  cursor: progress;
+}
+
+/* Incremental Visualize veil: scoped to the active scene and deliberately
+   transparent to pointer input so other acts/panels remain usable. */
+.storyboard-act-board-scene-loading {
+  position: absolute;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  place-items: start center;
+  padding: 16px;
+  box-sizing: border-box;
+  background: rgba(255, 253, 246, .42);
+  pointer-events: none;
+}
+.storyboard-act-board-scene-loading-label {
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .9);
+  box-shadow: 0 4px 14px rgba(17, 17, 17, .1);
+  color: var(--cd-text);
+  font: 11px/1.3 var(--cd-font-mono);
+}
+
+.storyboard-act-board-autopopulate-loading-card {
+  display: grid;
+  max-width: 420px;
+  justify-items: center;
+  gap: 8px;
+  padding: 22px 26px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .88);
+  box-shadow: 0 8px 28px rgba(17, 17, 17, .14);
+  color: var(--cd-text);
+  text-align: center;
+}
+
+.storyboard-act-board-autopopulate-loading-card strong {
+  font-size: 20px;
+  margin-bottom: 5px;
+  font-family: var(--cd-font-heading);
+}
+
+.storyboard-act-board-autopopulate-loading-card > span:not(.storyboard-act-board-autopopulate-loading-spinner) {
+  font: 12px/1.45 var(--cd-font-mono);
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+}
+
+.storyboard-act-board-autopopulate-loading-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid var(--cd-accent-special);
+  border-top-color: var(--cd-footage);
+  border-radius: 50%;
+  animation: storyboard-act-board-autopopulate-spin .8s linear infinite;
+}
+
+@keyframes storyboard-act-board-autopopulate-spin {
+  to { transform: rotate(360deg); }
 }
 
 .storyboard-act-board-column {
@@ -1029,7 +1908,8 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   justify-content: flex-start;
   flex-wrap: wrap;
   gap: 8px;
-  margin: 0 0 13px;
+  /* Keep the framed scene surface directly beneath the act description. */
+  margin: 0;
   color: var(--cd-text);
   font: 12px var(--cd-font-mono);
   text-transform: uppercase;
@@ -1049,9 +1929,9 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   max-width: min(720px, 100%);
   overflow-wrap: anywhere;
   color: var(--cd-text);
-  font: 12px/1.35 var(--cd-font-mono);
+  font: 10px/1.35 var(--cd-font-mono);
   letter-spacing: 0;
-  opacity: .6;
+  /* opacity: .6; */
   text-transform: none;
   white-space: normal;
   word-break: break-word;
@@ -1095,7 +1975,7 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 .storyboard-act-board-node-stack {
   position: relative;
   min-width: 720px;
-  min-height: 360px;
+  min-height: 1080px;
   margin-bottom: 12px;
   /* Async narration analysis can replace the card contents several times.
      Keep the browser from choosing the card as a scroll anchor and shifting
@@ -1103,7 +1983,7 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   overflow-anchor: none;
 }
 
-.storyboard-act-board-scene-marquee {
+.storyboard-act-board-node-marquee {
   position: absolute;
   z-index: 50;
   border: 1px dashed var(--cd-accent-hover);
@@ -1111,9 +1991,14 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   pointer-events: none;
 }
 
-.storyboard-act-board-node.scene-marquee-selected {
-  outline: 2px solid var(--cd-accent-hover);
-  outline-offset: 2px;
+.storyboard-act-board-node-stack.act-board-node-marquee-active {
+  user-select: none;
+  cursor: crosshair;
+}
+
+.storyboard-act-board-node.act-board-node-marquee-selected {
+  outline: 2px solid rgba(0, 0, 0, .25);
+  outline-offset: 3px;
 }
 
 .storyboard-act-board-link-layer {
@@ -1131,25 +2016,26 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 
 .storyboard-act-board-link-path {
   fill: none;
-  stroke: #3d79a8;
+  stroke: #000;
   stroke-width: 1.5;
-  stroke-dasharray: 5 4;
+  stroke-dasharray: 3 3;
   opacity: .62;
   pointer-events: stroke;
   cursor: pointer;
 }
 
 .storyboard-act-board-link-path.narration-link {
-  stroke: #d47700;
+  stroke: #000;
   stroke-width: 1.25;
   opacity: .55;
 }
 
 .storyboard-act-board-link-path.pending {
-  stroke: #d47700;
-  stroke-width: 3;
-  stroke-dasharray: 8 5;
-  opacity: 1;
+  stroke: #000;
+  /* Match the settled link while the destination is still being chosen. */
+  stroke-width: 1.5;
+  stroke-dasharray: 3 3;
+  opacity: .62;
 }
 
 .storyboard-act-board-link-path.selected {
@@ -1171,6 +2057,8 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 .storyboard-act-board-node-stack > .storyboard-act-board-node {
   position: absolute;
   z-index: 2;
+  height: 120px;
+  box-sizing: border-box;
 }
 
 /* Playback is the scene's background surface. Newly created working nodes
@@ -1180,19 +2068,26 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 }
 
 .storyboard-act-board-node-stack > .storyboard-act-board-node-narration {
-  width: 330px;
+  width: 190px;
   box-sizing: border-box;
 }
 
 .storyboard-act-board-node-stack > .storyboard-act-board-node-footage {
   box-sizing: border-box;
-  overflow: auto;
+  overflow: visible;
+}
+
+/* Visualize shells receive their final free-space coordinates on the next
+   measured scene patch. Keep the temporary shell out of the paint/hit tree so
+   the narration-relative fallback can never flash as a diagonal card. */
+.storyboard-act-board-footage-pending-placement {
+  visibility: hidden !important;
 }
 
 .storyboard-act-board-node-stack > .storyboard-act-board-node-playback {
   width: 320px;
   min-width: 260px;
-  min-height: 150px;
+  min-height: 140px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1214,7 +2109,7 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 }
 
 .storyboard-act-board-node-stack > .storyboard-act-board-node-audio {
-  width: 220px;
+  width: 190px;
   min-width: 190px;
   overflow-y: auto;
   overflow-anchor: none;
@@ -1227,7 +2122,7 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 }
 
 .storyboard-act-board-link-path.audio-link {
-  stroke: #327753;
+  stroke: #000;
   stroke-width: 1.5;
   opacity: .62;
 }
@@ -1237,7 +2132,13 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   display: flex;
   align-items: center;
   gap: 5px;
-  margin-top: 7px;
+  margin-top: 5px;
+}
+
+.storyboard-act-board-audio-upload-input {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .storyboard-act-board-audio-link-status {
@@ -1249,7 +2150,7 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 }
 
 .storyboard-act-board-audio-link-status.linked {
-  color: #327753;
+  color: var(--cd-audio);
   opacity: .9;
 }
 
@@ -1320,7 +2221,7 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 .storyboard-act-board-audio-selected-label {
   margin-top: 7px;
   overflow: hidden;
-  color: #327753;
+  color: var(--cd-text);
   font: 12px var(--cd-font-mono);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1337,25 +2238,30 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-top: 4px;
   color: var(--cd-text);
-  font: 12px var(--cd-font-mono);
+  font: 8px var(--cd-font-mono);
+  letter-spacing: 0.04em;
+  margin-bottom: 10px;
+  margin-top: 10px;
 }
 
 .storyboard-act-board-audio-volume-row input {
   min-width: 0;
   flex: 1 1 auto;
-  accent-color: #327753;
+  accent-color: var(--cd-audio);
+  font-size: 12px;
+  letter-spacing: 0.04em;
 }
 
 .storyboard-act-board-narration-volume-row input {
-  accent-color: #d47700;
+  accent-color: var(--cd-narration);
+  font-size: 12px;
+  letter-spacing: 0.04em;
 }
 
 .storyboard-act-board-audio-results {
   display: grid;
   gap: 5px;
-  max-height: 170px;
   margin-top: 8px;
   overflow: auto;
 }
@@ -1388,16 +2294,50 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   touch-action: none;
 }
 
+/* Focus the selected card without scaling its parent, so SVG link geometry
+   remains anchored to node centers while the canvas scrolls into view. */
+.storyboard-act-board-node.storyboard-act-board-node--focused {
+  outline: 3px solid rgba(241, 135, 0, .78);
+  outline-offset: 4px;
+  box-shadow: 0 0 0 6px rgba(241, 135, 0, .16), 5px 7px 0 rgba(17, 17, 17, .16);
+}
+
+.storyboard-act-board-node-narration.dragging {
+  box-shadow: none;
+}
+
+.storyboard-act-board-node-narration.dragging::before {
+  filter: brightness(0) saturate(100%) invert(48%) sepia(96%) saturate(1351%) hue-rotate(2deg) brightness(101%) contrast(103%) drop-shadow(0 0 4px rgba(241, 135, 0, .95)) drop-shadow(0 0 9px rgba(241, 135, 0, .5));
+  transform: translateY(-1px);
+}
+
+/* Narration uses the supplied SVG outline as its shape. Follow that outline
+   for focus feedback instead of drawing a rectangular CSS outline around it. */
+.storyboard-act-board-node-narration.storyboard-act-board-node--focused {
+  outline: none;
+  box-shadow: none;
+}
+
+.storyboard-act-board-node-narration.storyboard-act-board-node--focused::before {
+  filter: brightness(0) saturate(100%) invert(48%) sepia(96%) saturate(1351%) hue-rotate(2deg) brightness(101%) contrast(103%) drop-shadow(0 0 3px rgba(241, 135, 0, .9)) drop-shadow(0 0 7px rgba(241, 135, 0, .45));
+}
+
+/* Keep the drag treatment on the supplied outline even when the card was
+   already focused before the pointer went down. */
+.storyboard-act-board-node-narration.storyboard-act-board-node--focused.dragging::before {
+  filter: brightness(0) saturate(100%) invert(48%) sepia(96%) saturate(1351%) hue-rotate(2deg) brightness(101%) contrast(103%) drop-shadow(0 0 4px rgba(241, 135, 0, .95)) drop-shadow(0 0 9px rgba(241, 135, 0, .5));
+  transform: translateY(-1px);
+}
+
 .storyboard-act-board-node.dragging {
   z-index: 20;
   cursor: grabbing;
-  box-shadow: 5px 7px 0 rgba(17, 17, 17, .18), 0 0 0 2px var(--cd-accent-hover);
 }
 
 .storyboard-act-board-node.link-source {
   z-index: 30;
-  border-color: var(--cd-accent-hover);
-  box-shadow: 0 0 0 3px rgba(241, 135, 0, .28), 4px 5px 0 rgba(17, 17, 17, .16);
+  /* border-color: var(--cd-accent-hover);
+  box-shadow: 0 0 0 3px rgba(241, 135, 0, .28), 4px 5px 0 rgba(17, 17, 17, .16); */
 }
 
 .storyboard-act-board-node-spawn-menu {
@@ -1433,7 +2373,7 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   font: 12px var(--cd-font-body);
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
 }
 
 .storyboard-act-board-node-spawn-menu button:hover,
@@ -1444,16 +2384,17 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 
 .storyboard-act-board-footage-drop-menu {
   position: absolute;
-  z-index: 45;
+  /* Keep the merge/split chooser above scene nodes and link affordances, but
+     below viewport-level controls: the playback/node-content panels and the
+     act jump navigation must remain accessible while this menu is open. */
+  z-index: 900;
   display: flex;
   flex-direction: column;
   gap: 5px;
   width: min(310px, calc(100% - 16px));
   padding: 8px;
-  border: 1px solid var(--cd-border-strong);
   border-radius: 4px;
   background: #fffdf6;
-  box-shadow: 4px 5px 0 rgba(17, 17, 17, .18);
 }
 
 .storyboard-act-board-footage-drop-menu strong {
@@ -1463,8 +2404,7 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 .storyboard-act-board-footage-drop-menu > span {
   overflow: hidden;
   color: var(--cd-text);
-  font: 12px var(--cd-font-mono);
-  opacity: .7;
+  font: 12px var(--cd-font-body);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1489,13 +2429,13 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 }
 
 .storyboard-act-board-footage-drop-choice b {
-  font: 11px var(--cd-font-heading);
+  font: 11px var(--cd-font-body);
+  font-weight: 700;
 }
 
 .storyboard-act-board-footage-drop-choice small {
   color: var(--cd-text);
-  font: 12px var(--cd-font-mono);
-  opacity: .72;
+  font: 12px var(--cd-font-body);
 }
 
 .storyboard-act-board-footage-drop-cancel {
@@ -1540,11 +2480,11 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 }
 
 .storyboard-act-board-linking-guide b {
-  color: #874900;
+  color: var(--cd-organic);
 }
 
 .storyboard-act-board-linking-guide .output-key {
-  color: #d47700;
+  color: var(--cd-narration);
   font-weight: 700;
 }
 
@@ -1579,20 +2519,526 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 .storyboard-act-board-node {
   position: relative;
   padding: 0 9px 9px 9px;
-  /* border: 1px solid var(--cd-border-strong); */
   border-radius: 4px;
-  background: #fffdf6;
-  box-shadow: 0 2px 6px rgba(17, 17, 17, .2);
 }
 
 .storyboard-act-board-node-narration {
-  border-left: 4px solid #d47700;
-  overflow-y: scroll;
-  /* The narration card is rebuilt as local extraction/classification
-     completes. Disable scroll anchoring so that content growth does not make
-     the card visibly drift down between renders. */
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+  overflow: visible;
+  /* The detailed narration body lives in the full-playback panel; keep the
+     canvas shell open so the supplied SVG outline is never clipped. */
   overflow-anchor: none;
   scrollbar-width: thin;
+}
+
+/* Narration is edited and recorded in the scene's Narration section now.
+   Keep the backing card's geometry in the canvas so legacy links and saved
+   node ownership remain stable, but hide the duplicate card itself. A
+   transparent shell still has a measurable rect for link anchoring and can be
+   activated programmatically by the scene controls. */
+.storyboard-act-board-node[data-node-type="narration"] {
+  opacity: 0;
+  pointer-events: none !important;
+  user-select: none;
+}
+
+.storyboard-act-board-node[data-node-type="narration"] > * {
+  pointer-events: none !important;
+}
+
+/* Use the supplied hand-drawn narration shape as a scalable outline over the
+   card. The SVG remains a decorative layer, so dragging, linking, and the
+   compact audio control continue to operate on the normal card DOM. */
+.storyboard-act-board-node-narration::before {
+  content: "";
+  position: absolute;
+  inset: 2px 0 -3px;
+  z-index: 1;
+  background: url("assets/narration.svg") center / 100% 100% no-repeat;
+  filter: brightness(0) saturate(100%) invert(42%) sepia(84%) saturate(926%) hue-rotate(2deg) brightness(91%) contrast(96%) drop-shadow(0 2px 4px rgba(17, 17, 17, .18));
+  pointer-events: none;
+}
+
+.storyboard-act-board-node-narration::after {
+  content: "";
+  position: absolute;
+  inset: 2px 0 -3px;
+  z-index: 0;
+  background: url("assets/narration-fill.svg") center / 100% 100% no-repeat;
+  pointer-events: none;
+}
+
+.storyboard-act-board-node-narration > * {
+  position: relative;
+  z-index: 2;
+}
+
+/* A compact narration readout sits beside the SVG shell. Keep
+   it outside the node body so selected-node details can still move into the
+   full playback panel without changing the canvas node's footprint. */
+.storyboard-act-board-node-narration > .storyboard-act-board-narration-side-preview {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: calc(-50% + 25px);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 400px;
+  height: fit-content;
+  min-height: 0;
+  box-sizing: border-box;
+  padding: 9px 10px;
+  overflow: visible;
+  border-radius: 5px 8px 4px 7px;
+  background: rgba(255, 255, 255, .9);
+  color: var(--cd-text);
+  font: 11px/1.35 var(--cd-font-body);
+  pointer-events: auto;
+  /* The adjacent narration is an interactive phrase surface: users can
+     click a word or drag across any words to add a footage beat. */
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.storyboard-act-board-narration-side-preview-text {
+  display: block;
+  flex: 0 0 auto;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  overflow: visible;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+/* Compact source-window controls remain visible under every canvas node while
+   the full editor continues to live in the selected-node panel. */
+.storyboard-act-board-node > .storyboard-act-board-node-mini-source-editor {
+  position: absolute;
+  top: calc(100% + 1px);
+  right: 5px;
+  left: 5px;
+  z-index: 4;
+  /* Source-window editors are kept in the selected-node content panel, not
+     beneath the compact canvas node. */
+  display: none !important;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  box-sizing: border-box;
+  padding: 2px 3px;
+  pointer-events: auto;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.storyboard-act-board-node-mini-source-readout {
+  overflow: hidden;
+  color: rgba(0, 0, 0, .58);
+  font: 8px/1 var(--cd-font-mono);
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.storyboard-act-board-node-mini-source-strip {
+  height: 8px;
+  border-radius: 2px;
+}
+
+.storyboard-act-board-node-mini-source-strip .sfx-source-selection {
+  top: 1px;
+  bottom: 1px;
+  min-width: 4px;
+  border-radius: 2px;
+}
+
+.storyboard-act-board-node-mini-source-strip .sfx-source-selection-label {
+  inset: 0 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 7px;
+  line-height: 1;
+}
+
+.storyboard-act-board-node-mini-source-strip .sfx-source-handle {
+  width: 4px;
+}
+
+/* Audio nodes use the supplied hand-drawn sound shape as their compact board
+   shell. Their search/player controls remain in the full-playback panel, just
+   like the detailed narration controls. */
+.storyboard-act-board-node-audio {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+  overflow: visible;
+  overflow-anchor: none;
+  scrollbar-width: thin;
+}
+
+/* The legacy audio-node rule supplies a 190px minimum for the old detailed
+   inline card. The board shell is now compact and its details are panel-only,
+   so let the fixed SVG footprint control the rendered height. */
+.storyboard-act-board-node-stack > .storyboard-act-board-node-audio {
+  min-height: 0;
+  overflow: visible;
+}
+
+.storyboard-act-board-node-audio::before {
+  content: "";
+  position: absolute;
+  inset: 2px 0 -3px;
+  z-index: 1;
+  background: url("assets/sound.svg") center / 100% 100% no-repeat;
+  filter: brightness(0) saturate(100%) invert(38%) sepia(26%) saturate(1190%) hue-rotate(91deg) brightness(88%) contrast(88%) drop-shadow(0 2px 4px rgba(17, 17, 17, .18));
+  pointer-events: none;
+}
+
+.storyboard-act-board-node-audio::after {
+  content: "";
+  position: absolute;
+  inset: 2px 0 -3px;
+  z-index: 0;
+  background: url("assets/sound-fill.svg") center / 100% 100% no-repeat;
+  pointer-events: none;
+}
+
+.storyboard-act-board-node-audio > * {
+  position: relative;
+  z-index: 2;
+}
+
+.storyboard-act-board-node-audio
+  > .storyboard-act-board-node-sticky-banner {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  border-bottom: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.storyboard-act-board-node-audio .storyboard-act-board-audio-node-top {
+  box-sizing: border-box;
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 6px 8px 8px;
+  overflow: hidden;
+}
+
+.storyboard-act-board-node-audio .storyboard-act-board-audio-node-top
+  > .storyboard-act-board-node-header-actions:empty {
+  display: none;
+}
+
+/* Follow the sound outline for focus and drag feedback instead of drawing a
+   rectangular outline around the shaped card. */
+.storyboard-act-board-node-audio.storyboard-act-board-node--focused,
+.storyboard-act-board-node-audio.dragging {
+  outline: none;
+  box-shadow: none;
+}
+
+.storyboard-act-board-node-audio.storyboard-act-board-node--focused::before {
+  filter: brightness(0) saturate(100%) invert(44%) sepia(22%) saturate(1077%) hue-rotate(91deg) brightness(91%) contrast(91%) drop-shadow(0 0 3px rgba(50, 119, 83, .9)) drop-shadow(0 0 7px rgba(50, 119, 83, .45));
+}
+
+.storyboard-act-board-node-audio.dragging::before,
+.storyboard-act-board-node-audio.storyboard-act-board-node--focused.dragging::before {
+  filter: brightness(0) saturate(100%) invert(44%) sepia(22%) saturate(1077%) hue-rotate(91deg) brightness(91%) contrast(91%) drop-shadow(0 0 4px rgba(50, 119, 83, .95)) drop-shadow(0 0 9px rgba(50, 119, 83, .5));
+  transform: translateY(-1px);
+}
+
+.storyboard-act-board-audio-node-preview {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: min(112px, 100%);
+  max-width: 100%;
+  height: 28px;
+  margin-top: 3px;
+  color: var(--cd-audio);
+}
+
+.storyboard-act-board-audio-node-preview:not(.is-empty) {
+  flex-direction: column;
+  gap: 2px;
+  height: auto;
+}
+
+.storyboard-act-board-audio-node-preview svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.storyboard-act-board-audio-node-waveform {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+  max-width: 112px;
+  height: 28px;
+  padding: 1px 4px;
+  border: 1px solid rgba(50, 119, 83, 1);
+  border-radius: 4px;
+  background: white;
+  color: var(--cd-audio);
+  cursor: pointer;
+}
+
+.storyboard-act-board-audio-node-waveform:hover,
+.storyboard-act-board-audio-node-waveform:focus-visible,
+.storyboard-act-board-audio-node-waveform.is-playing {
+  background: rgba(38, 37, 35, 0.1);
+}
+
+.storyboard-act-board-audio-node-waveform svg {
+  flex: 1 1 auto;
+  width: 86px;
+  height: 22px;
+}
+
+.storyboard-act-board-audio-node-waveform path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.storyboard-act-board-audio-node-waveform.is-playing path {
+  animation: storyboard-act-board-waveform-pulse 900ms ease-in-out infinite alternate;
+}
+
+.storyboard-act-board-audio-node-waveform-status {
+  flex: 0 0 auto;
+  min-width: 16px;
+  font: 13px/1 var(--cd-font-mono);
+  text-align: center;
+}
+
+.storyboard-act-board-audio-node-name {
+  display: block;
+  width: min(112px, 100%);
+  max-width: 100%;
+  overflow: hidden;
+  color: #33312d;
+  font: 9px/1.2 var(--cd-font-mono);
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.storyboard-act-board-audio-node-preview-audio {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.storyboard-act-board-audio-node-preview path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.storyboard-act-board-audio-node-preview.is-empty {
+  width: auto;
+  height: auto;
+  padding: 2px 5px;
+  border: 1px dashed rgba(50, 119, 83, .62);
+  border-radius: 10px;
+  font: 9px/1.2 var(--cd-font-mono);
+  opacity: .8;
+}
+
+.storyboard-act-board-narration-node-preview {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  margin-left: auto;
+  color: var(--cd-organic);
+  font: 10px/1.2 var(--cd-font-mono);
+  white-space: nowrap;
+}
+
+.storyboard-act-board-narration-node-top {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  min-height: 0;
+  padding: 6px 6px;
+  overflow: hidden;
+}
+
+.storyboard-act-board-narration-node-top .storyboard-act-board-narration-node-preview {
+  display: flex;
+  flex: 0 0 auto;
+  width: 100%;
+  margin-left: 0;
+  max-width: 100%;
+  order: 2;
+  margin-top: 0;
+  justify-content: center;
+}
+
+.storyboard-act-board-narration-node-top
+  > .storyboard-act-board-narration-node-preview:not(.is-empty) {
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Keep recording/upload controls directly beneath the narration preview in
+   the compact SVG shell, rather than in the top header row. */
+.storyboard-act-board-narration-node-top > .storyboard-act-board-node-action-row {
+  order: 3;
+  flex: 0 0 auto;
+  width: 100%;
+  justify-content: center;
+  flex-wrap: nowrap;
+  gap: 3px;
+}
+
+.storyboard-act-board-narration-node-top > .storyboard-act-board-node-action-row
+  .storyboard-act-board-node-action,
+.storyboard-act-board-narration-node-top > .storyboard-act-board-node-action-row
+  .storyboard-act-board-narration-playback-toggle {
+  flex: 0 0 auto;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.storyboard-act-board-narration-node-top > .storyboard-act-board-node-action-row
+  .storyboard-act-board-node-action {
+  padding: 0;
+}
+
+.storyboard-act-board-narration-node-top > .storyboard-act-board-node-type {
+  display: block;
+  flex: 0 0 auto;
+  width: 100%;
+  order: 1;
+  text-align: center;
+}
+
+.storyboard-act-board-narration-node-top > .storyboard-act-board-node-header-actions {
+  order: 4;
+}
+
+.storyboard-act-board-narration-node-top
+  > .storyboard-act-board-node-header-actions:empty {
+  display: none;
+}
+
+.storyboard-act-board-narration-node-preview.is-empty {
+  flex-direction: row;
+  gap: 0;
+  width: auto;
+  height: auto;
+  padding: 2px 5px;
+  border: 1px dashed rgba(212, 119, 0, .62);
+  border-radius: 10px;
+  font: 9px/1.2 var(--cd-font-mono);
+  opacity: .8;
+}
+
+.storyboard-act-board-narration-node-preview-audio {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.storyboard-act-board-narration-node-waveform {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  width: min(112px, 100%);
+  max-width: 100%;
+  height: 28px;
+  padding: 1px 4px;
+  border: 1px solid var(--cd-narration);
+  border-radius: 4px;
+  background: white;
+  color: var(--cd-organic);
+  cursor: pointer;
+}
+
+.storyboard-act-board-narration-node-waveform:hover,
+.storyboard-act-board-narration-node-waveform:focus-visible,
+.storyboard-act-board-narration-node-waveform.is-playing {
+  background: rgba(38, 37, 35, 0.1);
+}
+
+.storyboard-act-board-narration-node-waveform svg {
+  display: block;
+  flex: 1 1 auto;
+  width: 86px;
+  height: 22px;
+}
+
+.storyboard-act-board-narration-node-waveform path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.storyboard-act-board-narration-node-waveform.is-playing path {
+  animation: storyboard-act-board-waveform-pulse 900ms ease-in-out infinite alternate;
+}
+
+.storyboard-act-board-narration-node-waveform-status {
+  flex: 0 0 auto;
+  min-width: 16px;
+  font: 13px/1 var(--cd-font-mono);
+  text-align: center;
+}
+
+.storyboard-act-board-narration-node-transcript-preview {
+  display: block;
+  width: min(100%, 150px);
+  max-width: 100%;
+  overflow: hidden;
+  color: #33312d;
+  font: 9px/1.2 var(--cd-font-body);
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes storyboard-act-board-waveform-pulse {
+  from { opacity: .62; }
+  to { opacity: 1; }
 }
 
 /* Keep each node's header/timing affordances visible while its media and
@@ -1683,55 +3129,6 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   padding-bottom: 8px;
 }
 
-.storyboard-act-board-node-footage {
-  position: relative;
-  margin-left: 12px;
-  border-left: 4px solid #3d79a8;
-  /* background: #f7fbff; */
-  overflow-anchor: none;
-  scrollbar-width: thin;
-}
-
-.storyboard-act-board-node.storyboard-act-board-node-audio {
-  border-left: 4px solid #327753;
-  min-height: 150px;
-}
-
-/* Match the narration span treatment for footage seeded from an abstract
-   phrase: the dashed purple edge signals that the search is using a visual
-   proxy rather than a literal depiction of the narration. */
-.storyboard-act-board-node-footage.storyboard-act-board-node-filmability-abstract {
-  /* border-style: dashed;
-  border-color: rgba(120, 92, 165, .72); */
-  border-left: 4px solid #63478e;
-  /* background: rgb(243, 238, 253); */
-}
-
-.storyboard-act-board-node-footage.storyboard-act-board-node-filmability-abstract
-  .storyboard-act-board-footage-sticky-banner {
-  border-bottom-color: rgba(99, 71, 142, .42);
-  background: rgb(243, 238, 253);
-}
-
-.storyboard-act-board-node-footage.storyboard-act-board-node-filmability-abstract .storyboard-act-board-node-timing {
-  background: #63478e;
-}
-
-.storyboard-act-board-node-footage.storyboard-act-board-node-filmability-abstract
-  .storyboard-act-board-node-fragment-title {
-  background: rgba(120, 92, 165, .12);
-  color: #63478e;
-  border-color: rgba(120, 92, 165, .55);
-  text-decoration: underline dashed rgba(120, 92, 165, .85);
-  text-underline-offset: 2px;
-}
-
-/* .storyboard-act-board-node-audio .storyboard-act-board-node-top,
-.storyboard-act-board-node-narration .storyboard-act-board-node-top,
-.storyboard-act-board-node-footage .storyboard-act-board-node-top {
-  margin-top: 16px;
-} */
-
 .storyboard-act-board-node-footage.act-board-footage-selected {
   z-index: 35;
   /* border-color: var(--cd-accent-hover); */
@@ -1741,7 +3138,7 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 .storyboard-act-board-node-footage.footage-drop-hover,
 .storyboard-act-board-node-audio.footage-drop-hover,
 .storyboard-act-board-node-narration.footage-drop-hover {
-  outline: 2px solid rgba(241, 135, 0, .55);
+  outline: 2px solid rgba(0, 0, 0, .25);
   outline-offset: 3px;
 }
 
@@ -1749,6 +3146,241 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 .storyboard-act-board-node-audio.footage-drop-shaking,
 .storyboard-act-board-node-narration.footage-drop-shaking {
   animation: storyboardActBoardFootageShake .11s linear infinite alternate;
+}
+
+/* Final shape-shell overrides follow the legacy footage rules above. */
+.storyboard-act-board-node-footage,
+.storyboard-act-board-node-footage.storyboard-act-board-node-filmability-abstract {
+  border: 0;
+  border-left: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+  background: transparent;
+  overflow: visible;
+}
+
+.storyboard-act-board-node-footage
+  > .storyboard-act-board-footage-sticky-banner,
+.storyboard-act-board-node-footage.storyboard-act-board-node-filmability-abstract
+  > .storyboard-act-board-footage-sticky-banner {
+  box-sizing: border-box;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.storyboard-act-board-node-footage
+  > .storyboard-act-board-footage-sticky-banner
+  > .storyboard-act-board-node-top {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  text-align: center;
+  padding: 4px 6px 5px;
+}
+
+.storyboard-act-board-node-footage
+  > .storyboard-act-board-footage-sticky-banner
+  .storyboard-act-board-node-type {
+  flex: 0 0 auto;
+  width: auto;
+  text-align: center;
+}
+
+.storyboard-act-board-node-footage
+  > .storyboard-act-board-footage-sticky-banner
+  .storyboard-act-board-node-header-actions {
+  /* Keep the delete control absolutely anchored to the positioned node top,
+     without letting this otherwise-empty wrapper disturb centering. */
+  position: static;
+  width: 0;
+  height: 0;
+  margin: 0;
+}
+
+.storyboard-act-board-footage-node-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 1 auto;
+  width: min(96px, 100%);
+  height: 42px;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid rgba(61, 121, 168, .42);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, .72);
+}
+
+.storyboard-act-board-footage-node-preview img,
+.storyboard-act-board-footage-node-preview video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #111;
+}
+
+.storyboard-act-board-footage-node-preview.split-screen {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  background: #111;
+}
+
+.storyboard-act-board-footage-node-preview.split-screen
+  .storyboard-act-board-footage-split-pane {
+  height: 100%;
+}
+
+.storyboard-act-board-footage-node-preview.split-screen
+  .storyboard-act-board-footage-split-pane img {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+  object-fit: cover;
+}
+
+/* .storyboard-act-board-footage-node-preview.is-empty {
+  width: auto;
+  height: auto;
+  min-height: 0;
+  padding: 4px 7px;
+  border: 1px dashed rgba(61, 121, 168, .62);
+  border-radius: 10px;
+  background: transparent;
+  color: rgba(61, 121, 168, .8);
+  font: 9px/1.2 var(--cd-font-mono);
+  text-align: center;
+} */
+
+.storyboard-act-board-footage-node-fragment-title {
+  display: block;
+  box-sizing: border-box;
+  /* width: min(100%, 150px); */
+  max-width: 100%;
+  margin-top: 0;
+  overflow: hidden;
+  padding: 1px 3px;
+  font: 9px/1.2 var(--cd-font-mono);
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.storyboard-act-board-footage-node-fragment-title
+  .storyboard-act-board-node-fragment-label {
+  font-weight: 700;
+}
+
+/* Footage timing is now part of the selected-node content panel. Reset the
+   canvas timing banner's absolute positioning when it is mounted there. */
+.storyboard-act-board-node-footage
+  .storyboard-act-board-node-body
+  > .storyboard-act-board-node-timing {
+  position: relative;
+  top: auto;
+  right: auto;
+  left: auto;
+  width: 100%;
+  height: 20px;
+  box-sizing: border-box;
+  margin: 0 0 6px;
+  padding: 3px 6px;
+  pointer-events: none;
+}
+
+.storyboard-act-board-node-footage
+  .storyboard-act-board-node-body
+  > .storyboard-act-board-footage-start-btn {
+  display: block;
+  margin: 0 0 6px;
+}
+
+.storyboard-act-board-node-footage > *,
+.storyboard-act-board-node-footage.storyboard-act-board-node-filmability-abstract > * {
+  position: relative;
+  z-index: 3;
+}
+
+.storyboard-act-board-node-footage
+  > .storyboard-act-board-node-resize-handle {
+  position: sticky;
+  z-index: 60;
+}
+
+.storyboard-act-board-node-footage::before {
+  content: "";
+  position: absolute;
+  inset: 2px 0 -3px;
+  z-index: 1;
+  background: url("assets/footage.svg") center / 100% 100% no-repeat;
+  filter: drop-shadow(0 2px 4px rgba(17, 17, 17, .18));
+  pointer-events: none;
+}
+
+/* Fill the supplied footage shape itself, rather than painting a rectangular
+   background behind the transparent areas of the SVG. The source artwork is
+   a hand-drawn outline, so use a broad irregular interior fill that follows
+   its approximate bounds while leaving the outline visible around the edge. */
+.storyboard-act-board-node-footage::after {
+  content: "";
+  position: absolute;
+  inset: 2px 0 -3px;
+  z-index: -2;
+  background: #fff;
+  clip-path: polygon(
+    3% 5%, 20% 2%, 47% 3%, 74% 2%, 97% 5%,
+    99% 21%, 97% 48%, 99% 74%, 96% 97%,
+    71% 99%, 45% 97%, 19% 99%, 3% 95%,
+    1% 71%, 3% 46%, 1% 22%
+  );
+  transform: scaleY(.58);
+  transform-origin: center;
+  pointer-events: none;
+}
+
+.storyboard-act-board-node-footage.storyboard-act-board-node-filmability-abstract::before {
+  filter: brightness(0) saturate(100%) invert(35%) sepia(20%) saturate(1144%)
+    hue-rotate(225deg) brightness(87%) contrast(89%)
+    drop-shadow(0 2px 4px rgba(17, 17, 17, .18));
+}
+
+.storyboard-act-board-node-footage.act-board-footage-selected,
+.storyboard-act-board-node-footage.storyboard-act-board-node--focused,
+.storyboard-act-board-node-footage.link-source,
+.storyboard-act-board-node-footage.dragging {
+  outline: none;
+  box-shadow: none;
+}
+
+.storyboard-act-board-node-footage.act-board-footage-selected::before,
+.storyboard-act-board-node-footage.storyboard-act-board-node--focused::before,
+.storyboard-act-board-node-footage.link-source::before,
+.storyboard-act-board-node-footage.dragging::before,
+.storyboard-act-board-node-footage.storyboard-act-board-node--focused.dragging::before {
+  filter: drop-shadow(0 0 3px rgba(61, 121, 168, .9))
+    drop-shadow(0 0 7px rgba(61, 121, 168, .45));
+}
+
+.storyboard-act-board-node-footage.dragging::before,
+.storyboard-act-board-node-footage.storyboard-act-board-node--focused.dragging::before {
+  transform: translateY(-1px);
+  filter: drop-shadow(0 0 4px rgba(61, 121, 168, .95))
+    drop-shadow(0 0 9px rgba(61, 121, 168, .5));
 }
 
 @keyframes storyboardActBoardFootageShake {
@@ -1801,11 +3433,11 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 }
 
 .storyboard-act-board-image-generation-inputs > summary::marker {
-  color: #874900;
+  color: var(--cd-organic);
 }
 
 .storyboard-act-board-image-generation-inputs > summary::-webkit-details-marker {
-  color: #874900;
+  color: var(--cd-organic);
 }
 
 .storyboard-act-board-image-generation-input-row {
@@ -1831,9 +3463,34 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   overflow-wrap: anywhere;
 }
 
+.storyboard-act-board-image-generation-input-value-with-action {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.storyboard-act-board-image-generation-input-value-with-action > .storyboard-act-board-image-generation-input-value {
+  flex: 1 1 auto;
+}
+
+.storyboard-act-board-image-generation-input-value-with-action > .storyboard-act-board-image-generation-edit-techniques {
+  flex: 0 0 auto;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.storyboard-act-board-shot-plan-context-row .storyboard-act-board-image-generation-input-value {
+  max-height: 120px;
+  min-height: 64px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+}
+
 .storyboard-act-board-image-generation-input-editable {
   width: 100%;
   min-width: 0;
+  min-height: 58px;
   box-sizing: border-box;
   padding: 2px 4px;
   border: 1px solid rgba(38, 37, 35, .2);
@@ -1841,12 +3498,23 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   background: #fff;
   color: var(--cd-text);
   font: inherit;
+  resize: vertical;
 }
 
 .storyboard-act-board-image-generation-input-editable:focus {
   border-color: var(--cd-accent-hover);
   outline: 2px solid rgba(241, 135, 0, .16);
   outline-offset: 1px;
+}
+
+.storyboard-act-board-shot-plan-visual-row {
+  align-items: start;
+}
+
+.storyboard-act-board-shot-plan-visual-editor {
+  min-height: 58px;
+  resize: vertical;
+  line-height: 1.35;
 }
 
 .storyboard-act-board-image-generation-inputs-note {
@@ -1870,10 +3538,174 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   font-size: 14px;
 }
 
+.storyboard-act-board-animation-direction {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px 5px;
+  border-top: 1px solid rgba(38, 37, 35, .12);
+}
+
+.storyboard-act-board-animation-direction > strong {
+  color: var(--cd-text);
+  font-size: 12px;
+}
+
+.storyboard-act-board-animation-direction > small {
+  color: var(--cd-text);
+  font-size: 11px;
+  opacity: .68;
+}
+
+.storyboard-act-board-animation-direction-value {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px;
+  border: 1px solid rgba(38, 37, 35, .18);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, .72);
+  color: var(--cd-text);
+  font: 12px/1.35 var(--cd-font-body);
+  overflow-wrap: anywhere;
+}
+
+.storyboard-act-board-advanced-video-controls {
+  margin: 4px 5px;
+  border: 1px dashed rgba(38, 37, 35, .22);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, .28);
+}
+
+.storyboard-act-board-advanced-video-controls > summary {
+  padding: 4px 5px;
+  color: var(--cd-text);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  list-style-position: inside;
+}
+
+.storyboard-act-board-advanced-video-controls > summary::marker,
+.storyboard-act-board-advanced-video-controls > summary::-webkit-details-marker {
+  color: var(--cd-organic);
+}
+
+.storyboard-act-board-two-frame-video-panel {
+  margin: 4px 5px;
+  border: 1px dashed rgba(38, 37, 35, .24);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, .34);
+}
+
+.storyboard-act-board-two-frame-video-panel > summary {
+  padding: 4px 5px;
+  color: var(--cd-text);
+  cursor: pointer;
+  font-weight: 700;
+  list-style-position: inside;
+}
+
+.storyboard-act-board-two-frame-video-panel > summary::marker,
+.storyboard-act-board-two-frame-video-panel > summary::-webkit-details-marker {
+  color: var(--cd-organic);
+}
+
+.storyboard-act-board-two-frame-video-enable,
+.storyboard-act-board-two-frame-video-select-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  color: var(--cd-text);
+  font: 12px var(--cd-font-body);
+}
+
+.storyboard-act-board-two-frame-video-select-row {
+  display: block;
+  border-top: 1px solid rgba(38, 37, 35, .1);
+}
+
+.storyboard-act-board-two-frame-video-select-row > strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--cd-text);
+  font: 11px var(--cd-font-mono);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.storyboard-act-board-two-frame-video-thumb-rail {
+  display: flex;
+  gap: 6px;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 1px 1px 5px;
+}
+
+.storyboard-act-board-two-frame-video-thumb {
+  position: relative;
+  flex: 0 0 92px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 3px;
+  background: #fff;
+  color: var(--cd-text);
+  cursor: pointer;
+  overflow: hidden;
+  text-align: left;
+}
+
+.storyboard-act-board-two-frame-video-thumb:hover,
+.storyboard-act-board-two-frame-video-thumb:focus-visible {
+  border-color: var(--cd-accent-hover);
+}
+
+.storyboard-act-board-two-frame-video-thumb.selected {
+  border-color: var(--cd-accent-hover);
+  box-shadow: 0 0 0 2px rgba(241, 135, 0, .2);
+}
+
+.storyboard-act-board-two-frame-video-thumb img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: #e9eef2;
+}
+
+.storyboard-act-board-two-frame-video-thumb span {
+  display: block;
+  max-width: 100%;
+  padding: 3px 4px;
+  overflow: hidden;
+  font: 9px/1.2 var(--cd-font-body);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.storyboard-act-board-two-frame-video-empty {
+  color: var(--cd-text);
+  font-size: 11px;
+  opacity: .6;
+}
+
+.storyboard-act-board-two-frame-video-hide,
+.storyboard-act-board-two-frame-video-show {
+  margin: 4px 6px 6px;
+  padding: 3px 6px;
+  font-size: 11px;
+}
+
+.storyboard-act-board-two-frame-video-show {
+  display: block;
+}
+
 .storyboard-act-board-technique-popup-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  /* Keep the modal above the fixed technique-motion preview, which is
+     intentionally hover-driven and can remain mounted while a popup opens. */
+  z-index: 3000;
   display: grid;
   place-items: center;
   padding: 16px;
@@ -1895,11 +3727,10 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   justify-content: space-between;
   gap: 12px;
   padding-bottom: 8px;
-  /* border-bottom: 1px solid var(--cd-border); */
 }
 
 .storyboard-act-board-technique-popup-header strong {
-  font-size: 15px;
+  font-size: 16px;
   letter-spacing: .04em;
   text-transform: uppercase;
 }
@@ -1926,7 +3757,6 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   flex-direction: column;
   gap: 6px;
   width: 100%;
-  margin: 8px 0 9px;
 }
 
 .storyboard-act-board-footage-featured {
@@ -1939,7 +3769,7 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   overflow: hidden;
   border: 1px solid var(--cd-border);
   border-radius: 3px;
-  background: #e9eef2;
+  background: var(--cd-accent);
 }
 
 .storyboard-act-board-footage-featured-label {
@@ -1974,22 +3804,50 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   pointer-events: none;
 }
 
+.storyboard-act-board-footage-upload-label-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+  color: var(--cd-text);
+}
+
+.storyboard-act-board-footage-upload-label-editor span {
+  font-size: 8px;
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+  font-family: var(--cd-font-mono);
+}
+
+.storyboard-act-board-footage-upload-label-editor input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 3px 5px;
+  border: 1px solid var(--cd-border);
+  border-radius: 3px;
+  background: var(--cd-card-bg);
+  color: var(--cd-text);
+  font-family: var(--cd-font-body);
+  font-size: 12px;
+}
+
+.storyboard-act-board-footage-upload-label-editor input:focus {
+  border-color: var(--cd-accent-hover);
+  outline: 2px solid rgba(241, 135, 0, .2);
+}
+
 .storyboard-act-board-footage-replace-btn {
   position: absolute;
   top: 4px;
   right: 4px;
   z-index: 3;
   padding: 3px 6px;
-  border-color: rgba(255, 255, 255, .7);
-  background: rgba(17, 17, 17, .72);
-  color: #fff;
+  /* border-color: rgba(255, 255, 255, .7); */
+  background: var(--cd-accent-special) !important;
+  color: #fff !important;
   font: 12px var(--cd-font-mono);
-}
-
-.storyboard-act-board-footage-replace-btn:hover,
-.storyboard-act-board-footage-replace-btn:focus-visible {
-  border-color: #fff;
-  background: rgba(17, 17, 17, .9);
 }
 
 .storyboard-act-board-footage-featured > .storyboard-act-board-footage-pin-btn {
@@ -2007,25 +3865,105 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 .storyboard-act-board-footage-track-label {
   margin-bottom: 3px;
   color: var(--cd-text);
-  font-size: 12px;
-  /* font-weight: 700; */
-  letter-spacing: 0.04em;
   opacity: 0.6;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   font-family: var(--cd-font-mono);
 }
 
 .storyboard-act-board-footage-track-strip {
+  position: relative;
   display: flex;
   width: 100%;
-  height: 24px;
+  height: 20px;
   overflow: hidden;
   border: 1px solid var(--cd-border-strong);
   border-radius: 3px;
   background: #e9eef2;
 }
 
+/* Empty areas of footage/audio rails are also sequence-playhead controls.
+   Match the narration rail's cursor so clicking there clearly communicates
+   that the shared vertical playhead can be repositioned. Individual segment
+   and trim controls retain their more specific cursors below. */
+.storyboard-act-board-playhead-strip {
+  cursor: ew-resize;
+}
+
+.storyboard-act-board-footage-track-drop-preview {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 5;
+  box-sizing: border-box;
+  border: 2px solid rgba(36, 91, 130, .9);
+  border-radius: 2px;
+  background: rgba(36, 91, 130, .28);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .7), 0 0 8px rgba(36, 91, 130, .55);
+  pointer-events: none;
+}
+
+/* Ghost window shown after a track segment has been held long enough to lift.
+   Its position is the segment's actual prospective drop position, including
+   the point inside the segment where the pointer was grabbed. */
+.storyboard-act-board-track-lift-drop-indicator {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  z-index: 7;
+  box-sizing: border-box;
+  min-width: 3px;
+  border: 1px dashed rgba(36, 91, 130, .95);
+  border-radius: 2px;
+  background: rgba(255, 255, 255, .28);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .8), 0 0 6px rgba(36, 91, 130, .45);
+  pointer-events: none;
+}
+
+.storyboard-act-board-track-reorder-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 8;
+  width: 3px;
+  border-radius: 2px;
+  background: #245b82;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .95), 0 0 8px rgba(36, 91, 130, .55);
+  pointer-events: none;
+}
+
+.storyboard-act-board-footage-track.reorder-valid-drop {
+  border-color: rgba(36, 91, 130, .75);
+  box-shadow: 0 0 0 1px rgba(36, 91, 130, .2);
+}
+
+.storyboard-act-board-track-floating-ghost {
+  position: fixed;
+  z-index: 10020;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-sizing: border-box;
+  border: 2px solid #245b82;
+  border-radius: 3px;
+  background: rgba(36, 91, 130, .82);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, .28), 0 0 0 2px rgba(255, 255, 255, .9);
+  color: #fff;
+  opacity: .94;
+  pointer-events: none;
+  transform: rotate(-1deg) scale(1.03);
+}
+
+.storyboard-act-board-track-floating-ghost > * {
+  pointer-events: none;
+}
+
 .storyboard-act-board-footage-track-segment {
   position: relative;
+  isolation: isolate;
   display: flex;
   flex: 0 0 auto;
   align-items: center;
@@ -2034,28 +3972,61 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   overflow: hidden;
   padding: 2px 4px;
   border: 0;
-  border-right: 1px solid rgba(255, 255, 255, .7);
-  background: #3d79a8;
-  color: #fff;
+  color: var(--cd-text);
   cursor: pointer;
   touch-action: none;
-  font: 12px var(--cd-font-mono);
+  font: 8px var(--cd-font-mono);
   text-overflow: ellipsis;
   white-space: nowrap;
+  background: var(--cd-footage);
+}
+
+/* Keep the active rail boundary above the thumbnail wash.  The thumbnail is
+   painted by ::before, so relying on an inset box-shadow alone can make the
+   selected edge disappear into a bright frame. */
+.storyboard-act-board-footage-track-segment::after {
+  position: absolute;
+  /* The thumbnail wash is painted by ::before (z-index: 0).  Keep the
+     selection boundary in its own top layer so bright thumbnails can never
+     swallow the active-state outline. */
+  z-index: 5;
+  inset: 0;
+  box-sizing: border-box;
+  border: 2px solid transparent;
+  content: '';
+  pointer-events: none;
+}
+
+.storyboard-act-board-footage-track-segment::before {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  content: '';
+  background-image: var(--footage-track-preview-image);
+  background-position: center;
+  background-size: cover;
+  opacity: .4;
+  pointer-events: none;
+}
+
+.storyboard-act-board-footage-track-segment > * {
+  position: relative;
+  z-index: 1;
 }
 
 .storyboard-act-board-footage-track-gap {
+  margin-top: 0px;
   flex: 0 0 auto;
   min-width: 0;
   overflow: hidden;
   padding: 4px;
-  border-right: 1px dashed rgba(61, 121, 168, .35);
-  background: repeating-linear-gradient(135deg, rgba(61, 121, 168, .08) 0 4px, transparent 4px 8px);
+  background: var(--cd-panel-bg);
   color: var(--cd-text);
-  font: 12px var(--cd-font-mono);
+  font: 8px var(--cd-font-mono);
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
+  letter-spacing: 0.04em;
 }
 
 .storyboard-act-board-footage-track-gap.empty {
@@ -2072,55 +4043,533 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   position: absolute;
   top: 0;
   bottom: 0;
-  z-index: 2;
+  /* Handles must remain clickable/visible over both the thumbnail and the
+     selected-track boundary. */
+  z-index: 6;
   width: 7px;
-  background: rgba(255, 255, 255, .72);
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(0, 0, 0, .88);
+  box-sizing: border-box;
   cursor: col-resize;
   touch-action: none;
 }
 
 .storyboard-act-board-footage-track-handle.start {
   left: 0;
-  border-right: 1px solid rgba(17, 17, 17, .45);
 }
 
 .storyboard-act-board-footage-track-handle.end {
   right: 0;
-  border-left: 1px solid rgba(17, 17, 17, .45);
 }
 
 .storyboard-act-board-footage-track-segment.resizing {
   z-index: 3;
-  background: var(--cd-accent-hover);
   box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .9);
 }
 
 .storyboard-act-board-footage-track-segment.dragging {
   z-index: 3;
   cursor: grabbing;
-  background: var(--cd-accent-hover);
   box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .9);
+}
+
+.storyboard-act-board-footage-track-segment.pressing {
+  cursor: grabbing;
+  box-shadow: inset 0 0 0 2px rgba(36, 91, 130, .8);
+  animation: storyboard-act-board-track-press .75s ease-out both;
+}
+
+@keyframes storyboard-act-board-track-press {
+  from { box-shadow: inset 0 0 0 2px rgba(36, 91, 130, .2); }
+  to { box-shadow: inset 0 0 0 2px rgba(36, 91, 130, .95); }
+}
+
+.storyboard-act-board-footage-track-segment.lifted {
+  z-index: 4;
+  transform: translateY(-2px);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, .24), inset 0 0 0 2px rgba(255, 255, 255, .9);
+  opacity: .45;
+}
+
+/* The original flex slot remains as a quiet placeholder while the opaque
+   ghost follows the pointer. This keeps neighboring segments from collapsing
+   and makes the eventual insertion slot easy to read. */
+.storyboard-act-board-footage-track-segment.reorder-placeholder {
+  border: 1px dashed rgba(36, 91, 130, .7);
+  background: rgba(36, 91, 130, .08);
+  box-shadow: none;
+  opacity: .24;
+}
+
+.storyboard-act-board-footage-track.reordering .storyboard-act-board-footage-track-segment {
+  transition: transform .12s ease;
 }
 
 .storyboard-act-board-footage-track-timing-cue {
   display: block;
-  min-height: 12px;
-  margin-top: 3px;
+  margin-top: 5px;
   color: var(--cd-text);
-  font: 12px var(--cd-font-mono);
-  opacity: .75;
+  font: 8px var(--cd-font-mono);
+  letter-spacing: .04em;
 }
 
 .storyboard-act-board-footage-track-segment:nth-child(odd) {
-  background: #31698f;
+  background: var(--cd-footage);
+}
+
+/* The canvas copy of the playback rails sits in a compact reserved band near
+   the top of the framed scene canvas and uses the same track components as
+   the persistent playback panel. */
+.storyboard-act-board-canvas-playback-tracks {
+  position: absolute;
+  /* Keep the compact rails above scene cards so their segment handles and
+     lifted-drag gesture are always reachable above the canvas nodes. */
+  z-index: 40;
+  box-sizing: border-box;
+  padding: 9px 10px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, .92);
+  pointer-events: auto;
+}
+
+.storyboard-act-board-canvas-playback-tracks .storyboard-act-board-footage-track {
+  margin-top: 4px;
+}
+
+.storyboard-act-board-canvas-playback-tracks .storyboard-act-board-footage-track-handle {
+  width: 4px;
+}
+
+.storyboard-act-board-canvas-playback-tracks
+  .storyboard-act-board-footage-track:first-child {
+  margin-top: 0;
+}
+
+/* Framed scene boards are divided into three editorial lanes. The narration
+   and sound lanes stay compact, while footage receives the largest share of
+   the available height for visual planning. */
+.storyboard-act-board-scene-sections {
+  display: grid;
+  /* Music/sound is a compact utility lane above narration; footage keeps
+     the largest share of the scene board for visual planning. */
+  /* Keep the utility sound lane at its intrinsic header + track height. The
+     narration lane has a stable baseline so growing the scene for additional
+     footage cannot move the Footage section (and its node-placement origin)
+     downward on every visualization pass. */
+  /* The narration scroller has deliberate vertical breathing room; give its
+     lane enough minimum height that the transcript and suggested copy do not
+     get clipped by the scroller's inset or the lane track below it. */
+  grid-template-rows: minmax(54px, max-content) minmax(300px, max-content) minmax(380px, 1fr);
+  gap: 10px;
+  min-height: 0;
+  overflow: hidden;
+  /* Pull the narration lane closer to the scene header while retaining the
+     original side/bottom inset for the footage and sound lanes. */
+  padding: 4px 10px 10px;
+  background: transparent;
+  pointer-events: none;
+}
+
+.storyboard-act-board-scene-section {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 6px;
+  overflow: hidden;
+  padding: 9px 10px 8px;
+  border: 1px dashed rgba(38, 37, 35, .3);
+  border-radius: 6px 4px 7px 5px;
+  background: rgba(255, 255, 255, .62);
+  pointer-events: none;
+}
+
+/* Footage cards are owned by the Footage lane rather than the act-wide
+   canvas.  Keeping a dedicated positioned layer here makes their coordinates
+   local to the lane, so free-space placement and deletion cannot reflow the
+   rest of the scene. */
+.storyboard-act-board-scene-footage-node-layer {
+  position: relative;
+  display: block;
+  align-self: stretch;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  /* The section itself supplies the boundary. Let cards travel through the
+     full lane instead of clipping them to the height of their initial row. */
+  overflow: visible;
+  pointer-events: auto;
+}
+
+.storyboard-act-board-scene-footage-node-layer > .storyboard-act-board-node {
+  position: absolute;
+  display: block;
+  z-index: 2;
+  box-sizing: border-box;
+  /* The layer, rather than the scene's flex/grid flow, is the containing
+     block. This is what makes a footage card freely draggable anywhere in
+     the lane instead of being offset by a row's normal-flow height. */
+  margin: 0;
+}
+
+/* Music/sound has no card grid, so it only needs room for its heading and
+   compact track. Avoid the shared auto top margin consuming extra row height. */
+.storyboard-act-board-scene-section-sound {
+  gap: 4px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
+.storyboard-act-board-scene-section-sound > .storyboard-act-board-footage-track {
+  margin-top: 0;
+}
+
+.storyboard-act-board-scene-section-heading {
+  flex: 0 0 auto;
+  margin: 0;
+  color: var(--cd-text);
+  opacity: 0.6;
+  font: 600 11px/1 var(--cd-font-mono);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.storyboard-act-board-scene-section-heading-row {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 18px;
+}
+
+.storyboard-act-board-scene-section .storyboard-act-board-footage-track,
+.storyboard-act-board-scene-narration-actions,
+.storyboard-act-board-scene-narration-scroll-btn,
+.storyboard-act-board-scene-narration-viewport,
+.storyboard-act-board-scene-sound-item,
+.storyboard-act-board-scene-sound-item audio {
+  pointer-events: auto;
+}
+
+/* Scene lanes are already labeled by their section headers; keep the compact
+   rails themselves free of duplicate "Footage track" / music labels. */
+.storyboard-act-board-scene-sections .storyboard-act-board-footage-track-label {
+  display: none;
+}
+
+.storyboard-act-board-scene-narration-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  align-content: center;
+  gap: 5px;
+}
+
+.storyboard-act-board-scene-narration-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  font: 10px var(--cd-font-mono);
+  line-height: 1;
+  text-decoration: none;
+}
+
+.storyboard-act-board-scene-narration-include {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  gap: 3px;
+  color: var(--cd-button-text);
+  font-size: 12px;
+  font-family: var(--cd-font-body);
+  font-weight: 600;
+}
+
+.storyboard-act-board-scene-narration-include input {
+  margin: 0;
+  accent-color: var(--cd-organic);
+}
+
+.storyboard-act-board-scene-narration-scroller {
+  display: flex;
+  flex: 1 1 auto;
+  box-sizing: border-box;
+  min-height: 0;
+  align-items: stretch;
+  gap: 5px;
+  /* Keep the transcript rail visually separated from the section heading
+     above and the narration track/next scene lane below. The extra inset is
+     part of the scroller so its controls and slides remain aligned. */
+  margin: 8px 0 10px;
+  padding: 12px 0 14px;
+}
+
+.storyboard-act-board-scene-narration-scroll-btn {
+  flex: 0 0 24px;
+  align-self: center;
+  width: 24px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid rgba(135, 73, 0, .36);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .86);
+  color: var(--cd-organic);
+  font: 21px/24px var(--cd-font-body);
+  cursor: pointer;
+}
+
+.storyboard-act-board-scene-narration-scroll-btn:hover,
+.storyboard-act-board-scene-narration-scroll-btn:focus-visible {
+  border-color: var(--cd-organic);
+  background: #fff4dc;
+}
+
+.storyboard-act-board-scene-narration-viewport {
+  flex: 1 1 auto;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* Give the narration rail comfortable breathing room above and below the
+     transcript while keeping the slides themselves bottom-aligned. */
+  scrollbar-width: thin;
+}
+
+.storyboard-act-board-scene-narration-slides {
+  display: flex;
+  align-items: stretch;
+  width: max-content;
+  min-width: 100%;
+  min-height: 100%;
+  height: auto;
+}
+
+.storyboard-act-board-scene-narration-slide {
+  display: flex;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  width: max-content;
+  /* Let each slide follow the transcript/suggestion content instead of
+     forcing every segment to occupy the full narration viewport. */
+  min-width: 260px;
+  max-width: none;
+  min-height: 0;
+  flex-direction: column;
+  /* Keep every slide's narration content anchored to the same bottom edge;
+     varying suggested-narration lengths should not make the transcript jump
+     vertically as the presenter scrolls between segments. */
+  /* justify-content: flex-end; */
+  gap: 8px;
+  /* Highlight labels sit just above the phrase span. Let them extend into
+     the slide's breathing room instead of clipping them at the slide box. */
+  overflow: visible;
+  padding: 15px 10px;
+}
+
+/* .storyboard-act-board-scene-narration-slide.selected {
+  border: 1px solid var(--cd-accent-hover);
+  border-radius: 4px;
+  background: #dfd2e44a;
+} */
+
+/* Compact source/playback control embedded in each narration-track segment. */
+.storyboard-act-board-scene-narration-source-editor {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: block;
+  width: auto;
+  min-width: 0;
+  height: auto;
+  margin: 0;
+  pointer-events: none;
+}
+
+.storyboard-act-board-scene-narration-source-strip {
+  position: relative;
+  position: absolute;
+  top: 50%;
+  right: 3px;
+  left: 3px;
+  width: auto;
+  height: 10px;
+  transform: translateY(-50%);
+  background: rgba(255, 255, 255, .25);
+  cursor: ew-resize;
+  pointer-events: auto;
+}
+
+.storyboard-act-board-scene-narration-source-waveform {
+  position: absolute;
+  inset: 2px 0;
+  display: block;
+  width: 100%;
+  height: calc(100% - 4px);
+  opacity: .72;
+  pointer-events: none;
+}
+
+.storyboard-act-board-scene-narration-source-waveform path {
+  fill: none;
+  stroke: rgba(255, 255, 255, .92);
+  stroke-width: 2.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* One shared sequence playhead spans each narration/footage rail. Individual
+   source editors intentionally do not render their own vertical rule, so the
+   matching bars always indicate the same scene-timeline position. */
+.storyboard-act-board-narration-track-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 8;
+  width: 3px;
+  background: var(--cd-text);
+  pointer-events: none;
+}
+
+.storyboard-act-board-narration-track-playhead-hit-area {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 9;
+  width: 14px;
+  /* border-radius: 7px; */
+  cursor: ew-resize;
+  transform: translateX(-50%);
+  pointer-events: auto;
+}
+
+.storyboard-act-board-playback-narration-segment.has-source-editor {
+  flex-direction: column;
+  align-items: stretch;
+  padding: 2px 3px;
+}
+
+.storyboard-act-board-footage-track-duration-label {
+  align-self: center;
+  line-height: 1;
+  letter-spacing: 0.04em;
+}
+
+.storyboard-act-board-scene-recorded-narration {
+  /* Keep the transcript in normal inline flow. A flex container treats the
+     whitespace text nodes between each word span as anonymous flex items,
+     which makes the rendered recording look like words were concatenated. */
+  display: block;
+  box-sizing: border-box;
+  height: 1.2em;
+  width: max-content;
+  max-width: none;
+  overflow: visible;
+  color: #262523;
+  /* Keep the empty and recorded states on the exact same type scale. The
+     text is still prominent, but recorded transcript spans no longer appear
+     larger than the "No recorded narration yet" placeholder. */
+  font: 600 clamp(40px, 1.6vw, 48px)/1.12 'Playfair Display', Georgia, serif;
+  white-space: pre;
+}
+
+.storyboard-act-board-scene-suggested-narration {
+  width: max-content;
+  max-width: min(720px, calc(100vw - 120px));
+  overflow-wrap: anywhere;
+  color: rgba(38, 37, 35, .72);
+  font: 12px/1.35 var(--cd-font-body);
+  white-space: normal;
+}
+
+.storyboard-act-board-scene-suggested-narration strong {
+  color: var(--cd-organic);
+  font: 600 10px var(--cd-font-mono);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.storyboard-act-board-scene-section .storyboard-act-board-footage-track {
+  flex: 0 0 auto;
+  margin-top: auto;
+}
+
+/* In the footage lane the heading row comes first, followed by the timeline
+   and then the visual cards. Do not let the shared auto-margin push the track
+   below the card grid. */
+.storyboard-act-board-scene-section-footage > .storyboard-act-board-footage-track {
+  order: 0;
+  margin-top: 0;
+}
+
+.storyboard-act-board-scene-section-empty {
+  display: grid;
+  min-height: 45px;
+  flex: 1 1 auto;
+  place-items: center;
+  border: 1px dashed rgba(38, 37, 35, .25);
+  color: rgba(38, 37, 35, .58);
+  font: 10px var(--cd-font-mono);
+}
+
+.storyboard-act-board-scene-sound-grid {
+  display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 7px;
+  overflow: auto;
+}
+
+.storyboard-act-board-scene-sound-item {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 5px 7px;
+  border: 1px solid rgba(50, 119, 83, .28);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, .72);
+  color: var(--cd-audio);
+  font: 10px var(--cd-font-mono);
+}
+
+.storyboard-act-board-scene-sound-item audio {
+  width: 100%;
+  height: 25px;
 }
 
 .storyboard-act-board-footage-track-segment:hover,
 .storyboard-act-board-footage-track-segment:focus-visible,
 .storyboard-act-board-footage-track-segment.selected {
   /* background: var(--cd-accent-hover); */
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .7);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .8);
   outline: none;
+}
+
+.storyboard-act-board-footage-track-segment:hover::after,
+.storyboard-act-board-footage-track-segment:focus-visible::after,
+.storyboard-act-board-footage-track-segment.selected::after,
+.storyboard-act-board-footage-track-segment.resizing::after,
+.storyboard-act-board-footage-track-segment.dragging::after,
+.storyboard-act-board-footage-track-segment.lifted::after {
+  border-color: #000;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .72);
+}
+
+.storyboard-act-board-footage-track.drop-target .storyboard-act-board-footage-track-strip {
+  outline: 2px solid rgba(36, 91, 130, .72);
+  outline-offset: 2px;
+  background: rgba(36, 91, 130, .12);
 }
 
 .storyboard-act-board-playback-audio-track {
@@ -2135,12 +4584,33 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   cursor: grabbing;
 }
 
+.storyboard-act-board-playback-narration-track
+  .storyboard-act-board-playback-audio-track-segment.drop-target {
+  outline: 2px dashed rgba(255, 255, 255, .95);
+  outline-offset: -2px;
+  box-shadow: 0 0 0 2px rgba(36, 91, 130, .75);
+}
+
 .storyboard-act-board-playback-narration-segment {
-  background: #d47700;
+  background: var(--cd-narration);
 }
 
 .storyboard-act-board-playback-audio-segment {
-  background: #327753;
+  background: var(--cd-audio);
+}
+
+/* Playback narration/audio segments also carry the generic footage-track
+   segment class. The alternating footage rule above is more specific than a
+   single class selector, so explicitly scope these colors to their track to
+   keep each rail visually distinct. */
+.storyboard-act-board-footage-track.storyboard-act-board-playback-narration-track
+  .storyboard-act-board-playback-narration-segment {
+  background: var(--cd-narration);
+}
+
+.storyboard-act-board-footage-track.storyboard-act-board-playback-audio-track
+  .storyboard-act-board-playback-audio-segment {
+  background: var(--cd-audio);
 }
 
 .storyboard-act-board-footage-featured img,
@@ -2236,26 +4706,23 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 
 .storyboard-act-board-footage-generating-placeholder {
   display: grid;
-  flex: 0 0 76px;
-  width: 76px;
-  height: 50px;
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 0;
+  aspect-ratio: 16 / 9;
   place-items: center;
   padding: 4px;
   box-sizing: border-box;
   border: 1px dashed var(--cd-accent-hover);
   border-radius: 3px;
-  background: rgba(241, 135, 0, .1);
-  color: var(--cd-accent-hover);
+  background: var(--cd-footage);
+  color: var(--cd-text);
   font: 9px var(--cd-font-mono);
   line-height: 1.2;
   text-align: center;
   animation: storyboard-act-board-image-generating-pulse 1.15s ease-in-out infinite;
-}
-
-.storyboard-act-board-footage-generating-placeholder.stock-footage {
-  border-color: #3d79a8;
-  background: rgba(61, 121, 168, .1);
-  color: #2d638e;
 }
 
 @keyframes storyboard-act-board-image-generating-pulse {
@@ -2380,7 +4847,6 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin: 3px 0 5px;
 }
 
 .storyboard-act-board-footage-source-strip {
@@ -2388,19 +4854,19 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 }
 
 .storyboard-act-board-footage-thumb-rail {
-  display: flex;
-  gap: 5px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
   width: 100%;
   min-width: 0;
-  overflow-x: auto;
-  padding: 2px 1px 5px;
+  overflow-x: hidden;
   scrollbar-width: thin;
 }
 
 .storyboard-act-board-footage-thumb-wrap {
   position: relative;
-  flex: 0 0 76px;
-  width: 76px;
+  width: 100%;
+  min-width: 0;
 }
 
 .storyboard-act-board-footage-source {
@@ -2412,7 +4878,7 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   padding: 2px 3px;
   background: rgba(0, 0, 0, .68);
   color: #fff;
-  font: 10px/1 var(--cd-font-mono);
+  font: 9px/1 var(--cd-font-mono);
   text-overflow: ellipsis;
   text-transform: uppercase;
   white-space: nowrap;
@@ -2420,8 +4886,10 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 }
 
 .storyboard-act-board-footage-thumb {
-  width: 76px;
-  height: 50px;
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
   padding: 2px;
   overflow: hidden;
   border: 1px solid var(--cd-border);
@@ -2438,10 +4906,9 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   width: 18px;
   height: 18px;
   padding: 0;
-  border: 1px solid rgba(255, 255, 255, .8);
   border-radius: 50%;
-  background: rgba(17, 17, 17, .68);
-  color: #fff;
+  background: var(--cd-accent-special) !important;
+  color: #fff !important;
   font: 12px/16px sans-serif;
   cursor: pointer;
 }
@@ -2476,13 +4943,11 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 .storyboard-act-board-node-top {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
-  gap: 8px;
 }
 
 .storyboard-act-board-node-top > .storyboard-act-board-node-action-row {
-  flex: 1 1 auto;
+  margin-top: 5px;
   width: auto;
   min-width: 0;
   justify-content: flex-end;
@@ -2513,8 +4978,8 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 }
 
 .storyboard-act-board-node-port.output {
-  border-color: #d47700;
-  color: #d47700;
+  border-color: var(--cd-narration);
+  color: var(--cd-narration);
 }
 
 .storyboard-act-board-node-port:hover,
@@ -2530,8 +4995,6 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   font: 11px var(--cd-font-heading);
   font-weight: 700;
   font-size: 16px;
-  /* letter-spacing: .08em; */
-  /* text-transform: uppercase; */
 }
 
 .storyboard-act-board-node-playback .storyboard-act-board-node-type {
@@ -2567,9 +5030,11 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 
 .storyboard-act-board-node-text {
   margin: 0px 0 0;
-  font-size: 13px;
-  line-height: 1.8;
   padding-top: 0px;
+}
+
+.storyboard-act-board-narration-side-preview .storyboard-act-board-node-text {
+  font-size: 11px;
 }
 
 .storyboard-act-board-node,
@@ -2623,33 +5088,68 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 }
 
 .storyboard-act-board-suggested-side-panel {
-  padding: 6px;
   display: block;
   grid-column: 2;
   grid-row: 1 / span 3;
   min-width: 0;
   margin-top: 0;
   margin-bottom: 8px;
-  border: 1px solid var(--cd-border);
   border-radius: 3px;
-  background: rgba(255, 255, 255, .62);
   color: var(--cd-text);
   font-size: 12px;
-  /* font: 11px var(--cd-font-mono); */
+}
+
+.storyboard-act-board-node-narration .storyboard-act-board-suggested-side-panel {
+  border: 1px solid rgba(38, 37, 35, .16);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 1);
 }
 
 .storyboard-act-board-suggested-side-panel summary {
-  /* padding: 6px; */
   cursor: pointer;
-  color: #874900;
+  color: var(--cd-organic);
   font-weight: 700;
+}
+
+/* Keep the suggested-narration disclosure arrow identical to the
+   Source material disclosure control.  Scope this to the
+   panel's own summary so the nested scene-notes details does not receive a
+   second marker. */
+.storyboard-act-board-suggested-side-panel > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 7px;
+  padding-left: 18px;
+  position: relative;
+  font-size: 12px;
+}
+
+.storyboard-act-board-suggested-side-panel > summary::before {
+  content: "";
+  flex: 0 0 5px;
+  width: 5px;
+  height: 5px;
+  margin-left: -13px;
+  border-right: 2px solid var(--cd-organic);
+  border-bottom: 2px solid var(--cd-organic);
+  transform: rotate(-45deg);
+  transition: transform 120ms ease;
+}
+
+.storyboard-act-board-suggested-side-panel[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.storyboard-act-board-suggested-side-panel > summary::marker,
+.storyboard-act-board-suggested-side-panel > summary::-webkit-details-marker {
+  display: none;
 }
 
 .storyboard-act-board-footage-search-panel {
   grid-column: auto;
   grid-row: auto;
   margin-top: 7px;
-  background: rgba(255, 255, 255, .72);
 }
 
 /* .storyboard-act-board-footage-search-panel .storyboard-act-board-footage-search-label,
@@ -2667,9 +5167,7 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 
 .storyboard-act-board-suggested-side-panel .storyboard-act-board-node-text {
   margin: 0;
-  padding-top: 6px;
-  /* padding: 0 6px 6px; */
-  /* font-size: 14px; */
+  padding: 0 6px 6px;
 }
 
 .storyboard-act-board-node-text > strong {
@@ -2680,8 +5178,6 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   display: inline;
   padding: 1px 3px;
   border-radius: 3px;
-  background: rgba(241, 135, 0, .16);
-  color: #874900;
   font: inherit;
   font-weight: 600;
   box-decoration-break: clone;
@@ -2740,11 +5236,86 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 }
 
 .storyboard-act-board-record-narration-btn {
-  min-width: 0;
-  max-width: 100%;
+  position: relative;
+  display: inline-grid;
+  width: 24px;
+  min-width: 24px;
+  max-width: 24px;
+  height: 22px;
+  padding: 0;
+  place-items: center;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font: 16px/1 var(--cd-font-mono);
+}
+
+.storyboard-act-board-upload-narration-btn,
+.storyboard-act-board-download-narration-btn {
+  display: inline-grid;
+  width: 24px;
+  min-width: 24px;
+  height: 22px;
+  padding: 0;
+  place-items: center;
+  font: 17px/1 var(--cd-font-mono);
+}
+
+.storyboard-act-board-record-narration-btn.is-recording {
+  border-color: #c62828 !important;
+  background: #c62828 !important;
+  color: #fff !important;
+  box-shadow: 0 0 0 2px rgba(198, 40, 40, .18);
+  animation: storyboard-act-board-record-pulse 1.05s ease-in-out infinite;
+}
+
+.storyboard-act-board-record-narration-btn.is-recording::after {
+  position: absolute;
+  inset: -4px;
+  border: 2px solid rgba(198, 40, 40, .62);
+  border-radius: 50%;
+  content: '';
+  pointer-events: none;
+  animation: storyboard-act-board-record-ring 1.05s ease-out infinite;
+}
+
+.storyboard-act-board-record-narration-btn.is-processing {
+  opacity: .65;
+}
+
+/* Match the setup page's Next step nudge while a narration node is still
+   empty. Recording/processing states remove this class so the red pulse and
+   progress styling remain unambiguous. */
+.storyboard-act-board-record-narration-btn.is-empty {
+  background: var(--cd-accent-special) !important;
+  color: var(--cd-accent-text) !important;
+  transform-origin: center;
+  animation: next-step-jitter 3.8s ease-in-out infinite;
+}
+
+@keyframes storyboard-act-board-record-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(198, 40, 40, .18);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(198, 40, 40, .2);
+    transform: scale(1.08);
+  }
+}
+
+@keyframes storyboard-act-board-record-ring {
+  0% { opacity: .8; transform: scale(.85); }
+  100% { opacity: 0; transform: scale(1.35); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .storyboard-act-board-record-narration-btn.is-recording,
+  .storyboard-act-board-record-narration-btn.is-empty {
+    animation: none;
+  }
+
+  .storyboard-act-board-record-narration-btn.is-recording::after {
+    animation: none;
+  }
 }
 
 .storyboard-act-board-record-narration-btn-error {
@@ -2777,11 +5348,42 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 }
 
 .storyboard-act-board-narration-source-notes summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 5px 7px;
+  padding-left: 18px;
+  position: relative;
   cursor: pointer;
-  color: #874900;
+  color: var(--cd-organic);
   font-weight: 700;
   font-size: 12px;
+}
+
+.storyboard-act-board-narration-source-notes summary::before {
+  content: "";
+  flex: 0 0 5px;
+  width: 5px;
+  height: 5px;
+  margin-left: -13px;
+  border-right: 2px solid var(--cd-organic);
+  border-bottom: 2px solid var(--cd-organic);
+  transform: rotate(-45deg);
+  transition: transform 120ms ease;
+}
+
+.storyboard-act-board-narration-source-notes[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.storyboard-act-board-narration-source-notes summary::marker,
+.storyboard-act-board-narration-source-notes summary::-webkit-details-marker {
+  display: none;
+}
+
+.storyboard-act-board-narration-source-notes summary > .storyboard-act-board-resuggest-narration-btn {
+  flex: 0 0 auto;
+  margin: 0 0 0 auto;
 }
 
 .storyboard-act-board-narration-source-notes-hint {
@@ -2830,6 +5432,15 @@ audio.storyboard-act-board-node-audio {
   opacity: .6;
 }
 
+/* Temporarily keep narration timing metadata out of the node-content panel.
+   The alignment/timestamp data remains on the narration node for playback and
+   footage synchronization, so this can be restored without changing timing. */
+.storyboard-act-board-node-alignment-source,
+.storyboard-act-board-node-fragment-timings,
+.storyboard-act-board-node-umbrella {
+  display: none !important;
+}
+
 .storyboard-act-board-node-fragment-timings {
   display: flex;
   flex-direction: column;
@@ -2865,6 +5476,50 @@ audio.storyboard-act-board-node-audio {
   position: relative;
 }
 
+/* Give every active filmable phrase a small visual cue above the text. The
+   label is absolutely positioned outside the phrase box so it does not add
+   line height or push the narration transcript down. User-selected ranges
+   that do not match a classifier phrase use the first covered word as the
+   label anchor. */
+.storyboard-act-board-node-text
+  .storyboard-act-board-narration-span[data-narration-fragment].storyboard-act-board-narration-span-depictable,
+.storyboard-act-board-node-text
+  .storyboard-act-board-narration-span[data-narration-fragment].storyboard-act-board-narration-span-abstract,
+.storyboard-act-board-node-text
+  .storyboard-act-board-narration-span[data-narration-fragment].storyboard-act-board-narration-phrase-has-footage,
+.storyboard-act-board-node-text
+  .storyboard-act-board-narration-span[data-narration-fragment].storyboard-act-board-narration-phrase-selected,
+  .storyboard-act-board-node-text
+  .storyboard-act-board-narration-highlight-label-anchor {
+  display: inline-block;
+  position: relative;
+}
+
+.storyboard-act-board-node-text
+  .storyboard-act-board-narration-span[data-narration-fragment].storyboard-act-board-narration-span-depictable::before,
+.storyboard-act-board-node-text
+  .storyboard-act-board-narration-span[data-narration-fragment].storyboard-act-board-narration-span-abstract::before,
+.storyboard-act-board-node-text
+  .storyboard-act-board-narration-span[data-narration-fragment].storyboard-act-board-narration-phrase-has-footage::before,
+.storyboard-act-board-node-text
+  .storyboard-act-board-narration-span[data-narration-fragment].storyboard-act-board-narration-phrase-selected::before,
+.storyboard-act-board-node-text
+  .storyboard-act-board-narration-highlight-label-anchor::before {
+  position: absolute;
+  top: -8px;
+  left: 0;
+  content: 'HIGHLIGHT';
+  color: var(--cd-text);
+  font: 700 6px/1 var(--cd-font-mono);
+  letter-spacing: .04em;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.storyboard-act-board-full-playback-node-details .storyboard-act-board-node-text .storyboard-act-board-narration-span-remove {
+  margin-top: -3px;
+}
+
 .storyboard-act-board-narration-span-remove {
   appearance: none;
   display: inline-flex;
@@ -2873,6 +5528,7 @@ audio.storyboard-act-board-node-audio {
   width: 14px;
   height: 14px;
   margin-left: 3px;
+  margin-top: -40px;
   padding: 0;
   border: 0;
   border-radius: 50%;
@@ -2880,7 +5536,7 @@ audio.storyboard-act-board-node-audio {
   color: currentColor;
   font: 700 12px/1 var(--cd-font-body);
   cursor: pointer;
-  opacity: 0;
+  /* opacity: 0; */
   vertical-align: middle;
   transition: opacity .12s ease, background-color .12s ease;
 }
@@ -2915,57 +5571,48 @@ audio.storyboard-act-board-node-audio {
 }
 
 .storyboard-act-board-node-footage-status {
-  margin-top: 20px;
   margin-bottom: 8px;
   color: var(--cd-text);
   font: 12px var(--cd-font-mono);
   opacity: .6;
 }
 
-/* .storyboard-act-board-node-text .storyboard-act-board-narration-span-clickable {
-  cursor: pointer;
-} */
-
 .storyboard-act-board-node-text .storyboard-act-board-narration-span-depictable {
-  background: rgba(61, 121, 168, .14);
-  color: #245b82;
-  border-color: rgba(61, 121, 168, .55);
+  color: var(--cd-text);
+  border-color: var(--cd-text);
   text-decoration: none;
 }
 
 .storyboard-act-board-node-text .storyboard-act-board-narration-span-abstract {
-  background: rgba(120, 92, 165, .12);
-  color: #63478e;
-  border-color: rgba(120, 92, 165, .55);
-  text-decoration: underline dashed rgba(120, 92, 165, .85);
+  background: rgba(120, 92, 165, .12) !important;
+  color: #63478e !important;
+  border-color: rgba(120, 92, 165, .55) !important;
+  text-decoration: underline dashed rgba(120, 92, 165, .85) !important;
 }
 
 .storyboard-act-board-node-text .storyboard-act-board-narration-span-pending {
-  background: rgba(241, 135, 0, .1);
-  color: #874900;
-  text-decoration: underline dotted rgba(212, 119, 0, .7);
+  background: rgba(221, 174, 91, .1);
+  color: var(--cd-organic);
+  text-decoration: underline dotted rgba(221, 174, 91, .7);
 }
 
 .storyboard-act-board-node-text .storyboard-act-board-narration-phrase-selected {
-  background: rgba(241, 135, 0, .3);
-  color: #6f3200;
-  box-shadow: inset 0 -2px 0 rgba(212, 119, 0, .85);
+  background: rgba(221, 174, 91, .3);
+  color: var(--cd-organic);
   cursor: pointer;
 }
 
 .storyboard-act-board-node-text .storyboard-act-board-narration-phrase-has-footage {
-  background: rgba(61, 121, 168, .14);
-  color: #245b82;
-  /* box-shadow: inset 0 -2px 0 rgba(61, 121, 168, .85); */
-  text-decoration: underline solid rgba(61, 121, 168, .9);
-  text-underline-offset: 2px;
+  color: var(--cd-text);
   font-weight: 600;
+  padding: 1px 3px;
+  border-radius: 3px;
+  border: 1px solid var(--cd-text);
 }
 
 .storyboard-act-board-node-text .storyboard-act-board-narration-timing-highlight {
-  background: rgba(241, 135, 0, .38);
-  color: #6f3200;
-  box-shadow: 0 1px 0 rgba(212, 119, 0, .75);
+  background: rgba(221, 174, 91, .3);
+  color: var(--cd-organic);
 }
 
 /* .storyboard-act-board-node-text .storyboard-act-board-narration-span-clickable:hover {
@@ -2995,7 +5642,7 @@ audio.storyboard-act-board-node-audio {
 }
 
 .storyboard-act-board-node-fragment-timing span:last-child {
-  color: #874900;
+  color: var(--cd-organic);
   font-weight: 700;
 }
 
@@ -3006,22 +5653,72 @@ audio.storyboard-act-board-node-audio {
   /* margin-top: 8px; */
 }
 
-.storyboard-act-board-footage-find-row,
-.storyboard-act-board-footage-generation-action-row {
+.storyboard-act-board-generation-inputs {
+  flex: 1 1 100%;
+  min-width: 0;
+  border: 1px solid rgba(38, 37, 35, .16);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 1);
+}
+
+.storyboard-act-board-generation-inputs > summary {
   display: flex;
-  flex: 1 1 100%;
-  min-width: 0;
-  gap: 5px;
   align-items: center;
+  gap: 6px;
+  padding: 4px 5px;
+  /* The summary is a flex row so its action button can sit at the right.
+     Flex summaries do not reliably render the browser's native details
+     marker, so provide our own consistent chevron instead. */
+  position: relative;
+  padding-left: 18px;
+  color: var(--cd-organic);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  list-style-position: inside;
 }
 
-.storyboard-act-board-footage-find-row .storyboard-act-board-find-footage-btn {
-  flex: 1 1 100%;
+.storyboard-act-board-generation-inputs > summary::before {
+  content: "";
+  flex: 0 0 5px;
+  width: 5px;
+  height: 5px;
+  margin-left: -13px;
+  border-right: 2px solid var(--cd-organic);
+  border-bottom: 2px solid var(--cd-organic);
+  transform: rotate(-45deg);
+  transform-origin: center;
+  transition: transform 120ms ease;
 }
 
-.storyboard-act-board-footage-generation-action-row .storyboard-act-board-node-action {
-  flex: 1 1 0;
+.storyboard-act-board-generation-inputs[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.storyboard-act-board-generation-inputs > summary > button {
+  flex: 0 0 auto;
   min-width: 0;
+  margin-left: auto;
+  padding: 3px 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.storyboard-act-board-generation-inputs > summary::marker,
+.storyboard-act-board-generation-inputs > summary::-webkit-details-marker {
+  display: none;
+}
+
+.storyboard-act-board-footage-search-inputs {
+  order: 0;
+}
+
+.storyboard-act-board-footage-search-inputs .storyboard-act-board-footage-search-input {
+  display: block;
+  width: calc(100% - 10px);
+  margin: 0 5px 5px;
+  box-sizing: border-box;
 }
 
 .storyboard-act-board-node-generated-rail {
@@ -3070,7 +5767,7 @@ audio.storyboard-act-board-node-audio {
 
 .storyboard-act-board-node-umbrella {
   margin-top: 13px;
-  /* color: #874900; */
+  /* color: var(--cd-organic); */
   font: 12px var(--cd-font-mono);
   opacity: .6;
   /* font-weight: 700; */
@@ -3083,24 +5780,36 @@ audio.storyboard-act-board-node-audio {
   flex: 1 1 auto;
   min-height: 0;
   box-sizing: border-box;
-  margin-top: 8px;
-  padding: 6px;
-  border: 1px solid rgba(212, 119, 0, .4);
-  border-radius: 3px;
-  background: rgba(241, 135, 0, .06);
 }
 
 .storyboard-act-board-playback-controls {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 5px;
 }
 
+.storyboard-act-board-playback-controls > .storyboard-act-board-node-action {
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  font-size: 12px;
+  line-height: 1;
+}
+
 .storyboard-act-board-playback-status {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 120px;
+  overflow: hidden;
   color: var(--cd-text);
   font: 12px var(--cd-font-mono);
   opacity: .6;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .storyboard-act-board-playback-stage {
@@ -3116,7 +5825,7 @@ audio.storyboard-act-board-node-audio {
   overflow: hidden;
   border: 1px solid var(--cd-border);
   border-radius: 3px;
-  background: rgba(241, 241, 241, 1);
+  background: var(--cd-accent);
   color: var(--cd-text);
   font: 12px var(--cd-font-mono);
 }
@@ -3135,6 +5844,27 @@ audio.storyboard-act-board-node-audio {
   max-height: 100%;
   object-fit: contain;
   background: #111;
+}
+
+.storyboard-act-board-playback-split-stage {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  background: #111;
+}
+
+.storyboard-act-board-playback-split-stage
+  .storyboard-act-board-footage-split-pane img,
+.storyboard-act-board-playback-split-stage
+  .storyboard-act-board-footage-split-pane video {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+  object-fit: contain;
 }
 
 .storyboard-act-board-playback-stage small {
@@ -3159,11 +5889,12 @@ audio.storyboard-act-board-node-audio {
 
 .storyboard-act-board-playback-progress {
   display: flex;
-  flex: 0 0 100%;
-  width: 100%;
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 80px;
   align-items: center;
   gap: 6px;
-  margin-top: 4px;
+  margin-top: 0;
 }
 
 .storyboard-act-board-playback-progress-input {
@@ -3177,8 +5908,8 @@ audio.storyboard-act-board-node-audio {
   appearance: none;
   -webkit-appearance: none;
   border-radius: 6px;
-  background: linear-gradient(90deg, var(--cd-accent-hover) var(--playback-progress), rgba(0, 0, 0, .16) var(--playback-progress));
-  accent-color: var(--cd-accent-hover);
+  background: linear-gradient(90deg, var(--cd-accent-special) var(--playback-progress), rgba(0, 0, 0, .16) var(--playback-progress));
+  accent-color: var(--cd-accent-special);
   cursor: pointer;
   pointer-events: auto;
   touch-action: none;
@@ -3199,9 +5930,9 @@ audio.storyboard-act-board-node-audio {
   margin-top: -4px;
   appearance: none;
   -webkit-appearance: none;
-  border: 1px solid var(--cd-accent-hover);
+  border: 1px solid var(--cd-accent-special);
   border-radius: 50%;
-  background: var(--cd-accent-hover);
+  background: var(--cd-accent-special);
   cursor: grab;
 }
 
@@ -3234,8 +5965,6 @@ audio.storyboard-act-board-node-audio {
 
 .storyboard-act-board-node-footage.act-board-playback-active {
   z-index: 25;
-  /* border-color: var(--cd-accent-hover); */
-  box-shadow: 0 0 0 3px rgba(241, 135, 0, .28), 4px 5px 0 rgba(17, 17, 17, .14);
 }
 
 .storyboard-act-board-node-error {
@@ -3252,44 +5981,27 @@ audio.storyboard-act-board-node-audio {
 .storyboard-act-board-node-entity,
 .storyboard-act-board-node-fragment {
   padding: 3px 6px;
-  border: 1px solid rgba(212, 119, 0, .45);
+  border: 1px solid var(--cd-text);
   border-radius: 12px;
-  background: rgba(241, 135, 0, .1);
-  color: #874900;
   font: 11px var(--cd-font-mono);
+}
+
+.storyboard-act-board-node-body .storyboard-act-board-node-fragment-title {
+  font-size: 12px;
 }
 
 .storyboard-act-board-node-entity-title,
 .storyboard-act-board-node-fragment-title {
-  margin-top: 7px;
-  font-size: 13px;
-  font-weight: 600;
-  /* cursor: none; */
+  font: 9px/1.2 var(--cd-font-body);
   padding: 1px 3px;
-  border-radius: 3px;
-  /* background: rgba(241, 135, 0, .16);
-  color: #874900; */
-  border: 1px solid rgba(212, 119, 0, .45);
-  background: rgba(61, 121, 168, .14);
-  color: #245b82;
-  border-color: rgba(61, 121, 168, .55);
-  /* text-decoration: underline solid rgba(61, 121, 168, .9); */
+  background: linear-gradient(transparent, rgba(0, 0, 0, .75));
+  color: #fff;
 }
 
 .storyboard-act-board-node-fragment-label {
-  color: #000;
-  /* font-weight: 700; */
+  font-weight: 700;
   text-decoration: none;
 }
-
-.storyboard-act-board-node-fragment-text {
-  color: #245b82;
-  text-decoration: underline solid rgba(61, 121, 168, .9);
-}
-
-/* .storyboard-act-board-node-fragment-title {
-  cursor: default;
-} */
 
 .storyboard-act-board-node-composition-mode {
   margin-top: 4px;
@@ -3327,11 +6039,11 @@ audio.storyboard-act-board-node-audio {
 }
 
 .storyboard-act-board-node-narration .storyboard-act-board-node-timing {
-  background: #d47700;
+  background: var(--cd-narration);
 }
 
 .storyboard-act-board-node-audio .storyboard-act-board-node-timing {
-  background: #327753;
+  background: var(--cd-audio);
 }
 
 .storyboard-act-board-node-results {
@@ -3389,9 +6101,11 @@ audio.storyboard-act-board-node-audio {
 }
 
 .storyboard-act-board-board-scene {
+  position: relative;
   z-index: 0;
   box-sizing: border-box;
   overflow: visible;
+  isolation: isolate;
   pointer-events: none;
   border-left-color: var(--cd-text);
   background: rgba(241, 241, 241, 1);
@@ -3399,9 +6113,26 @@ audio.storyboard-act-board-node-audio {
   cursor: default;
 }
 
+/* Match the hand-drawn edge used by the setup modules on both the framed
+   working scene and the loadable scene cards. The outline is decorative so it
+   never interferes with node dragging or scene-card clicks. */
+.storyboard-act-board-board-scene::before {
+  position: absolute;
+  z-index: 0;
+  inset: -3px;
+  border: 1.5px solid rgba(38, 37, 35, .52);
+  border-radius: 7px 3px 6px 4px;
+  content: '';
+  pointer-events: none;
+  transform: rotate(-.35deg);
+}
+
 .storyboard-act-board-board-scene:not(.storyboard-act-board-board-scene-in-stack) {
   /* Keep the framed board header above node cards. The surface itself is
-     transparent so raising this stacking context does not cover the nodes. */
+     transparent so it remains a layout surface behind the live node cards. */
+  /* The scene rail lives inside this surface; keep the surface above node
+     cards so rail segments/handles remain reachable when cards overlap its
+     compact top band. The surface itself is pointer-transparent. */
   z-index: 3;
   background: transparent;
 }
@@ -3411,8 +6142,8 @@ audio.storyboard-act-board-node-audio {
   box-shadow: 2px 3px 0 rgba(17, 17, 17, .08), inset 0 0 0 1px rgba(61, 121, 168, .12);
 }
 
-/* Once a node selection is defined as a scene, it is committed to the
-   ordinary act-board card stack instead of remaining on the working canvas. */
+/* Loadable scene cards in the story-outline stack use the same framed styling
+   as the working scene, but flow normally instead of sitting behind nodes. */
 .storyboard-act-board-board-scene-in-stack {
   position: relative;
   width: auto;
@@ -3442,7 +6173,7 @@ audio.storyboard-act-board-node-audio {
 
 .storyboard-act-board-board-scene-header {
   position: absolute;
-  z-index: 2;
+  z-index: 5;
   top: 0;
   left: 0px;
   right: 0px;
@@ -3470,7 +6201,18 @@ audio.storyboard-act-board-node-audio {
 .storyboard-act-board-board-scene-header .storyboard-act-board-card-meta {
   /* margin-top: 2px; */
   /* color: #3d79a8; */
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
   font-size: 12px;
+  line-height: 20px;
+}
+
+/* The scene-mode row is temporarily hidden on the Act Board. The normal
+   flex display above would otherwise override the browser's [hidden] rule. */
+.storyboard-act-board-board-scene-header .storyboard-act-board-card-meta[hidden] {
+  display: none !important;
 }
 
 .storyboard-act-board-scene-mode-row {
@@ -3488,21 +6230,27 @@ audio.storyboard-act-board-node-audio {
   display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
   gap: 3px;
-  /* margin-left: 3px; */
   pointer-events: auto;
-  vertical-align: middle;
 }
 
 .storyboard-act-board-scene-mode-label,
 .storyboard-act-board-scene-mode-hint {
-  color: #3d79a8;
-  font: 12px var(--cd-font-mono);
+  /* color: #3d79a8; */
+  font: 11px var(--cd-font-mono);
 }
 
 .storyboard-act-board-scene-mode-label {
-  margin-right: 2px;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  height: 20px;
+  margin-right: 0;
   font-weight: 600;
+  line-height: 20px;
   text-transform: uppercase;
   letter-spacing: .04em;
 }
@@ -3512,16 +6260,14 @@ audio.storyboard-act-board-node-audio {
   border: 1px solid var(--cd-accent);
   border-radius: 10px;
   background: rgba(255, 255, 255, .72);
-  /* color: #3d79a8; */
-  font: 12px var(--cd-font-mono);
+  font: 11px var(--cd-font-mono);
   cursor: pointer;
 }
 
 .storyboard-act-board-scene-mode-inline .storyboard-act-board-scene-mode-btn {
+  box-sizing: border-box;
   height: 20px;
-  padding: 1px 5px;
   border-radius: 8px;
-  /* font-size: 13px; */
   text-transform: uppercase;
 }
 
@@ -3545,10 +6291,10 @@ audio.storyboard-act-board-node-audio {
   border-radius: 8px;
   background: var(--cd-accent-hover);
   color: #fff;
-  font: 12px var(--cd-font-mono);
+  font: 11px var(--cd-font-mono);
   line-height: 1.35;
   text-transform: uppercase;
-  letter-spacing: .02em;
+  letter-spacing: .04em;
 }
 
 .storyboard-act-board-scene-playback-toggle {
@@ -3577,7 +6323,7 @@ audio.storyboard-act-board-node-audio {
   align-self: center;
   margin-left: 2px;
   color: var(--cd-text);
-  font: 12px var(--cd-font-mono);
+  font: 11px var(--cd-font-mono);
   white-space: nowrap;
   opacity: 0.6;
   text-transform: uppercase;
@@ -3587,7 +6333,7 @@ audio.storyboard-act-board-node-audio {
   width: 12px;
   height: 12px;
   margin: 0;
-  accent-color: #874900;
+  accent-color: var(--cd-organic);
 }
 
 .storyboard-act-board-scene-mode-hint {
@@ -3624,7 +6370,8 @@ audio.storyboard-act-board-node-audio {
   cursor: pointer;
 }
 
-.storyboard-act-board-board-scene-organize {
+.storyboard-act-board-board-scene-organize,
+.storyboard-act-board-board-scene-smart-arrange {
   flex: 0 0 auto;
   margin-left: auto;
   padding: 2px 6px;
@@ -3632,20 +6379,22 @@ audio.storyboard-act-board-node-audio {
   border-radius: 3px;
   background: transparent;
   color: var(--cd-text);
-  font: 12px var(--cd-font-mono);
-  letter-spacing: .03em;
-  text-transform: uppercase;
+  font: 12px var(--cd-font-body);
+  letter-spacing: .04em;
   pointer-events: auto;
   cursor: pointer;
 }
 
 .storyboard-act-board-board-scene-organize:hover,
-.storyboard-act-board-board-scene-organize:focus-visible {
+.storyboard-act-board-board-scene-organize:focus-visible,
+.storyboard-act-board-board-scene-smart-arrange:hover,
+.storyboard-act-board-board-scene-smart-arrange:focus-visible {
   border-color: var(--cd-accent-hover);
   color: var(--cd-accent-hover);
 }
 
-.storyboard-act-board-board-scene-organize:disabled {
+.storyboard-act-board-board-scene-organize:disabled,
+.storyboard-act-board-board-scene-smart-arrange:disabled {
   cursor: default;
   opacity: .42;
 }
@@ -3665,7 +6414,7 @@ audio.storyboard-act-board-node-audio {
 .storyboard-act-board-board-scene-node-list {
   position: absolute;
   right: 8px;
-  bottom: 7px;
+  bottom: 2px;
   left: 8px;
   display: flex;
   flex-wrap: wrap;
@@ -3678,13 +6427,14 @@ audio.storyboard-act-board-node-audio {
   max-width: 180px;
   overflow: hidden;
   padding: 2px 5px;
-  border: 1px solid rgba(61, 121, 168, .35);
+  border: 1px solid var(--cd-border-strong);
   border-radius: 3px;
   background: rgba(255, 255, 255, .72);
-  color: #3d79a8;
-  font: 12px var(--cd-font-mono);
+  color: var(--cd-text);
+  font: 10px var(--cd-font-mono);
   text-overflow: ellipsis;
   white-space: nowrap;
+  letter-spacing: 0.04em;
 }
 
 .storyboard-act-board-card:hover {
@@ -3731,6 +6481,7 @@ audio.storyboard-act-board-node-audio {
   color: var(--cd-text);
   font: 12px var(--cd-font-mono);
   opacity: .6;
+  letter-spacing: .04em;
 }
 
 .storyboard-act-board-card-meta {
@@ -4502,46 +7253,39 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.selected {
 
 .sfx-segment-readout {
   font-family: var(--cd-font-mono);
-  font-size: 12px;
-  color: rgba(0, 0, 0, 0.6);
-  margin-top: 8px;
+  font-size: 8px;
+  letter-spacing: 0.04em;
 }
 
 .sfx-source-strip {
   position: relative;
   width: 100%;
-  height: 22px;
+  height: 20px;
   overflow: hidden;
   border: 1px solid rgba(0, 0, 0, 0.28);
   border-radius: 4px;
-  background:
-    repeating-linear-gradient(90deg,
-      transparent 0 5px,
-      rgba(0, 0, 0, 0.14) 5px 7px),
-    #fff
 }
 
 .storyboard-act-board-node-narration .sfx-source-selection {
-  background: #d47700;
+  background: var(--cd-narration);
 }
 
 .storyboard-act-board-node-footage .sfx-source-selection {
-  background: #3d79a8;
+  background: var(--cd-footage)
 }
 
 .storyboard-act-board-node-audio .sfx-source-selection {
-  background: rgb(50, 119, 83);
+  background: var(--cd-audio);
 }
 
 .sfx-source-selection {
   position: absolute;
-  top: 3px;
-  bottom: 3px;
+  top: 0px;
+  bottom: 0px;
   min-width: 5px;
-  border-radius: 3px;
   background: var(--cd-accent);
   /* box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25); */
-  color: #fff;
+  color: var(--cd-text);
   cursor: grab;
   touch-action: none;
 }
@@ -4555,8 +7299,9 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.selected {
   inset: 0 7px;
   overflow: hidden;
   font-family: var(--cd-font-mono);
-  font-size: 12px;
-  line-height: 13px;
+  font-size: 8px;
+  line-height: 18px;
+  letter-spacing: 0.04em;
   text-align: center;
   white-space: nowrap;
   pointer-events: none;
@@ -4566,7 +7311,7 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.selected {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 7px;
+  width: 4px;
   background: rgba(255, 255, 255, 0.72);
   cursor: ew-resize;
   touch-action: none;
@@ -4575,12 +7320,10 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.selected {
 
 .sfx-source-handle.start {
   left: 0;
-  border-radius: 3px 0 0 3px;
 }
 
 .sfx-source-handle.end {
   right: 0;
-  border-radius: 0 3px 3px 0;
 }
 
 .paper-section-visual-production-block {
@@ -4629,7 +7372,9 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.selected {
 }
 
 .paper-section-sfx-input {
-  display: none;
+  min-width: 0;
+  flex: 0 1 260px;
+  box-sizing: border-box;
 }
 
 /* --- Arranged-view "shot" card layout (buildSectionBlock, selectable=true) -
@@ -4684,7 +7429,7 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.selected {
   font-family: var(--cd-font-mono);
   font-size: 14px;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   opacity: 0.6;
   text-align: center;
   margin-bottom: 10px;
@@ -4713,7 +7458,7 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.selected {
 .shot-frames-header {
   font-size: 15px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   /* color: rgba(255, 255, 255, 0.8); */
 }
@@ -4827,7 +7572,7 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.selected {
 .shot-frame-caption {
   font-size: 14px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   text-align: center;
   /* color: rgba(255, 255, 255, 0.55); */
 }
@@ -4904,7 +7649,7 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.selected {
   top: -13px;
   font-size: 14px;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
   color: #d56347;
 }
 
@@ -5217,7 +7962,7 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.selected {
 
 .paper-section-open-slot:hover,
 .paper-section-open-slot:focus-visible {
-  background: rgba(241, 135, 0, 0.12);
+  background: var(--cd-footage);
   border-color: var(--cd-border-strong);
   outline: none;
 }
@@ -5237,7 +7982,7 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.selected {
   font-family: var(--cd-font-mono);
   font-size: 12px;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   opacity: 0.6;
 }
 
@@ -5256,7 +8001,7 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.selected {
   color: rgba(255, 255, 255, 0.75);
   font-size: 15px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
@@ -5317,7 +8062,7 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.selected {
   color: rgba(255, 255, 255, .78);
   font-size: 14px;
   font-weight: 700;
-  letter-spacing: .05em;
+  letter-spacing: .04em;
   text-transform: uppercase;
 }
 
@@ -5384,7 +8129,7 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.selected {
   font-size: 15px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.04em;
   opacity: 0.55;
   margin: 10px 0 5px;
 }
@@ -5441,8 +8186,7 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.selected {
 }
 
 .technique-view-toggle-btn.active {
-  /* border-color: var(--cd-accent-hover); */
-  background: var(--cd-accent) !important;
+  background: var(--cd-accent-special) !important;
 }
 
 /* .technique-view-toggle-btn:not(.active) {
@@ -5488,7 +8232,7 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.selected {
   font-size: 14px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   opacity: 0.6;
 }
 
@@ -5501,7 +8245,7 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.selected {
   border-radius: 4px;
   background: rgba(104, 108, 137, 0.1);
   font-size: 14px;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   font-family: var(--cd-font-mono);
   /* font-weight: 600; */
@@ -5694,7 +8438,7 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.selected {
   font-family: var(--cd-font-mono);
   font-size: 15px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   text-align: center;
   opacity: 0.7;
   line-height: 1.2;
@@ -5724,7 +8468,7 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.selected {
   color: #FFFFFF;
   font-size: 15px;
   font-weight: 700;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   pointer-events: none;
 }
@@ -5805,7 +8549,8 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.selected {
 /* #endregion */
 
 /* #region BUTTONS */
-/* Sits above .page-layout on html/storyboard.html (see that file) rather
+/* Sits above .page-layout on the setup pages (see html/index.html and
+   html/moodboard.html) rather
    than inside .main-column, so it needs its own spacing to match
    .page-layout's own 20px horizontal padding, which it no longer inherits. */
 #back-to-setup-btn {
@@ -5816,37 +8561,47 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.selected {
 #back-to-setup-btn,
 #toggle-panels-btn {
   margin-top: 16px;
-  margin-bottom: 16px;
   vertical-align: middle;
   line-height: 1;
   box-sizing: border-box;
 }
 
-button:not(.clear-debug-session-btn):not(.narrative-arc-outline-item):not(.chip):not(.technique-view-toggle-btn):not(.storyboard-act-board-footage-track-segment):not(.storyboard-act-board-scene-mode-btn),
-#back-to-setup-btn {
+button:not(.clear-debug-session-btn):not(.narrative-arc-outline-item):not(.chip):not(.technique-view-toggle-btn):not(.storyboard-act-board-footage-track-segment):not(.storyboard-act-board-scene-mode-btn):not(.storyboard-act-board-narration-node-waveform):not(.storyboard-act-board-audio-node-waveform),
+#back-to-setup-btn,
+.moodboard-back-btn {
   border-radius: 4px;
-  background: rgba(38, 37, 35, 0.1);
+  background: var(--cd-accent);
   border: none;
-  color: #6a6a6a;
+  color: var(--cd-button-text);
   transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
 }
 
-button:not(.clear-debug-session-btn):not(.narrative-arc-outline-item):not(.chip):not(.technique-view-toggle-btn):not(.storyboard-act-board-footage-track-segment):not(.storyboard-act-board-scene-mode-btn):hover,
-#back-to-setup-btn:hover {
+button:not(.clear-debug-session-btn):not(.narrative-arc-outline-item):not(.chip):not(.technique-view-toggle-btn):not(.storyboard-act-board-footage-track-segment):not(.storyboard-act-board-scene-mode-btn):not(.storyboard-act-board-narration-node-waveform):not(.storyboard-act-board-audio-node-waveform):hover,
+#back-to-setup-btn:hover,
+.moodboard-back-btn:hover {
   background: var(--cd-accent-hover);
-  box-shadow: 0 4px 10px rgba(235, 16, 0, 0.3);
+  color: #fff;
   transform: translateY(-1px);
 }
 
-button:not(.clear-debug-session-btn):not(.narrative-arc-outline-item):not(.chip):not(.technique-view-toggle-btn):not(.storyboard-act-board-footage-track-segment):not(.storyboard-act-board-scene-mode-btn):active,
-#back-to-setup-btn:active {
+button:not(.clear-debug-session-btn):not(.narrative-arc-outline-item):not(.chip):not(.technique-view-toggle-btn):not(.storyboard-act-board-footage-track-segment):not(.storyboard-act-board-scene-mode-btn):not(.storyboard-act-board-narration-node-waveform):not(.storyboard-act-board-audio-node-waveform):active,
+#back-to-setup-btn:active,
+.moodboard-back-btn:active {
   transform: translateY(0);
-  box-shadow: 0 2px 4px rgba(235, 16, 0, 0.2);
+}
+
+#compose-storyboard-btn,
+#moodboard-next-btn,
+#accept-arc-btn {
+  background: var(--cd-accent-special);
+  color: var(--cd-accent-text);
+  text-transform: uppercase;
 }
 
 .btn-primary,
 .btn-secondary,
-#back-to-setup-btn {
+#back-to-setup-btn,
+.moodboard-back-btn {
   height: 20px;
   display: inline-flex;
   align-items: center;
@@ -5854,39 +8609,79 @@ button:not(.clear-debug-session-btn):not(.narrative-arc-outline-item):not(.chip)
   padding: 0 5px;
   font-family: var(--cd-font-body);
   font-size: 12px;
-  font-weight: 700;
   border-radius: 8px;
   cursor: pointer;
 }
 
-body.pub-to-doc-page .chip.suggested {
-  background: rgba(38, 37, 35, 0.05);
-  border: 1px dashed var(--cd-border-strong);
-  color: var(--cd-text);
+/* Back-navigation controls use the same CSS-drawn chevron construction as
+   storyboard.html's collapsible dropdowns. Keep the back direction leftward,
+   but match their stroke weight and dimensions instead of relying on a font
+   glyph with different metrics. */
+#back-to-setup-btn,
+.moodboard-back-btn {
+  gap: 5px;
 }
 
-body.pub-to-doc-page .chip.suggested:hover {
-  background: rgba(38, 37, 35, 0.1);
-}
-
-body.pub-to-doc-page .chip.suggested.selected {
-  background: var(--cd-accent-active);
-  color: var(--cd-accent-text);
-  border-color: var(--cd-accent-active);
+#back-to-setup-btn::before,
+.moodboard-back-btn::before {
+  flex: 0 0 6px;
+  width: 6px;
+  height: 6px;
+  box-sizing: border-box;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  content: '';
+  transform: rotate(135deg);
+  transform-origin: center;
 }
 
 /* Floating, fixed to the bottom-right of the viewport rather than sitting
-   in .main-column's normal flow (see html/index.html) - the one control
-   that advances from page 1 (record/upload/edit) to page 2 (arc suggestion
-   + storyboard), so it stays reachable no matter how far down page 1 is
+   in .main-column's normal flow (see html/index.html and
+   html/moodboard.html) - the setup-step controls stay reachable no matter
+   how far down either page is
    scrolled. z-index above every other z-indexed element on this page
    (.split-floating-btn's 1000 is the next-highest) so nothing can cover it. */
-#compose-storyboard-row {
+#compose-storyboard-row,
+#moodboard-next-row {
   position: fixed;
   bottom: 15px;
   right: 20px;
   z-index: 2000;
   text-align: right;
+}
+
+/* A small hand-drawn nudge keeps the next-step action discoverable without
+   making it hard to read or click. The pause between jitters keeps the motion
+   from feeling like a loading indicator. */
+#compose-storyboard-row > .btn-primary,
+#moodboard-next-row > .btn-primary,
+#accept-arc-btn {
+  transform-origin: center;
+  animation: next-step-jitter 3.8s ease-in-out infinite;
+}
+
+@keyframes next-step-jitter {
+  0%, 84%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  86% { transform: translate3d(-1px, -1px, 0) rotate(-0.8deg); }
+  88% { transform: translate3d(1px, 0, 0) rotate(0.8deg); }
+  90% { transform: translate3d(-1px, 0, 0) rotate(-0.55deg); }
+  92% { transform: translate3d(1px, -1px, 0) rotate(0.4deg); }
+  94% { transform: translate3d(0, 0, 0) rotate(0deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #compose-storyboard-row > .btn-primary,
+  #moodboard-next-row > .btn-primary {
+    animation: none;
+  }
+}
+
+/* The dedicated documentary-reference page keeps its back link in the same
+   visual gutter as the setup page content. */
+.moodboard-back-btn {
+  display: inline-flex;
+  margin: 16px 0 0 20px;
+  text-decoration: none;
 }
 
 /* #endregion */
@@ -6010,27 +8805,6 @@ body.pub-to-doc-page .documentary-intent-input::placeholder {
   color: rgba(38, 37, 35, 0.45);
 }
 
-/* body.pub-to-doc-page .btn-primary {
-  background: var(--cd-accent);
-  color: var(--cd-accent-text);
-}
-body.pub-to-doc-page .btn-primary:hover {
-  background: var(--cd-accent-hover);
-}
-
-body.pub-to-doc-page .btn-secondary {
-  border: 1px solid var(--cd-border-strong);
-  color: var(--cd-text);
-}
-body.pub-to-doc-page .btn-secondary:hover {
-  background: rgba(38, 37, 35, 0.06);
-}
-body.pub-to-doc-page .btn-secondary.active {
-  background: var(--cd-accent);
-  color: var(--cd-accent-text);
-  border-color: var(--cd-accent);
-} */
-
 body.pub-to-doc-page .graph-edge-label {
   background: rgba(255, 255, 255, 0.92);
   color: var(--cd-text);
@@ -6125,32 +8899,30 @@ body.pub-to-doc-page .graph-panel ul li::before {
 
 .chip {
   font-family: inherit;
-  /* font-size: 15px; */
-  /* font-weight: 600; */
   padding: 6px 12px;
   border-radius: 999px;
   font-family: var(--cd-font-mono);
-  font-size: 14px;
+  font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  /* opacity: 0.6; */
+  letter-spacing: 0.04em;
+  font-weight: 600;
 }
 
 .chip.suggested {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px dashed rgba(255, 255, 255, 0.55);
-  color: #FFFFFF;
+  background: var(--cd-accent);
+  border: 1px solid var(--cd-text);
+  color: var(--cd-text);
   cursor: pointer;
 }
 
 .chip.suggested:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--cd-accent-hover) !important;
+  color: #fff !important;
 }
 
 .chip.suggested.selected {
-  background: #FFFFFF;
-  color: #EB1000;
-  border: 1px solid #FFFFFF;
+  background: var(--cd-accent-special) !important;
+  color: #fff !important;
 }
 
 /* Draggable chips (documentary modes + techniques) look distinct from the
@@ -6327,7 +9099,7 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
   border: none;
   background: none;
   color: var(--cd-text);
-  opacity: 0.35;
+  opacity: 0.7;
   cursor: pointer;
   text-align: center;
   transition: opacity 0.15s ease;
@@ -6676,7 +9448,7 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
 }
 
 /* ============================================================
-   Moodboard entry point (index.html #documentary-intent-module)
+   Moodboard entry point (moodboard.html #documentary-intent-module)
    + user-vs-LLM visual language + Part B timeline/generate-all bits.
    See js/paper-extract.js's moodboard flow and buildNarrativeTimeline.
    ============================================================ */
@@ -6688,8 +9460,7 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
    for something the presenter wrote. */
 .llm-generated {
   position: relative;
-  border-left: 5px solid var(--cd-accent);
-  background: rgba(104, 108, 137, 0.06);
+  border-left: 5px solid var(--cd-accent-special);
 }
 
 .llm-generated::before {
@@ -6699,8 +9470,8 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
   right: 6px;
   font-size: 15px;
   font-weight: 800;
-  letter-spacing: 0.08em;
-  color: var(--cd-accent);
+  letter-spacing: 0.04em;
+  color: var(--cd-button-text);
   opacity: 0.8;
 }
 
@@ -6720,6 +9491,10 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+#moodboard-file-input {
+  margin: auto;
 }
 
 .moodboard-add-group input[type="text"],
@@ -6777,21 +9552,21 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
 }
 
 #arc-suggestion-panel .chip-row .chip {
-  font: 12px var(--cd-font-mono);
+  font: 10px var(--cd-font-mono);
+  font-weight: 600;
   cursor: pointer;
   height: 20px;
   padding: 1px 5px;
   border-radius: 8px;
-  /* font-size: 13px; */
   text-transform: uppercase;
-  border: 1px solid var(--cd-accent);
+  border: 1px solid var(--cd-text);
+  background: var(--cd-accent);
 }
 
 #arc-suggestion-panel .chip-row .chip:hover,
 #arc-suggestion-panel .chip-row .chip:focus-visible {
-  border-color: var(--cd-accent-hover);
-  background: rgba(61, 121, 168, .12);
-  color: var(--cd-accent-hover);
+  background: var(--cd-accent-hover);
+  color: var(--cd-accent-text);
 }
 
 .arc-suggestion-card {
@@ -6884,7 +9659,7 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
   margin-top: 6px;
   font-size: 15px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   opacity: 0.8;
 }
 
@@ -6934,31 +9709,30 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
 }
 
 .moodboard-source-badge {
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
+  font-size: 10px;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   padding: 2px 6px;
   border-radius: 4px;
-  background: var(--cd-panel-bg);
+  background: var(--cd-accent);
   color: var(--cd-text);
 }
 
 .moodboard-status-pill {
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   padding: 2px 7px;
   border-radius: 4px;
 }
 
 .moodboard-status-pill--analyzing {
-  background: rgba(104, 108, 137, 0.16);
-  color: var(--cd-accent);
+  background: var(--cd-accent);
 }
 
 .moodboard-status-pill--ready {
-  background: rgba(46, 125, 50, 0.14);
-  color: var(--cd-success);
+  background: var(--cd-audio);
+  color: #fff;
 }
 
 .moodboard-status-pill--error {
@@ -7131,36 +9905,6 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
   display: none;
 }
 
-/* ============================================================
-   THE MARKUP / BLACKLIGHT EDITORIAL THEME
-   A data-journalism layer over the base styles: stark white +
-   near-black, a monospace display face (IBM Plex Mono) for
-   headings/kickers/labels, flat boxy hairline-bordered cards, and
-   uppercase mono tags. Appended last so it overrides cleanly; delete
-   this block to revert. (See the IBM Plex Mono <link> in the HTML heads.)
-   ============================================================ */
-body {
-  --cd-bg: #ffffff;
-  --cd-panel-bg: #f3f3f1;
-  --cd-card-bg: #ffffff;
-  --cd-border: rgba(17, 17, 17, 0.16);
-  --cd-border-strong: #111111;
-  --cd-text: #111111;
-  --cd-font-heading: 'Playfair Display', ui-monospace, 'SF Mono', Menlo, monospace;
-  --cd-font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
-}
-
-/* Monospace, uppercase headings - the signature Markup "terminal/data" voice. */
-h1,
-h2,
-h3,
-.module-card h2 {
-  font-family: var(--cd-font-heading);
-  /* text-transform: uppercase; */
-  letter-spacing: 0.03em;
-  font-weight: 700;
-}
-
 /* Flat, boxy, hairline-bordered cards (no soft shadow) with a ruled title. */
 .module-card h2 {
   font-size: 20px;
@@ -7187,10 +9931,8 @@ h3,
 .btn-primary,
 .btn-secondary {
   border-radius: 3px;
-  /* font-family: var(--cd-font-mono); */
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  font-weight: 700;
+  letter-spacing: 0.04em;
+  font-weight: 600;
 }
 
 /* Boxy reference cards with a crisp hairline; the user/LLM left-edge accent
@@ -7228,7 +9970,10 @@ h3,
    ============================================================ */
 .technique-motion-popover {
   position: fixed;
-  z-index: 1000;
+  /* Hover previews can remain mounted while the technique picker is open.
+     Keep them above that picker so the animation is not hidden by its
+     backdrop; the preview is positioned below the hovered technique chip. */
+  z-index: 3200;
   background: #fbfaf7;
   border: 1px solid var(--cd-border-strong);
   border-radius: 8px;
@@ -7242,7 +9987,7 @@ h3,
   font-size: 14px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   color: #707070;
   margin-bottom: 6px;
 }
@@ -7299,7 +10044,7 @@ h3,
   top: -18px;
   left: 4px;
   font-size: 14px;
-  letter-spacing: .08em;
+  letter-spacing: .04em;
   color: var(--muted);
 }
 
@@ -8094,7 +10839,7 @@ h3,
 .technique-motion-preview.metaphor .metaphor-means {
   position: absolute;
   font: 700 12px var(--cd-font-mono);
-  letter-spacing: .08em;
+  letter-spacing: .04em;
   color: var(--muted);
   text-align: center;
 }
@@ -8450,7 +11195,7 @@ h3,
   bottom: 22px;
   text-align: center;
   font: 700 16px var(--cd-font-mono);
-  letter-spacing: .06em;
+  letter-spacing: .04em;
   text-transform: uppercase;
 }
 
@@ -9207,7 +11952,7 @@ h3,
   background: rgba(0, 0, 0, .68);
   font: 700 9px var(--cd-font-mono);
   text-transform: uppercase;
-  letter-spacing: .06em;
+  letter-spacing: .04em;
 }
 
 .shot-examples-grid {
@@ -9268,7 +12013,7 @@ h3,
   font-family: var(--cd-font-mono);
   font-size: 15px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   text-align: center;
   opacity: 0.7;
   line-height: 1.2;
@@ -9321,7 +12066,7 @@ h3,
   font-family: var(--cd-font-mono);
   font-size: 14px;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   opacity: 0.6;
 }
 
@@ -9334,7 +12079,7 @@ h3,
    override them. */
 .storyboard-act-board-node .storyboard-act-board-node-remove {
   position: absolute;
-  top: 5px;
+  top: 20px;
   right: 5px;
   z-index: 20;
   width: 20px;
@@ -9343,7 +12088,7 @@ h3,
   padding: 0;
   border: 1px solid rgba(255, 255, 255, .72);
   border-radius: 50%;
-  background: #d47700;
+  background: var(--cd-narration);
   color: #fff;
   opacity: 1;
   cursor: pointer;
@@ -9355,8 +12100,236 @@ h3,
   background: #3d79a8;
 }
 
+.storyboard-act-board-node-footage .storyboard-act-board-footage-start-btn {
+  position: absolute;
+  top: 45px;
+  right: 5px;
+  z-index: 20;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  padding: 0;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, .72);
+  border-radius: 50%;
+  background: #3d79a8;
+  color: #fff;
+  font: 700 10px/1 sans-serif;
+  pointer-events: auto;
+}
+
+.storyboard-act-board-node-footage .storyboard-act-board-footage-start-btn.selected,
+.storyboard-act-board-node-footage .storyboard-act-board-footage-start-btn:hover,
+.storyboard-act-board-node-footage .storyboard-act-board-footage-start-btn:focus-visible {
+  border-color: #fff;
+  background: var(--cd-accent-hover);
+  color: #fff;
+}
+
 .storyboard-act-board-node-audio .storyboard-act-board-node-remove {
-  background: #327753;
+  background: var(--cd-audio);
+}
+
+/* Keep canvas footage nodes visually consistent with the scene footage lane.
+   The node owns its existing controls and drag/drop events, and its media
+   fills a bordered card with the narration phrase overlaid at the bottom. */
+.storyboard-act-board-node-footage:not(.storyboard-act-board-node-panel-host) {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 220px;
+  height: 140px;
+  min-width: 0;
+  min-height: 72px;
+  flex: 0 0 220px;
+  overflow: hidden;
+  padding: 0;
+  border-radius: 4px;
+  background: #fff;
+  color: var(--cd-text);
+  box-shadow: none;
+}
+
+.storyboard-act-board-node-footage:not(.storyboard-act-board-node-panel-host)::before,
+.storyboard-act-board-node-footage:not(.storyboard-act-board-node-panel-host)::after {
+  display: none;
+}
+
+/* Provenance marker for AI-selected footage. Keep this on the node's
+   pseudo-element so it never participates in header layout or overlaps the
+   node controls. */
+.storyboard-act-board-node-footage:not(.storyboard-act-board-node-panel-host).storyboard-act-board-node-ai-selected::before {
+  content: '✦AI';
+  position: absolute;
+  top: 4px;
+  left: 2px;
+  right: auto;
+  z-index: 24;
+  display: block;
+  width: auto;
+  height: auto;
+  padding: 1px 3px;
+  border: 0;
+  border-radius: 2px;
+  color: var(--cd-accent-text);
+  font: 800 11px/1 var(--cd-font-mono);
+  letter-spacing: .04em;
+  opacity: .85;
+  pointer-events: none;
+  filter: none;
+  transform: none;
+}
+
+.storyboard-act-board-node-footage:not(.storyboard-act-board-node-panel-host)
+  > .storyboard-act-board-footage-sticky-banner {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.storyboard-act-board-node-footage:not(.storyboard-act-board-node-panel-host)
+  > .storyboard-act-board-footage-sticky-banner
+  > .storyboard-act-board-node-top {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  text-align: left;
+}
+
+.storyboard-act-board-node-footage:not(.storyboard-act-board-node-panel-host)
+  .storyboard-act-board-node-type {
+  display: none;
+}
+
+.storyboard-act-board-node-footage:not(.storyboard-act-board-node-panel-host)
+  .storyboard-act-board-footage-node-preview {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 0;
+  background: #fff;
+}
+
+.storyboard-act-board-node-footage:not(.storyboard-act-board-node-panel-host)
+  .storyboard-act-board-footage-node-preview img,
+.storyboard-act-board-node-footage:not(.storyboard-act-board-node-panel-host)
+  .storyboard-act-board-footage-node-preview video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.storyboard-act-board-node-footage:not(.storyboard-act-board-node-panel-host)
+  .storyboard-act-board-footage-node-preview.is-empty {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--cd-accent);
+  font: 9px/1.2 var(--cd-font-mono);
+  text-align: center;
+  letter-spacing: 0.04em;
+}
+
+/* The compact phrase inserted in the node's top becomes a bottom gradient
+   caption over the footage preview. */
+.storyboard-act-board-node-footage:not(.storyboard-act-board-node-panel-host)
+  .storyboard-act-board-footage-node-fragment-title {
+  position: absolute;
+  z-index: 2;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: block;
+  width: auto;
+  max-width: none;
+  margin: 0;
+  overflow: hidden;
+  padding: 7px 7px 5px;
+  font: 9px/1.2 var(--cd-font-mono);
+  letter-spacing: 0.04em;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: normal;
+}
+
+.storyboard-act-board-node-footage:not(.storyboard-act-board-node-panel-host)
+  .storyboard-act-board-footage-node-fragment-title[hidden] {
+  display: none;
+}
+
+.storyboard-act-board-node-footage:not(.storyboard-act-board-node-panel-host)
+  .storyboard-act-board-footage-node-fragment-narration,
+.storyboard-act-board-node-footage:not(.storyboard-act-board-node-panel-host)
+  .storyboard-act-board-footage-node-fragment-detail {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.storyboard-act-board-node-footage:not(.storyboard-act-board-node-panel-host)
+  .storyboard-act-board-footage-node-fragment-detail {
+  opacity: .9;
+}
+
+/* The detailed duplicate remains available in the content panel, but the
+   canvas node should have only one compact caption. */
+.storyboard-act-board-node-footage:not(.storyboard-act-board-node-panel-host)
+  > .storyboard-act-board-node-fragment-title {
+  display: none;
+}
+
+.storyboard-act-board-node-footage:not(.storyboard-act-board-node-panel-host).act-board-footage-selected,
+.storyboard-act-board-node-footage:not(.storyboard-act-board-node-panel-host).storyboard-act-board-node--focused,
+.storyboard-act-board-node-footage:not(.storyboard-act-board-node-panel-host):hover,
+.storyboard-act-board-node-footage:not(.storyboard-act-board-node-panel-host):focus-within {
+  border-color: #245b82;
+  box-shadow: 0 0 0 2px rgba(36, 91, 130, .18);
+  outline: none;
+}
+
+.storyboard-act-board-node-footage:not(.storyboard-act-board-node-panel-host).dragging {
+  opacity: .55;
+  cursor: grabbing;
+}
+
+.storyboard-act-board-node-footage:not(.storyboard-act-board-node-panel-host).footage-drop-hover {
+  border-color: var(--cd-accent-hover);
+  box-shadow: 0 0 0 2px rgba(241, 135, 0, .3);
+}
+
+.storyboard-act-board-node-footage:not(.storyboard-act-board-node-panel-host)
+  .storyboard-act-board-node-remove {
+  top: 5px;
+  right: 5px;
+}
+
+.storyboard-act-board-node-footage:not(.storyboard-act-board-node-panel-host)
+  .storyboard-act-board-footage-start-btn {
+  top: 30px;
+  right: 5px;
 }
 
 .source-material-item .source-material-item-remove {
@@ -9370,7 +12343,7 @@ h3,
   padding: 0;
   border: 1px solid rgba(255, 255, 255, .72);
   border-radius: 50%;
-  background: #d47700;
+  background: var(--cd-narration);
   color: #fff;
   opacity: 1;
   cursor: pointer;
@@ -9385,7 +12358,6 @@ h3,
   border-color: #fff;
   background: var(--cd-accent-hover);
   color: #fff;
-  outline: 2px solid rgba(241, 135, 0, .25);
 }
 
 .storyboard-act-board-node > .storyboard-act-board-node-resize-handle {

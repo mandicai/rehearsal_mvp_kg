@@ -102,7 +102,7 @@ _TEMPLATE_LINES = '\n'.join(_format_template(t) for t in ARC_TEMPLATES)
 # what the filmmaker actually said - the frontend shows that reasoning next
 # to the top pick, and the rest as alternative chips the presenter can pick
 # instead (see js/paper-extract.js's Record Your Intent flow).
-_SYSTEM_PROMPT_SUGGEST_ARCS = f"""You are helping a filmmaker plan a video essay based on an academic paper. The filmmaker has described what they want the documentary to convey with one or more short statements. You'll be given these statements and the paper's own abstract and sections if available. Your job is to recommend which narrative arc(s) best fit what they've described.
+_SYSTEM_PROMPT_SUGGEST_ARCS = f"""You are helping a filmmaker plan a video essay based on an academic paper. The filmmaker may describe what they want the documentary to convey with one or more short statements, but those statements may be absent. You'll be given any statements plus the paper's own abstract and sections if available. When no separate focus statement is provided, infer the strongest documentary focus from the paper itself. Your job is to recommend which narrative arc(s) best fit the available material.
 
 Five common arc templates (name: parts (with descriptions)):
 {_TEMPLATE_LINES}
@@ -247,11 +247,11 @@ class NarrativeArcLLMClient:
     def suggest_arcs_from_intent(self, focus_statements=None, abstract=None, sections=None):
         """focus_statements: list of short strings describing the kind of
         documentary the filmmaker wants (picked from suggested chips and/or
-        their own typed-in description) - the primary human signal for the arc.
-        At least one focus statement must be given - the caller (server.py's
-        /paper/suggest_arcs route) enforces this before calling. (The spoken
-        narration transcript that used to also feed this was removed along with
-        the recorder UI.)
+        their own typed-in description) - the primary human signal for the arc
+        when provided. Focus statements are optional when the paper's abstract
+        or sections are present; in that case the arc is inferred from the
+        paper. (The spoken narration transcript that used to also feed this
+        was removed along with the recorder UI.)
         abstract: optional text of the extracted paper's own abstract
         section, if the paper had one and it was found (see server.py's
         route, which does that lookup) - additional grounding alongside
@@ -287,10 +287,19 @@ class NarrativeArcLLMClient:
         if focus_statements:
             bulleted = '\n'.join(f'- {s}' for s in focus_statements)
             parts.append(f'Chosen focus statement(s):\n{bulleted}')
+        else:
+            parts.append('No separate focus statement was provided. Infer the documentary focus from the paper below.')
         if abstract:
             parts.append(f"The paper's own abstract:\n\n{abstract}")
         if paper_sections:
-            listing = '\n'.join(f"[{s['index']}] {(s.get('title') or '').strip() or 'Untitled'}" for s in paper_sections)
+            listing_lines = []
+            for s in paper_sections:
+                title = (s.get('title') or '').strip() or 'Untitled'
+                snippet = (s.get('snippet') or '').strip()
+                listing_lines.append(f"[{s['index']}] {title}")
+                if snippet:
+                    listing_lines.append(f"    Content preview: {snippet}")
+            listing = '\n'.join(listing_lines)
             parts.append(
                 'The paper\'s sections (assign every index to exactly one part of each arc, via '
                 f'"section_indices"):\n{listing}'

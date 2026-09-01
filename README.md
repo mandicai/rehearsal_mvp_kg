@@ -28,6 +28,18 @@
 
 5. **Open `http://localhost:5500/html/index.html`** in your browser. Upload an academic paper (PDF) and extract its section titles and body text for review. PDFs are parsed server-side by Docling.
 
+## Act Board regression simulations
+
+Run the browser-level regression suite:
+
+```sh
+python3 -m pip install playwright
+python3 -m playwright install chromium
+python3 tests/act_board_regression.py
+```
+
+Use `--headed` to watch the simulation, or `--url http://localhost:5500/html/storyboard.html` when the frontend is already running. The suite mocks backend routes and checks track/source-editor synchronization, free footage-card movement and placement, visualize highlights, phrase classification, narration record/stop/rerecord/new-segment flows, footage merge/split composition, edited narration/image/video inputs, scene reload safety, scene/full playback order, and combined Premiere + MP4 requests.
+
    <!-- - `http://localhost:5500/html/presenter-view.html` - upload a `.pptx`, record/align a transcript, define an audience and learning objectives, then run the Simulate Audience (Bayesian Knowledge Tracing) feature.
    - `http://localhost:5500/html/participant-view.html` - collect real human takeaways/reactions/ratings after watching a presentation.
    - `http://localhost:5500/html/index.html` - upload an academic paper (PDF/text/Markdown) and extract its section titles and body text for review. PDFs are parsed server-side by Docling; `.txt`/`.md` uploads use a client-side heuristic instead (Docling only handles PDFs).

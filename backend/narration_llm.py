@@ -58,7 +58,7 @@ class NarrationLLMClient:
             self._client = OpenAI(**kwargs)
         return self._client
 
-    def suggest(self, section_title='', section_text='', act_title='', act_description='', abstract='', mode=''):
+    def suggest(self, section_title='', section_text='', act_title='', act_description='', abstract='', mode='', max_sentences=None):
         if not self.is_configured():
             raise NarrationLLMCallError('Narration LLM is not configured (missing API key or openai package)')
 
@@ -78,13 +78,22 @@ class NarrationLLMClient:
             parts.append(f'Paper abstract (broader context):\n{abstract.strip()}')
         user_content = '\n\n'.join(parts) or 'No paper text was supplied; write a cautious, generic transition for this act.'
 
+        system_prompt = _SYSTEM_PROMPT
+        if max_sentences:
+            # Arc previews are intentionally compact; the regular narration-node
+            # flow keeps the default 2-4 sentence guidance above.
+            system_prompt = system_prompt.replace(
+                '2-4 sentences of spoken narration',
+                f'1-{int(max_sentences)} sentences of spoken narration',
+            )
+
         last_error = None
         for _ in range(2):
             try:
                 response = self._get_client().chat.completions.create(
                     model=self.model,
                     messages=[
-                        {'role': 'system', 'content': _SYSTEM_PROMPT},
+                        {'role': 'system', 'content': system_prompt},
                         {'role': 'user', 'content': user_content},
                     ],
                     response_format={'type': 'json_object'},

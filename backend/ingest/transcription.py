@@ -11,6 +11,7 @@ Environment variables:
 """
 import os
 import io
+import re
 from pathlib import Path
 
 import httpx
@@ -79,6 +80,14 @@ class TranscriptionClient:
             return getattr(value, name, default)
 
         raw_words = field(response, 'words', []) or []
+        raw_segments = field(response, 'segments', []) or []
+        # A few Whisper-compatible gateways nest word timestamps inside each
+        # segment instead of returning the top-level `words` array. Flatten
+        # that shape too so the client can reconstruct spaces when an
+        # aggregate `text` value has been concatenated.
+        if not raw_words:
+            raw_words = [word for segment in raw_segments
+                         for word in (field(segment, 'words', []) or [])]
         words = []
         for item in raw_words:
             word = field(item, 'word', field(item, 'text', ''))
@@ -88,7 +97,6 @@ class TranscriptionClient:
                 continue
             words.append({'word': str(word), 'start': float(start), 'end': float(end)})
 
-        raw_segments = field(response, 'segments', []) or []
         segments = []
         for item in raw_segments:
             text = field(item, 'text', '')
@@ -98,9 +106,25 @@ class TranscriptionClient:
                 continue
             segments.append({'text': str(text or ''), 'start': float(start), 'end': float(end)})
 
+        text = str(field(response, 'text', '') or '').strip()
+        # Some compatible transcription gateways omit the aggregate text but
+        # still return timestamped words/segments. Build a readable transcript
+        # from those records instead of returning an empty string (or relying
+        # on a client-side guess).
+        if not text and words:
+            text = ' '.join(item['word'].strip() for item in words if item['word'].strip())
+        if not text and segments:
+            text = ' '.join(item['text'].strip() for item in segments if item['text'].strip())
+        # Whisper's verbose response normally includes spaces in ``text``.
+        # If a provider/proxy returns concatenated text but valid word timing
+        # records, rebuild only that malformed case from the timestamped
+        # words. This keeps ordinary whitespace and line breaks untouched.
+        if len(words) > 1 and len(re.findall(r'\s', text)) < len(words) - 1:
+            text = ' '.join(item['word'] for item in words)
+
         duration = field(response, 'duration')
         return {
-            'text': str(field(response, 'text', '') or '').strip(),
+            'text': text,
             'words': words,
             'segments': segments,
             'duration': float(duration) if duration is not None else None,

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Choose Documentary References - Research Paper to Documentary</title>
+  <script>window.CACHE_BUST = Date.now();</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cabin+Sketch:wght@400;700&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Coral+Pixels&family=Parastoo:wght@400..700&family=Rubik+80s+Fade&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap" rel="stylesheet">
+  <script>document.write('<link rel="stylesheet" href="/styles-index.css?t=' + window.CACHE_BUST + '">');</script>
+</head>
+
+<body class="pub-to-doc-page moodboard-page">
+  <a href="index.html" class="btn-secondary moodboard-back-btn" style="text-decoration: none;">Back to research paper</a>
+
+  <div class="page-layout">
+    <div class="main-column">
+      <div class="module-card" id="documentary-intent-module">
+        <h2>What documentaries capture the feeling you're going for?</h2>
+        <p style="font-size: 13px; margin: 0 0 14px;">
+          Build a moodboard of reference documentaries—name one, paste a YouTube link, or upload a clip.
+          We'll study their style and use it to suggest a narrative arc, mode, and techniques for your paper.
+        </p>
+
+        <div id="moodboard-add-row" class="moodboard-add-row">
+          <div class="moodboard-add-group">
+            <input type="text" id="moodboard-name-input" placeholder="Name a documentary (e.g. Free Solo)">
+            <button type="button" id="moodboard-add-name-btn" class="btn-secondary">Add</button>
+          </div>
+          <div class="moodboard-add-group">
+            <input type="url" id="moodboard-url-input" placeholder="Paste a YouTube link">
+            <button type="button" id="moodboard-add-url-btn" class="btn-secondary">Add</button>
+          </div>
+          <div class="moodboard-add-group">
+            <input type="file" id="moodboard-file-input" accept="video/*">
+          </div>
+        </div>
+
+        <div id="moodboard-list" class="moodboard-list"></div>
+        <div id="moodboard-status" class="status-line"></div>
+      </div>
+
+      <div id="moodboard-next-row" class="setup-next-row">
+        <button type="button" id="moodboard-next-btn" class="btn-primary">NEXT STEP: NARRATIVE ARC</button>
+        <div id="moodboard-next-status" class="status-line"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.write('<script src="/js/helpers.js?t=' + window.CACHE_BUST + '"><\/script>');
+    document.write('<script src="/js/paper-extract.js?t=' + window.CACHE_BUST + '"><\/script>');
+  </script>
+</body>
+
+</html>

@@ -271,7 +271,12 @@ class SketchLLMClient:
         if not specs:
             return []
         # map preserves order, so results stay ALIGNED to specs
-        with ThreadPoolExecutor(max_workers=len(specs)) as pool:
+        # Keep image calls bounded. A single Act Board visualization can
+        # contain several phrase/node batches; allowing one worker per spec
+        # creates a burst against the shared proxy and slows every request.
+        # The caller still receives all results, just with a small controlled
+        # amount of parallelism.
+        with ThreadPoolExecutor(max_workers=min(2, len(specs))) as pool:
             results = list(pool.map(_one, specs))
 
         if not any(r is not None for r in results):
