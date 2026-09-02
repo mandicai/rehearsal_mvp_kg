@@ -12605,3 +12605,11 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
   background: var(--cd-accent-special) !important;
   color: var(--cd-accent-text) !important;
 }
+
+/* In edit mode the grips are hidden and inert; the caret is the only gesture. */
+[data-narration-mode="edit"] .storyboard-act-board-entity-grip {
+  display: none;
+}
+[data-narration-mode="highlight"] {
+  cursor: pointer;
+}

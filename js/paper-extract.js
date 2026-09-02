@@ -8557,6 +8557,7 @@ function attachActBoardEntityResizeHandles(root, narrationNode, onResize) {
       grip.title = 'Drag to extend this entity across more words';
       grip.setAttribute('aria-label', grip.title);
       grip.addEventListener('pointerdown', event => {
+        if (actBoardNarrationSlideEditing()) return;
         event.preventDefault();
         event.stopPropagation();
         let nextStart = runStart;
@@ -8633,9 +8634,10 @@ function attachActBoardEntityResizeHandles(root, narrationNode, onResize) {
 // re-renders the spans from the corrected string.
 function enableActBoardInlineTranscriptEditing(element, actKey, node) {
   if (!element || !node?.transcript) return element;
-  element.contentEditable = 'true';
+  element.contentEditable = actBoardNarrationSlideEditing() ? 'true' : 'false';
   element.spellcheck = true;
   element.dataset.actBoardTranscriptEditable = 'true';
+  element.dataset.narrationMode = actBoardNarrationSlideEditing() ? 'edit' : 'highlight';
   element.title = 'Click to correct the transcript · double-click a word to mark it as an entity';
 
   let original = String(node.transcript || '');
@@ -11328,6 +11330,23 @@ function actBoardNarrationSlideEditing() {
   return actBoardNarrationSlideMode === 'edit';
 }
 
+// Apply the current mode to already-rendered slides. Switching used to call
+// rerenderActBoard, which rebuilt every node card and every <video> on the
+// board - tens of milliseconds of blocking work and a visible flash for what is
+// only a change of which gesture is live.
+function applyActBoardNarrationSlideMode(root = document) {
+  const editing = actBoardNarrationSlideEditing();
+  root.querySelectorAll('[data-act-board-transcript-editable]').forEach(element => {
+    element.contentEditable = editing ? 'true' : 'false';
+    element.dataset.narrationMode = editing ? 'edit' : 'highlight';
+  });
+  root.querySelectorAll('.storyboard-act-board-narration-mode-btn').forEach(button => {
+    const active = button.dataset.narrationMode === actBoardNarrationSlideMode;
+    button.classList.toggle('selected', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+}
+
 function buildActBoardNarrationModeToggle() {
   const toggle = document.createElement('div');
   toggle.className = 'storyboard-act-board-narration-mode-toggle';
@@ -11351,7 +11370,7 @@ function buildActBoardNarrationModeToggle() {
       event.stopPropagation();
       if (actBoardNarrationSlideMode === mode) return;
       actBoardNarrationSlideMode = mode;
-      rerenderActBoard({ preservePlayback: true });
+      applyActBoardNarrationSlideMode();
     });
     toggle.appendChild(button);
   });
@@ -24633,20 +24652,23 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
       ...(Array.isArray(entry.footageSuggestedPhrases) ? entry.footageSuggestedPhrases : []),
       ...(Array.isArray(entry.userFilmablePhrases) ? entry.userFilmablePhrases : []),
     ].filter(fragment => fragment && fragment.bucket !== 'ignore') : [];
+    // Gated at event time rather than by rebuilding the slide: switching mode
+    // then costs nothing but a class and an attribute.
     const onSceneNarrationSpanSelect = (metadata, renderedText, appendSelection = false) =>
-      handleActBoardNarrationSpanSelect(entry, metadata, renderedText, appendSelection);
+      (actBoardNarrationSlideEditing() ? undefined
+        : handleActBoardNarrationSpanSelect(entry, metadata, renderedText, appendSelection));
     const onSceneNarrationSpanRemove = (metadata, renderedText) =>
-      removeActBoardNarrationHighlight(entry, metadata, renderedText);
-    const highlighting = !actBoardNarrationSlideEditing();
+      (actBoardNarrationSlideEditing() ? undefined
+        : removeActBoardNarrationHighlight(entry, metadata, renderedText));
     const recorded = recordedText
       ? buildActBoardSuggestedNarrationText(
         recordedText,
         entryFilmableFragments,
         null,
         '',
-        highlighting ? onSceneNarrationSpanSelect : null,
+        onSceneNarrationSpanSelect,
         false,
-        highlighting ? onSceneNarrationSpanRemove : null,
+        onSceneNarrationSpanRemove,
       )
       : document.createElement('div');
     recorded.classList.add('storyboard-act-board-scene-recorded-narration');
@@ -24658,9 +24680,8 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
       // edit mode there is a caret and no selection gesture or resize grip, so
       // a click can only ever do one thing.
       applyActBoardNarrationPhraseSelection(recorded, entry);
-      if (actBoardNarrationSlideEditing()) {
+      {
         enableActBoardInlineTranscriptEditing(recorded, actKey, entry);
-      } else {
         attachActBoardEntityResizeHandles(recorded, entry, ({ previous, next }) => {
           // Replace rather than add: the run being dragged is one entity that
           // changed extent, not a second overlapping one. Remove first and let
