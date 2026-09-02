@@ -4334,8 +4334,8 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   /* Keep the transcript rail visually separated from the section heading
      above and the narration track/next scene lane below. The extra inset is
      part of the scroller so its controls and slides remain aligned. */
-  margin: 8px 0 10px;
-  padding: 12px 0 14px;
+  margin: 0 0 10px;
+  padding: 0 0 14px;
 }
 
 .storyboard-act-board-scene-narration-scroll-btn {
@@ -5430,7 +5430,7 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   resize: vertical;
   border: 1px solid var(--cd-border);
   border-radius: 2px;
-  background: #fffdf6;
+  background: #fff;
   color: var(--cd-text);
   font: 13px/1.4 var(--cd-font-body);
 }
