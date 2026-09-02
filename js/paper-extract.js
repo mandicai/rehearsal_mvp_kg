@@ -24378,7 +24378,10 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
         ? actBoardNarrationRecorderStates.get(String(target?.id))?.button : null);
     if (source) source.click();
   };
-  const makeSceneNarrationRecordButton = () => {
+  // `explicitTarget` binds the control to one narration segment (the per-slide
+  // bar). Without it the control follows the scene's selected segment, which is
+  // the older scene-level behaviour.
+  const makeSceneNarrationRecordButton = (explicitTarget = null) => {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'btn-secondary storyboard-act-board-scene-narration-action storyboard-act-board-node-action storyboard-act-board-record-narration-btn storyboard-act-board-scene-record-narration-btn';
@@ -24389,7 +24392,7 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
       const selected = selectedNarration();
       // A second press while recording must always target the active segment,
       // even if a board refresh changed the selected-slide state.
-      const target = recording || selected || firstUnrecordedNarration();
+      const target = explicitTarget || recording || selected || firstUnrecordedNarration();
       // Recording is a start/stop control for the current segment. It must not
       // create a new narration segment as a side effect of a click; new
       // segments are created explicitly through the canvas's Narration action.
@@ -24398,7 +24401,7 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
     const refresh = () => {
       const recording = recordingNarration();
       const selected = selectedNarration();
-      const target = recording || selected || firstUnrecordedNarration();
+      const target = explicitTarget || recording || selected || firstUnrecordedNarration();
       button.dataset.narrationNodeId = target?.id || '';
       const source = findNodeCard(target)?.querySelector('.storyboard-act-board-record-narration-btn')
         || actBoardNarrationRecorderStates.get(String(target?.id))?.button;
@@ -24417,12 +24420,12 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
     button._actBoardRefresh = refresh;
     return button;
   };
-  const makeSceneNarrationUploadButton = () => {
+  const makeSceneNarrationUploadButton = (explicitTarget = null) => {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'btn-secondary storyboard-act-board-scene-narration-action storyboard-act-board-node-action storyboard-act-board-upload-narration-btn';
     const refresh = () => {
-      const target = selectedNarration() || primaryNarration || null;
+      const target = explicitTarget || selectedNarration() || primaryNarration || null;
       const source = findNodeCard(target)?.querySelector('.storyboard-act-board-upload-narration-btn');
       button.textContent = source?.textContent?.trim() || '↑';
       button.title = source?.title || 'Upload narration for this segment';
@@ -24432,13 +24435,75 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
     button.addEventListener('click', event => {
       event.preventDefault();
       event.stopPropagation();
-      const target = selectedNarration() || primaryNarration || null;
+      const target = explicitTarget || selectedNarration() || primaryNarration || null;
       findNodeCard(target)?.querySelector('.storyboard-act-board-upload-narration-btn')?.click();
     });
     refresh();
     button._actBoardRefresh = refresh;
     return button;
   };
+  // Per-slide narration controls. Record / upload / download / include act on
+  // THIS segment rather than on whichever one the scene happens to have
+  // selected, so the bar above a slide always does what it looks like it does.
+  // Visualize is deliberately not here: it stays scene-wide, because running it
+  // per slide silently skips highlights on the other segments.
+  const makeNarrationSlideControls = entry => {
+    const group = document.createElement('div');
+    group.className = 'storyboard-act-board-narration-slide-actions';
+    const record = makeSceneNarrationRecordButton(entry);
+    const upload = makeSceneNarrationUploadButton(entry);
+
+    const download = document.createElement('button');
+    download.type = 'button';
+    download.className = 'btn-secondary storyboard-act-board-scene-narration-action storyboard-act-board-node-action storyboard-act-board-download-narration-btn';
+    download.textContent = '↓';
+    download.title = 'Download this narration segment';
+    download.setAttribute('aria-label', download.title);
+    download.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      const url = download.dataset.downloadUrl || '';
+      if (!url) return;
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = download.dataset.downloadFilename || 'narration.wav';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    });
+
+    const includeLabel = document.createElement('label');
+    includeLabel.className = 'storyboard-act-board-narration-slide-include';
+    const includeInput = document.createElement('input');
+    includeInput.type = 'checkbox';
+    includeInput.addEventListener('click', event => event.stopPropagation());
+    includeInput.addEventListener('change', event => {
+      event.stopPropagation();
+      entry.includeNarration = includeInput.checked;
+      saveDebugSession();
+      // A scene patch, not a board rerender: this changes one segment's
+      // participation in playback, not the board's structure.
+      queueActBoardScenePatch(actKey, entry.sceneId || scene?.id || '', { persist: true });
+    });
+    includeLabel.append(includeInput, document.createTextNode(' In playback'));
+
+    const refresh = () => {
+      const url = entry?._nativePreviewUrl || entry?._nativeAudioUrl
+        || entry?.audioPreviewUrl || '';
+      download.hidden = !url;
+      download.disabled = !url;
+      download.dataset.downloadUrl = url;
+      download.dataset.downloadFilename = `narration-${entry?.id || 'segment'}.wav`;
+      includeInput.checked = entry?.includeNarration !== false;
+      record._actBoardRefresh?.();
+      upload._actBoardRefresh?.();
+    };
+    refresh();
+    group._actBoardRefresh = refresh;
+    group.append(record, upload, download, includeLabel);
+    return group;
+  };
+
   // Narration section: controls sit above a horizontally scrollable,
   // Playfair-styled recorded transcript. Arrows use scrollBy rather than
   // changing the underlying narration node, so track timing/highlighting stays
@@ -24652,13 +24717,9 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
     rerenderActBoard();
   });
   refreshSceneNarrationControls();
-  narrationControls.append(
-    sceneRecordButton,
-    sceneUploadButton,
-    sceneDownload,
-    sceneIncludeLabel,
-    sceneVisualizeButton,
-  );
+  // Record / upload / download / include now live in each slide's own bar (see
+  // makeNarrationSlideControls). Only the scene-wide action remains here.
+  narrationControls.append(sceneVisualizeButton);
   sceneVisualizeButton._actBoardRefresh = refreshSceneNarrationControls;
   narrationSection.appendChild(narrationControls);
   const narrationScroller = document.createElement('div');
@@ -24767,7 +24828,19 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
           : 'No suggested narration yet'),
       );
     }
-    if (recordedText) slide.appendChild(buildActBoardNarrationModeToggle());
+    const slideBar = document.createElement('div');
+    slideBar.className = 'storyboard-act-board-narration-slide-bar';
+    // One inner row so `grid-template-rows: 0fr` can collapse the whole bar.
+    // With the controls as direct children each would open its own implicit
+    // row, and the bar would never fully close.
+    const slideBarInner = document.createElement('div');
+    slideBarInner.className = 'storyboard-act-board-narration-slide-bar-inner';
+    if (recordedText) slideBarInner.appendChild(buildActBoardNarrationModeToggle());
+    const slideControls = makeNarrationSlideControls(entry);
+    slideBarInner.appendChild(slideControls);
+    slideBar.appendChild(slideBarInner);
+    slide._actBoardRefreshControls = slideControls._actBoardRefresh;
+    slide.appendChild(slideBar);
     slide.append(recorded, suggested);
     narrationSlides.appendChild(slide);
     if (index === 0) narrationScroller.dataset.activeNarrationNodeId = entry.id || '';
@@ -24798,8 +24871,13 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
         refreshSceneNarrationControls();
         narrationScroller.dataset.activeNarrationNodeId = node.id || '';
         narrationSlides.querySelectorAll('.storyboard-act-board-scene-narration-slide')
-          .forEach(slide => slide.classList.toggle('selected',
-            slide.dataset.narrationNodeId === String(node.id)));
+          .forEach(slide => {
+            slide.classList.toggle('selected',
+              slide.dataset.narrationNodeId === String(node.id));
+            // Each bar shows its own segment's state, so refresh in place
+            // rather than rerendering the board to pick up the new selection.
+            slide._actBoardRefreshControls?.();
+          });
         const selectedSlide = narrationSlides.querySelector(
           `.storyboard-act-board-scene-narration-slide[data-narration-node-id="${node.id}"]`,
         );

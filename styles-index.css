@@ -12613,3 +12613,46 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
 [data-narration-mode="highlight"] {
   cursor: pointer;
 }
+
+/* Per-slide narration bar. Collapsed until its segment is selected, then it
+   eases open - grid-template-rows animates a natural height without needing a
+   measured pixel value, and the row is inert while closed. */
+.storyboard-act-board-narration-slide-bar {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  margin-bottom: 0;
+  transition: grid-template-rows .2s ease, opacity .16s ease, margin-bottom .2s ease;
+  pointer-events: none;
+}
+.storyboard-act-board-scene-narration-slide.selected
+  > .storyboard-act-board-narration-slide-bar {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  margin-bottom: 6px;
+  pointer-events: auto;
+}
+.storyboard-act-board-narration-slide-bar > .storyboard-act-board-narration-slide-bar-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+.storyboard-act-board-narration-slide-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+.storyboard-act-board-narration-slide-include {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .storyboard-act-board-narration-slide-bar { transition: none; }
+}
