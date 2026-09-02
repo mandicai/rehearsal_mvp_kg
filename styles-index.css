@@ -12407,8 +12407,9 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
 .storyboard-act-board-footage-reference-btn {
   position: absolute;
   z-index: 3;
-  top: 4px;
-  left: 4px;
+  /* Directly beneath the pin control, sharing its right edge. */
+  top: 25px;
+  right: 3px;
   display: grid;
   width: 20px;
   height: 20px;
@@ -12423,13 +12424,17 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
   cursor: pointer;
 }
 .storyboard-act-board-footage-reference-btn:hover {
-  border-color: var(--cd-accent-hover);
-  color: var(--cd-accent-hover);
+  border-color: var(--cd-accent-special);
+  color: var(--cd-accent-special);
 }
 .storyboard-act-board-footage-reference-btn.is-reference {
-  border-color: var(--cd-accent-hover);
-  background: var(--cd-accent-hover);
-  color: #fff;
+  /* !important for the same reason the pin button uses it: a generic
+     small-button rule otherwise wins and the active state reads as inactive. */
+  /* --cd-accent-hover is a light grey, which reads as inactive at this size.
+     Use the orange accent so the pinned reference is unmistakable. */
+  border-color: var(--cd-accent-special) !important;
+  background: var(--cd-accent-special) !important;
+  color: var(--cd-accent-text) !important;
 }
 
 /* Transcript correction, beneath the recorded narration. Collapsed to a single
@@ -12448,3 +12453,25 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
 }
 .storyboard-act-board-transcript-edit-actions { display: flex; gap: 6px; }
 .storyboard-act-board-transcript-edit-status { color: var(--cd-accent-hover); font-size: 11px; }
+
+/* On the selected preview the pin sits at 28px (below Replace), so the
+   reference control stacks under that one instead. */
+.storyboard-act-board-footage-featured > .storyboard-act-board-footage-reference-btn {
+  top: 50px;
+  right: 4px;
+}
+
+/* The reference thumbnail shown inside the image/video generation inputs. */
+.storyboard-act-board-reference-input-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.storyboard-act-board-reference-input-thumb {
+  width: 44px;
+  height: 28px;
+  flex: 0 0 auto;
+  object-fit: cover;
+  border: 1px solid var(--cd-accent-hover);
+  border-radius: 3px;
+}

@@ -11136,6 +11136,70 @@ function createActBoardAudioTrackSegment(actKey, scene = null) {
   return node;
 }
 
+// Add/remove/refresh the reference row inside the open generation-inputs
+// panels, so pinning or clearing a reference is reflected immediately.
+function syncActBoardReferenceInputRows(node) {
+  document.querySelectorAll('.storyboard-act-board-generation-inputs').forEach(panel => {
+    const isGenerationPanel = panel.classList
+      .contains('storyboard-act-board-image-generation-inputs');
+    panel.querySelectorAll(':scope > .storyboard-act-board-reference-input-row')
+      .forEach(row => row.remove());
+    if (!isGenerationPanel) return;
+    const row = buildActBoardReferenceInputRow(node);
+    if (!row) return;
+    const summary = panel.querySelector(':scope > summary');
+    if (summary?.nextSibling) panel.insertBefore(row, summary.nextSibling);
+    else panel.appendChild(row);
+  });
+}
+
+// A small preview of the image a generation will be based on, shown inside the
+// image/video generation inputs so the reference is visible at the moment of
+// generating rather than only on the thumbnail that was pinned.
+function buildActBoardReferenceInputRow(node) {
+  const visual = actBoardReferenceVisual(node);
+  if (!visual) return null;
+  const row = document.createElement('div');
+  row.className = 'storyboard-act-board-generation-input-row storyboard-act-board-reference-input-row';
+  const label = document.createElement('strong');
+  label.textContent = 'Reference image';
+  const value = document.createElement('span');
+  value.className = 'storyboard-act-board-reference-input-value';
+  const thumb = document.createElement('img');
+  thumb.className = 'storyboard-act-board-reference-input-thumb';
+  thumb.src = visual.thumbnailUrl || visual.url;
+  thumb.alt = visual.label || 'Reference image';
+  thumb.loading = 'lazy';
+  thumb.decoding = 'async';
+  const caption = document.createElement('span');
+  caption.textContent = visual.label || 'Pinned reference';
+  value.append(thumb, caption);
+  row.append(label, value);
+  return row;
+}
+
+// Refresh the content panel for a node whose async work just finished.
+//
+// A scene patch rebuilds the scene card and its rails, NOT the selected-node
+// body, so a draft that arrives after its node was opened would leave the panel
+// sitting on "Drafting suggested narration..." indefinitely. Runs on the next
+// frame so it lands after any patch queued alongside it, and does nothing
+// unless the panel is actually showing this node.
+function refreshActBoardNodeContentPanel(actKey, node) {
+  const panel = actBoardFullPlaybackPanel;
+  if (!panel || !node?.id || panel.dataset.selectedNodeId !== node.id) return false;
+  const act = currentArcSections.find(item => item.key === actKey)
+    || { key: actKey, label: actKey, description: '' };
+  const run = () => {
+    if (actBoardFullPlaybackPanel !== panel
+      || panel.dataset.selectedNodeId !== node.id) return;
+    panel._actBoardShowNodeDetails?.(actKey, act, node);
+  };
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
+  else setTimeout(run, 0);
+  return true;
+}
+
 // Open a node in the selected-node content panel. A node is created empty, so
 // the presenter's next move is always to choose its media - showing it straight
 // away saves hunting for the new card and clicking it. The panel restores
@@ -19687,6 +19751,7 @@ async function suggestInitialActBoardNarration(actKey, act, narrationNode) {
     narrationNode.footageFragments = [];
     saveDebugSession();
     queueActBoardScenePatch(actKey, sceneId, { persist: true });
+    refreshActBoardNodeContentPanel(actKey, narrationNode);
     return true;
   } catch (error) {
     const stillPresent = actBoardNodesForAct(actKey).some(node => node === narrationNode);
@@ -19696,6 +19761,7 @@ async function suggestInitialActBoardNarration(actKey, act, narrationNode) {
     narrationNode.error = error.message || 'Could not generate suggested narration.';
     saveDebugSession();
     queueActBoardScenePatch(actKey, sceneId, { persist: true });
+    refreshActBoardNodeContentPanel(actKey, narrationNode);
     return false;
   } finally {
     if (narrationNode.initialNarrationSuggestionInFlight === token) {
@@ -22034,7 +22100,9 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'storyboard-act-board-footage-reference-btn';
-      button.textContent = '◎';
+      // Filled when in use, hollow when not - readable at 18px without relying
+      // on colour alone.
+      button.textContent = isReference ? '◉' : '◎';
       button.title = isReference
         ? 'Stop using this image as the generation reference'
         : 'Use this image as the reference for generating images and video';
@@ -22045,6 +22113,9 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
         event.preventDefault();
         event.stopPropagation();
         const next = toggleActBoardReferenceVisual(node, option.key);
+        // The generation inputs list the reference; keep it truthful now
+        // rather than only after the next rerender.
+        syncActBoardReferenceInputRows(node);
         // Update every reference control in place rather than rerendering: the
         // selected-visual DOM patch does not rebuild the thumbnail rail, so a
         // rerender is both heavier and unreliable for this. Only one image can
@@ -22056,6 +22127,7 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
           .forEach(other => {
             const isReference = Boolean(next) && other === button;
             other.classList.toggle('is-reference', isReference);
+            other.textContent = isReference ? '◉' : '◎';
             other.setAttribute('aria-pressed', String(isReference));
             other.title = isReference
               ? 'Stop using this image as the generation reference'
@@ -22550,6 +22622,8 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
     imageInputsSummary.textContent = 'Image generation inputs';
     imageInputsSummary.appendChild(generateExamplesBtn);
     imageInputsPanel.appendChild(imageInputsSummary);
+    const imageReferenceRow = buildActBoardReferenceInputRow(node);
+    if (imageReferenceRow) imageInputsPanel.appendChild(imageReferenceRow);
     const inputRows = [
       ['Specific phrase', imageInputs.phrase],
       ['Shot plan', actBoardImageShotPlanDisplayText(node, selectedVisual)],
@@ -22642,6 +22716,8 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
     videoInputsSummary.textContent = 'Video generation inputs';
     videoInputsSummary.appendChild(generateVideoBtn);
     videoInputsPanel.appendChild(videoInputsSummary);
+    const videoReferenceRow = buildActBoardReferenceInputRow(node);
+    if (videoReferenceRow) videoInputsPanel.appendChild(videoReferenceRow);
     const selectedImageLabel = hasSelectedImage
       ? (videoStartVisual?.label || selectedVisual?.label || 'Selected image')
       : 'None selected — generate or upload an image first';
@@ -23808,6 +23884,8 @@ function buildActBoardFullPlaybackPanel(board, exportActionGroup = null) {
     event.stopPropagation();
     setPanelView('node');
   });
+  // Exposed so async work that finishes while its node is open can refresh the
+  // panel; see refreshActBoardNodeContentPanel.
   const showNodeDetails = (actKey, act, node) => {
     actBoardSelectedNodeId = node?.id || '';
     actBoardSelectedNodeActKey = String(actKey || '');
@@ -23879,6 +23957,7 @@ function buildActBoardFullPlaybackPanel(board, exportActionGroup = null) {
   collapseButton.setAttribute('aria-expanded', String(expanded));
   collapseButton.title = `${expanded ? 'Collapse' : 'Expand'} all acts playback`;
   collapseButton.setAttribute('aria-label', `${expanded ? 'Collapse' : 'Expand'} all acts playback`);
+  panel._actBoardShowNodeDetails = showNodeDetails;
   const previousNode = actBoardSelectedNodeId && actBoardSelectedNodeActKey
     ? actBoardNodesForAct(actBoardSelectedNodeActKey)
       .find(node => node.id === actBoardSelectedNodeId) : null;
