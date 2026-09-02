@@ -12437,22 +12437,6 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
   color: var(--cd-accent-text) !important;
 }
 
-/* Transcript correction, beneath the recorded narration. Collapsed to a single
-   button until used so it never competes with the highlight-selection gesture
-   that lives on the transcript text itself. */
-.storyboard-act-board-transcript-editor { margin-top: 6px; }
-.storyboard-act-board-transcript-edit-form { display: grid; gap: 6px; }
-.storyboard-act-board-transcript-edit-input {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 6px 8px;
-  border: 1px solid var(--cd-border);
-  border-radius: 4px;
-  font: 12px/1.5 var(--cd-font-mono);
-  resize: vertical;
-}
-.storyboard-act-board-transcript-edit-actions { display: flex; gap: 6px; }
-.storyboard-act-board-transcript-edit-status { color: var(--cd-accent-hover); font-size: 11px; }
 
 /* On the selected preview the pin sits at 28px (below Replace), so the
    reference control stacks under that one instead. */
@@ -12474,4 +12458,114 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
   object-fit: cover;
   border: 1px solid var(--cd-accent-hover);
   border-radius: 3px;
+}
+
+/* The per-scene node chip list is not needed on screen. It stays in the DOM
+   because scene-height reservation and several lookups reference it, but it no
+   longer takes space or catches the pointer. Note its chips carry the same
+   `data-node-id` as the real node cards - see actBoardNodeCard, which scopes
+   its lookups to `.storyboard-act-board-node` for exactly that reason. */
+.storyboard-act-board-board-scene-node-list { display: none; }
+
+/* The recorded narration in a scene slide is edited in place. Keep the editing
+   affordance quiet until the caret is in it, so the slide still reads as text
+   rather than as a form field. */
+.storyboard-act-board-scene-recorded-narration[data-act-board-transcript-editable] {
+  border-radius: 3px;
+  outline: 1px solid transparent;
+  transition: outline-color .12s ease, background-color .12s ease;
+  cursor: text;
+}
+.storyboard-act-board-scene-recorded-narration[data-act-board-transcript-editable]:hover {
+  outline-color: var(--cd-border);
+}
+.storyboard-act-board-scene-recorded-narration[data-act-board-transcript-editable]:focus {
+  outline-color: var(--cd-accent-special);
+  background: rgba(255, 255, 255, .6);
+}
+
+/* Entity edge grips. A marked entity is a run of word spans, so the grip is
+   what gives that run a draggable border. */
+.storyboard-act-board-entity-edge { position: relative; }
+.storyboard-act-board-entity-grip {
+  position: absolute;
+  z-index: 2;
+  top: -2px;
+  bottom: -2px;
+  width: 6px;
+  border-radius: 2px;
+  background: var(--cd-accent-special);
+  opacity: 0;
+  cursor: ew-resize;
+  transition: opacity .12s ease;
+}
+.storyboard-act-board-entity-grip-start { left: -4px; }
+.storyboard-act-board-entity-grip-end { right: -4px; }
+.storyboard-act-board-entity-edge:hover > .storyboard-act-board-entity-grip,
+.storyboard-act-board-entity-grip:hover { opacity: .85; }
+.storyboard-act-board-entity-resizing {
+  background: rgba(199, 107, 74, .28) !important;
+  border-radius: 2px;
+}
+
+/* --- Motion -------------------------------------------------------------
+   Collapsing a panel and spawning a node were instant state swaps, which
+   reads as the layout jumping rather than changing. These transitions are
+   short and touch only compositor-friendly properties (transform/opacity)
+   plus the box metrics the collapsed states already animate between, so a
+   dense board does not pay for them per frame.
+
+   Everything here is disabled under prefers-reduced-motion. */
+.storyboard-act-board-full-playback-panel,
+.storyboard-act-board-selected-scene-playback-panel {
+  transition: width .22s ease, height .22s ease, min-height .22s ease,
+    max-height .22s ease, padding .22s ease;
+}
+.storyboard-act-board-full-playback-panel .storyboard-act-board-full-playback-body,
+.storyboard-act-board-selected-scene-playback-panel .storyboard-act-board-selected-scene-playback-body {
+  transition: opacity .16s ease;
+}
+.storyboard-act-board-full-playback-panel.collapsed .storyboard-act-board-full-playback-body {
+  opacity: 0;
+}
+
+/* The sidebar and the Premiere timeline collapse the same way. */
+.storyboard-sidebar-stack,
+.premiere-timeline {
+  transition: width .22s ease, height .22s ease, max-height .22s ease,
+    padding .22s ease, opacity .16s ease;
+}
+
+/* A node card or track segment that has just been created eases in, so the
+   presenter's eye follows it to where it landed instead of finding it already
+   there. One-shot: the class is removed after the animation. */
+@keyframes storyboardActBoardNodeAppear {
+  from { opacity: 0; transform: scale(.96) translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes storyboardActBoardSegmentAppear {
+  from { opacity: 0; transform: scaleX(.85); }
+  to   { opacity: 1; transform: none; }
+}
+.storyboard-act-board-node.act-board-node-appearing {
+  animation: storyboardActBoardNodeAppear .2s ease-out;
+}
+.storyboard-act-board-footage-track-segment.act-board-segment-appearing {
+  animation: storyboardActBoardSegmentAppear .2s ease-out;
+  transform-origin: left center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .storyboard-act-board-full-playback-panel,
+  .storyboard-act-board-selected-scene-playback-panel,
+  .storyboard-sidebar-stack,
+  .premiere-timeline,
+  .storyboard-act-board-full-playback-panel .storyboard-act-board-full-playback-body,
+  .storyboard-act-board-selected-scene-playback-panel .storyboard-act-board-selected-scene-playback-body {
+    transition: none;
+  }
+  .storyboard-act-board-node.act-board-node-appearing,
+  .storyboard-act-board-footage-track-segment.act-board-segment-appearing {
+    animation: none;
+  }
 }

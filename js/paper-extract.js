@@ -8287,7 +8287,10 @@ function buildActBoardSuggestedNarrationText(text, fragments, onFragmentEdit, la
         emitSelection(phrase, start, end, true);
       }, 0);
     });
-    container.addEventListener('click', event => {
+    // A word becomes an entity on DOUBLE click, not a single one. Single click
+    // is reserved for placing a caret in the editable transcript, so the two
+    // gestures - correcting a word and marking it - never fight each other.
+    container.addEventListener('dblclick', event => {
       if (textSelectionCaptured) {
         textSelectionCaptured = false;
         return;
@@ -8299,6 +8302,10 @@ function buildActBoardSuggestedNarrationText(text, fragments, onFragmentEdit, la
       if (event.target.closest('.storyboard-act-board-narration-span-clickable')) return;
       const word = event.target.closest('[data-narration-source-start]');
       if (!word || !container.contains(word)) return;
+      // A double click natively selects the word; that selection would other-
+      // wise be read as a drag-select on the next mouseup.
+      event.preventDefault();
+      window.getSelection?.()?.removeAllRanges?.();
       emitSelection(word.dataset.narrationWordText || word.textContent,
         Number(word.dataset.narrationSourceStart),
         Number(word.dataset.narrationSourceEnd), true);
@@ -8481,81 +8488,173 @@ function replaceActBoardNarrationPhrase(text, original, replacement) {
   return `${source.slice(0, index)}${replacement}${source.slice(index + original.length)}`;
 }
 
-// An "Edit transcript" affordance beneath the recorded narration. Collapsed to
-// a single button until used, so it never competes with the highlight-selection
-// gesture that lives on the transcript text itself.
-function buildActBoardTranscriptEditor(actKey, node) {
-  const host = document.createElement('div');
-  host.className = 'storyboard-act-board-transcript-editor';
+// Edge grips for resizing an entity across words.
+//
+// A marked entity is not one element: it is a contiguous RUN of word spans
+// carrying the highlight class. So there is no border to grab until we make
+// one - a grip is appended to the first and last word of each run, and dragging
+// it re-emits the phrase over whatever range the pointer lands on.
+const ACT_BOARD_ENTITY_CLASSES = [
+  'storyboard-act-board-narration-phrase-selected',
+  'storyboard-act-board-narration-phrase-has-footage',
+];
 
-  const editButton = document.createElement('button');
-  editButton.type = 'button';
-  editButton.className = 'btn-secondary storyboard-act-board-transcript-edit-btn';
-  editButton.textContent = 'Edit transcript';
-  editButton.title = 'Correct what the transcription heard';
-
-  const form = document.createElement('div');
-  form.className = 'storyboard-act-board-transcript-edit-form';
-  form.hidden = true;
-  const input = document.createElement('textarea');
-  input.className = 'storyboard-act-board-transcript-edit-input';
-  input.rows = 3;
-  input.setAttribute('aria-label', 'Recorded narration transcript');
-  const actions = document.createElement('div');
-  actions.className = 'storyboard-act-board-transcript-edit-actions';
-  const saveButton = document.createElement('button');
-  saveButton.type = 'button';
-  saveButton.className = 'btn-primary';
-  saveButton.textContent = 'Save';
-  const cancelButton = document.createElement('button');
-  cancelButton.type = 'button';
-  cancelButton.className = 'btn-secondary';
-  cancelButton.textContent = 'Cancel';
-  actions.append(saveButton, cancelButton);
-  const status = document.createElement('small');
-  status.className = 'storyboard-act-board-transcript-edit-status';
-  form.append(input, actions, status);
-
-  // Typing inside the editor must not reach the board: the canvas treats keys
-  // as shortcuts and pointer gestures as node drags.
-  ['pointerdown', 'click', 'keydown', 'keyup'].forEach(type => {
-    form.addEventListener(type, event => event.stopPropagation());
+// A marked entity has two possible renderings: a classifier phrase is one
+// `[data-narration-fragment]` span, while an ad-hoc selection is a class on each
+// word. Collect both as runs so a grip can be attached either way.
+function actBoardEntityRuns(root) {
+  const runs = [];
+  const isMarked = el => ACT_BOARD_ENTITY_CLASSES.some(cls => el.classList.contains(cls));
+  root.querySelectorAll('[data-narration-fragment]').forEach(span => {
+    if (!isMarked(span)) return;
+    runs.push({
+      host: span,
+      words: Array.from(span.querySelectorAll('[data-narration-source-start]')),
+      fragment: span.dataset.narrationFragment || span.textContent || '',
+    });
   });
-
-  const close = () => {
-    form.hidden = true;
-    editButton.hidden = false;
-    status.textContent = '';
-  };
-  editButton.addEventListener('click', event => {
-    event.preventDefault();
-    event.stopPropagation();
-    input.value = String(node.transcript || '');
-    form.hidden = false;
-    editButton.hidden = true;
-    input.focus();
-  });
-  cancelButton.addEventListener('click', event => {
-    event.preventDefault();
-    event.stopPropagation();
-    close();
-  });
-  saveButton.addEventListener('click', event => {
-    event.preventDefault();
-    event.stopPropagation();
-    const next = input.value.trim();
-    if (!next) {
-      status.textContent = 'The transcript cannot be empty.';
+  let current = null;
+  Array.from(root.querySelectorAll('[data-narration-source-start]')).forEach(word => {
+    // Words inside a phrase span are already covered by that span's run.
+    if (word.closest('[data-narration-fragment]') || !isMarked(word)) {
+      current = null;
       return;
     }
-    if (next === String(node.transcript || '').trim()) {
-      close();
-      return;
+    if (current) current.words.push(word);
+    else {
+      current = { host: null, words: [word], fragment: '' };
+      runs.push(current);
     }
-    // The offsets behind every highlight point into the text that is being
-    // replaced, so they cannot survive as-is. Ask rather than decide: dropping
-    // them silently loses the presenter's phrase selections, and keeping them
-    // silently leaves highlights pointing at the wrong words.
+  });
+  return runs;
+}
+
+function attachActBoardEntityResizeHandles(root, narrationNode, onResize) {
+  if (!root || !narrationNode || typeof onResize !== 'function') return;
+  root.querySelectorAll('.storyboard-act-board-entity-grip').forEach(grip => grip.remove());
+  const source = String(narrationNode.transcript || narrationNode.text || '');
+  const words = Array.from(root.querySelectorAll('[data-narration-source-start]'));
+  if (!words.length) return;
+
+  actBoardEntityRuns(root).forEach(run => {
+    const first = run.words[0];
+    const last = run.words[run.words.length - 1];
+    // A phrase span whose words were not individually wrapped still has a
+    // findable position in the source text.
+    const fallbackStart = run.fragment
+      ? source.toLocaleLowerCase().indexOf(run.fragment.trim().toLocaleLowerCase()) : -1;
+    const runStart = first ? Number(first.dataset.narrationSourceStart) : fallbackStart;
+    const runEnd = last ? Number(last.dataset.narrationSourceEnd)
+      : (fallbackStart >= 0 ? fallbackStart + run.fragment.trim().length : -1);
+    if (!Number.isFinite(runStart) || !Number.isFinite(runEnd)
+      || runStart < 0 || runEnd <= runStart) return;
+
+    // Grips go on the run's own element when it has one, otherwise on its
+    // first and last word.
+    [['start', run.host || first], ['end', run.host || last]].forEach(([edge, host]) => {
+      if (!host) return;
+      const grip = document.createElement('span');
+      grip.className = `storyboard-act-board-entity-grip storyboard-act-board-entity-grip-${edge}`;
+      // Inside a contenteditable transcript the grip must not be typed into or
+      // swallowed by the caret.
+      grip.contentEditable = 'false';
+      grip.title = 'Drag to extend this entity across more words';
+      grip.setAttribute('aria-label', grip.title);
+      grip.addEventListener('pointerdown', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        let nextStart = runStart;
+        let nextEnd = runEnd;
+        const preview = word => {
+          words.forEach(item => {
+            const ws = Number(item.dataset.narrationSourceStart);
+            const we = Number(item.dataset.narrationSourceEnd);
+            item.classList.toggle('storyboard-act-board-entity-resizing',
+              we > nextStart && ws < nextEnd);
+          });
+        };
+        // Find the word by geometry rather than by hit-testing: the narration
+        // slide sits under its own scroller/overlay, so elementFromPoint at a
+        // word returns that container instead of the word.
+        const wordAt = (x, y) => {
+          let best = null;
+          let bestDistance = Infinity;
+          words.forEach(item => {
+            const rect = item.getBoundingClientRect();
+            if (!rect.width || !rect.height) return;
+            const dy = y < rect.top ? rect.top - y : (y > rect.bottom ? y - rect.bottom : 0);
+            const dx = x < rect.left ? rect.left - x : (x > rect.right ? x - rect.right : 0);
+            // Weight the vertical gap heavily so a word on the pointer's own
+            // line always beats a horizontally closer word on another line.
+            const distance = dy * 1000 + dx;
+            if (distance < bestDistance) {
+              bestDistance = distance;
+              best = item;
+            }
+          });
+          return best;
+        };
+        const move = moveEvent => {
+          const target = wordAt(moveEvent.clientX, moveEvent.clientY);
+          if (!target || !root.contains(target)) return;
+          const ts = Number(target.dataset.narrationSourceStart);
+          const te = Number(target.dataset.narrationSourceEnd);
+          if (!Number.isFinite(ts) || !Number.isFinite(te)) return;
+          // Dragging the left grip past the right edge (or vice versa) would
+          // invert the range; clamp so a run is always at least one word.
+          if (edge === 'start') nextStart = Math.min(ts, runEnd - 1);
+          else nextEnd = Math.max(te, runStart + 1);
+          preview();
+        };
+        const finish = () => {
+          document.removeEventListener('pointermove', move);
+          document.removeEventListener('pointerup', finish);
+          words.forEach(item => item.classList.remove('storyboard-act-board-entity-resizing'));
+          if (nextStart === runStart && nextEnd === runEnd) return;
+          onResize({
+            previous: { start: runStart, end: runEnd, text: source.slice(runStart, runEnd) },
+            next: { start: nextStart, end: nextEnd, text: source.slice(nextStart, nextEnd) },
+          });
+        };
+        document.addEventListener('pointermove', move);
+        document.addEventListener('pointerup', finish, { once: true });
+      });
+      host.classList.add('storyboard-act-board-entity-edge');
+      host.appendChild(grip);
+    });
+  });
+}
+
+// Make a rendered transcript directly editable in place.
+//
+// Single click just places a caret - editing the words is the common case, and
+// it should not require finding a separate control. Marking entities moved to
+// double click (see the dblclick handler in buildActBoardSuggestedNarrationText)
+// so the two gestures never fight.
+//
+// Typing destroys the word/highlight span structure this element is built from,
+// which is fine: the commit takes the element's plain text and the board
+// re-renders the spans from the corrected string.
+function enableActBoardInlineTranscriptEditing(element, actKey, node) {
+  if (!element || !node?.transcript) return element;
+  element.contentEditable = 'true';
+  element.spellcheck = true;
+  element.dataset.actBoardTranscriptEditable = 'true';
+  element.title = 'Click to correct the transcript · double-click a word to mark it as an entity';
+
+  let original = String(node.transcript || '');
+  let committing = false;
+
+  const readText = () => element.textContent.replace(/\s+/g, ' ').trim();
+
+  const commit = () => {
+    if (committing) return;
+    const next = readText();
+    if (!next || next === original.replace(/\s+/g, ' ').trim()) return;
+    committing = true;
+    // The offsets behind every highlight point into the text being replaced.
+    // Ask rather than decide: dropping them silently loses the presenter's
+    // phrase selections, keeping them silently leaves them on the wrong words.
     const hasHighlights = (node.narrationSpans || []).some(span =>
       span && span.bucket !== 'ignore');
     const reanalyze = !hasHighlights || window.confirm(
@@ -8563,17 +8662,34 @@ function buildActBoardTranscriptEditor(actKey, node) {
       + 'OK: find filmable phrases again in the new wording.\n'
       + 'Cancel: keep the current highlights (their positions may no longer match).\n\n'
       + 'Footage you have already chosen is kept either way.');
-    if (!commitActBoardTranscriptEdit(node, next, reanalyze)) {
-      close();
-      return;
+    if (commitActBoardTranscriptEdit(node, next, reanalyze)) {
+      original = next;
+      if (reanalyze) requestActBoardNarrationAnalysis(node);
+      rerenderActBoard({ preservePlayback: true });
     }
-    if (reanalyze) requestActBoardNarrationAnalysis(node);
-    close();
-    rerenderActBoard({ preservePlayback: true });
-  });
+    committing = false;
+  };
 
-  host.append(editButton, form);
-  return host;
+  element.addEventListener('focus', () => { original = String(node.transcript || ''); });
+  element.addEventListener('blur', commit);
+  element.addEventListener('keydown', event => {
+    // Typing must not reach the board, which reads keys as shortcuts.
+    event.stopPropagation();
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      element.blur();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      element.textContent = original;
+      committing = true;
+      element.blur();
+      committing = false;
+      rerenderActBoard({ preservePlayback: true });
+    }
+  });
+  // A caret drag inside the text is not a node drag.
+  element.addEventListener('pointerdown', event => event.stopPropagation());
+  return element;
 }
 
 // Commit a corrected transcript. Transcription is imperfect - a misheard word
@@ -11205,8 +11321,36 @@ function refreshActBoardNodeContentPanel(actKey, node) {
 // away saves hunting for the new card and clicking it. The panel restores
 // whatever `actBoardSelectedNodeId` / `actBoardFullPlaybackView` say when it is
 // rebuilt, so setting them before the rerender is all this needs to do.
+// Nodes created in the last moment, so their first rendered card or track
+// segment can ease in. Time-boxed rather than a one-shot flag: a node can be
+// drawn as both a canvas card and a rail segment, and both should animate.
+const actBoardRecentlyCreatedNodes = new Map();
+const ACT_BOARD_APPEAR_WINDOW_MS = 1200;
+
+function actBoardNodeIsNewlyCreated(nodeId) {
+  const createdAt = actBoardRecentlyCreatedNodes.get(nodeId);
+  if (!createdAt) return false;
+  if (Date.now() - createdAt > ACT_BOARD_APPEAR_WINDOW_MS) {
+    actBoardRecentlyCreatedNodes.delete(nodeId);
+    return false;
+  }
+  return true;
+}
+
+// Play a one-shot appear animation, cleaning the class up so a later rerender
+// does not replay it.
+function playActBoardAppearAnimation(element, className) {
+  if (!element) return;
+  element.classList.add(className);
+  element.addEventListener('animationend',
+    () => element.classList.remove(className), { once: true });
+}
+
 function openActBoardNodeInContentPanel(actKey, node) {
   if (!node?.id) return;
+  // This is the single hook every node-creation path already calls, so it is
+  // also where a new node is registered for its appear animation.
+  actBoardRecentlyCreatedNodes.set(node.id, Date.now());
   actBoardSelectedNodeId = node.id;
   actBoardSelectedNodeActKey = String(actKey || '');
   actBoardFullPlaybackView = 'node';
@@ -17012,6 +17156,9 @@ function buildActBoardFootageTrack(actKey, narrationNode, boardLayer, linkedOver
     const segment = document.createElement('div');
     segment.className = 'storyboard-act-board-footage-track-segment';
     segment.dataset.footageNodeId = footage.id;
+    if (actBoardNodeIsNewlyCreated(footage.id)) {
+      playActBoardAppearAnimation(segment, 'act-board-segment-appearing');
+    }
     segment.setAttribute('role', 'button');
     segment.tabIndex = 0;
     segment.title = `${footage.fragment || 'Footage'} · ${Number(footage.durationSeconds || 0).toFixed(1)}s · drag to move · press Delete to remove from track`;
@@ -20694,6 +20841,9 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
   }
   card.dataset.nodeId = node.id;
   card.dataset.nodeType = node.type;
+  if (actBoardNodeIsNewlyCreated(node.id)) {
+    playActBoardAppearAnimation(card, 'act-board-node-appearing');
+  }
   if (node.type === 'narration') card.setAttribute('aria-hidden', 'true');
   wireActBoardNodeDragging(card, node, boardLayer, nodeIndex);
   card.style.width = `${actBoardAutoWidth(node, boardLayer)}px`;
@@ -21508,7 +21658,6 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
         recordedTranscript, node, onFilmableSpanRemove,
       );
       suggestedView.appendChild(recordedTranscript);
-      suggestedView.appendChild(buildActBoardTranscriptEditor(actKey, node));
     }
     if (node.transcript) {
       if (recordedSuggestedNarration) suggestedView.appendChild(recordedSuggestedNarration);
@@ -24467,6 +24616,19 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
     if (recordedText) {
       recorded.querySelector('strong')?.remove();
       applyActBoardNarrationPhraseSelection(recorded, entry);
+      // Correct the transcription right here rather than through a separate
+      // editor: a misheard word costs the phrase its highlight and Smart
+      // arrange's word-level alignment for that phrase.
+      enableActBoardInlineTranscriptEditing(recorded, actKey, entry);
+      attachActBoardEntityResizeHandles(recorded, entry, ({ previous, next }) => {
+        // Replace rather than add: the run being dragged is one entity that
+        // changed extent, not a second overlapping one.
+        onSceneNarrationSpanRemove({ ...previous }, previous.text);
+        onSceneNarrationSpanSelect({
+          text: next.text, start: next.start, end: next.end,
+          kind: 'user_selection', origin: 'manual', bucket: 'pending', query: '',
+        }, next.text, true);
+      });
     } else {
       recorded.textContent = 'No recorded narration yet';
     }
