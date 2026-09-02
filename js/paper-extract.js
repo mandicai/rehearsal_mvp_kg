@@ -8287,10 +8287,10 @@ function buildActBoardSuggestedNarrationText(text, fragments, onFragmentEdit, la
         emitSelection(phrase, start, end, true);
       }, 0);
     });
-    // A word becomes an entity on DOUBLE click, not a single one. Single click
-    // is reserved for placing a caret in the editable transcript, so the two
-    // gestures - correcting a word and marking it - never fight each other.
-    container.addEventListener('dblclick', event => {
+    // Back to a single click. Editing and highlighting are separate modes now
+    // (see buildActBoardNarrationModeToggle), so the transcript is never
+    // editable and selectable at the same time and the two cannot fight.
+    container.addEventListener('click', event => {
       if (textSelectionCaptured) {
         textSelectionCaptured = false;
         return;
@@ -8302,10 +8302,6 @@ function buildActBoardSuggestedNarrationText(text, fragments, onFragmentEdit, la
       if (event.target.closest('.storyboard-act-board-narration-span-clickable')) return;
       const word = event.target.closest('[data-narration-source-start]');
       if (!word || !container.contains(word)) return;
-      // A double click natively selects the word; that selection would other-
-      // wise be read as a drag-select on the next mouseup.
-      event.preventDefault();
-      window.getSelection?.()?.removeAllRanges?.();
       emitSelection(word.dataset.narrationWordText || word.textContent,
         Number(word.dataset.narrationSourceStart),
         Number(word.dataset.narrationSourceEnd), true);
@@ -11321,6 +11317,47 @@ function refreshActBoardNodeContentPanel(actKey, node) {
 // away saves hunting for the new card and clicking it. The panel restores
 // whatever `actBoardSelectedNodeId` / `actBoardFullPlaybackView` say when it is
 // rebuilt, so setting them before the rerender is all this needs to do.
+// The narration slide is either being read/highlighted or being corrected -
+// never both. Combining the two put a caret and an entity-selection gesture on
+// the same click, which felt unresponsive and could leave a stale highlight
+// visible next to a new one. An explicit mode keeps each interaction simple and
+// makes the current one obvious.
+let actBoardNarrationSlideMode = 'highlight';   // 'highlight' | 'edit'
+
+function actBoardNarrationSlideEditing() {
+  return actBoardNarrationSlideMode === 'edit';
+}
+
+function buildActBoardNarrationModeToggle() {
+  const toggle = document.createElement('div');
+  toggle.className = 'storyboard-act-board-narration-mode-toggle';
+  toggle.setAttribute('role', 'group');
+  toggle.setAttribute('aria-label', 'Narration slide mode');
+  [
+    ['highlight', 'Highlight entities', 'Click or drag words to mark them; drag an entity edge to resize it'],
+    ['edit', 'Edit narration', 'Correct what the transcription heard'],
+  ].forEach(([mode, label, title]) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn-secondary storyboard-act-board-narration-mode-btn';
+    button.textContent = label;
+    button.title = title;
+    button.dataset.narrationMode = mode;
+    const active = actBoardNarrationSlideMode === mode;
+    button.classList.toggle('selected', active);
+    button.setAttribute('aria-pressed', String(active));
+    button.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (actBoardNarrationSlideMode === mode) return;
+      actBoardNarrationSlideMode = mode;
+      rerenderActBoard({ preservePlayback: true });
+    });
+    toggle.appendChild(button);
+  });
+  return toggle;
+}
+
 // Nodes created in the last moment, so their first rendered card or track
 // segment can ease in. Time-boxed rather than a one-shot flag: a node can be
 // drawn as both a canvas card and a rail segment, and both should animate.
@@ -24600,35 +24637,42 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
       handleActBoardNarrationSpanSelect(entry, metadata, renderedText, appendSelection);
     const onSceneNarrationSpanRemove = (metadata, renderedText) =>
       removeActBoardNarrationHighlight(entry, metadata, renderedText);
+    const highlighting = !actBoardNarrationSlideEditing();
     const recorded = recordedText
       ? buildActBoardSuggestedNarrationText(
         recordedText,
         entryFilmableFragments,
         null,
         '',
-        onSceneNarrationSpanSelect,
+        highlighting ? onSceneNarrationSpanSelect : null,
         false,
-        onSceneNarrationSpanRemove,
+        highlighting ? onSceneNarrationSpanRemove : null,
       )
       : document.createElement('div');
     recorded.classList.add('storyboard-act-board-scene-recorded-narration');
     recorded.dataset.actBoardNarrationNodeId = entry.id || '';
     if (recordedText) {
       recorded.querySelector('strong')?.remove();
+      // Highlights are painted in both modes so the presenter can always see
+      // what they have marked. What changes is whether anything responds: in
+      // edit mode there is a caret and no selection gesture or resize grip, so
+      // a click can only ever do one thing.
       applyActBoardNarrationPhraseSelection(recorded, entry);
-      // Correct the transcription right here rather than through a separate
-      // editor: a misheard word costs the phrase its highlight and Smart
-      // arrange's word-level alignment for that phrase.
-      enableActBoardInlineTranscriptEditing(recorded, actKey, entry);
-      attachActBoardEntityResizeHandles(recorded, entry, ({ previous, next }) => {
-        // Replace rather than add: the run being dragged is one entity that
-        // changed extent, not a second overlapping one.
-        onSceneNarrationSpanRemove({ ...previous }, previous.text);
-        onSceneNarrationSpanSelect({
-          text: next.text, start: next.start, end: next.end,
-          kind: 'user_selection', origin: 'manual', bucket: 'pending', query: '',
-        }, next.text, true);
-      });
+      if (actBoardNarrationSlideEditing()) {
+        enableActBoardInlineTranscriptEditing(recorded, actKey, entry);
+      } else {
+        attachActBoardEntityResizeHandles(recorded, entry, ({ previous, next }) => {
+          // Replace rather than add: the run being dragged is one entity that
+          // changed extent, not a second overlapping one. Remove first and let
+          // the render settle before adding, so the old and new highlight are
+          // never both painted.
+          onSceneNarrationSpanRemove({ ...previous }, previous.text);
+          onSceneNarrationSpanSelect({
+            text: next.text, start: next.start, end: next.end,
+            kind: 'user_selection', origin: 'manual', bucket: 'pending', query: '',
+          }, next.text, true);
+        });
+      }
     } else {
       recorded.textContent = 'No recorded narration yet';
     }
@@ -24655,6 +24699,7 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
           : 'No suggested narration yet'),
       );
     }
+    if (recordedText) slide.appendChild(buildActBoardNarrationModeToggle());
     slide.append(recorded, suggested);
     narrationSlides.appendChild(slide);
     if (index === 0) narrationScroller.dataset.activeNarrationNodeId = entry.id || '';
