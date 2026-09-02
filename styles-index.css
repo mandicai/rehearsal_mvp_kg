@@ -12431,3 +12431,20 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
   background: var(--cd-accent-hover);
   color: #fff;
 }
+
+/* Transcript correction, beneath the recorded narration. Collapsed to a single
+   button until used so it never competes with the highlight-selection gesture
+   that lives on the transcript text itself. */
+.storyboard-act-board-transcript-editor { margin-top: 6px; }
+.storyboard-act-board-transcript-edit-form { display: grid; gap: 6px; }
+.storyboard-act-board-transcript-edit-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--cd-border);
+  border-radius: 4px;
+  font: 12px/1.5 var(--cd-font-mono);
+  resize: vertical;
+}
+.storyboard-act-board-transcript-edit-actions { display: flex; gap: 6px; }
+.storyboard-act-board-transcript-edit-status { color: var(--cd-accent-hover); font-size: 11px; }

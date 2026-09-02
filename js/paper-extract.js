@@ -8481,6 +8481,141 @@ function replaceActBoardNarrationPhrase(text, original, replacement) {
   return `${source.slice(0, index)}${replacement}${source.slice(index + original.length)}`;
 }
 
+// An "Edit transcript" affordance beneath the recorded narration. Collapsed to
+// a single button until used, so it never competes with the highlight-selection
+// gesture that lives on the transcript text itself.
+function buildActBoardTranscriptEditor(actKey, node) {
+  const host = document.createElement('div');
+  host.className = 'storyboard-act-board-transcript-editor';
+
+  const editButton = document.createElement('button');
+  editButton.type = 'button';
+  editButton.className = 'btn-secondary storyboard-act-board-transcript-edit-btn';
+  editButton.textContent = 'Edit transcript';
+  editButton.title = 'Correct what the transcription heard';
+
+  const form = document.createElement('div');
+  form.className = 'storyboard-act-board-transcript-edit-form';
+  form.hidden = true;
+  const input = document.createElement('textarea');
+  input.className = 'storyboard-act-board-transcript-edit-input';
+  input.rows = 3;
+  input.setAttribute('aria-label', 'Recorded narration transcript');
+  const actions = document.createElement('div');
+  actions.className = 'storyboard-act-board-transcript-edit-actions';
+  const saveButton = document.createElement('button');
+  saveButton.type = 'button';
+  saveButton.className = 'btn-primary';
+  saveButton.textContent = 'Save';
+  const cancelButton = document.createElement('button');
+  cancelButton.type = 'button';
+  cancelButton.className = 'btn-secondary';
+  cancelButton.textContent = 'Cancel';
+  actions.append(saveButton, cancelButton);
+  const status = document.createElement('small');
+  status.className = 'storyboard-act-board-transcript-edit-status';
+  form.append(input, actions, status);
+
+  // Typing inside the editor must not reach the board: the canvas treats keys
+  // as shortcuts and pointer gestures as node drags.
+  ['pointerdown', 'click', 'keydown', 'keyup'].forEach(type => {
+    form.addEventListener(type, event => event.stopPropagation());
+  });
+
+  const close = () => {
+    form.hidden = true;
+    editButton.hidden = false;
+    status.textContent = '';
+  };
+  editButton.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    input.value = String(node.transcript || '');
+    form.hidden = false;
+    editButton.hidden = true;
+    input.focus();
+  });
+  cancelButton.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    close();
+  });
+  saveButton.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    const next = input.value.trim();
+    if (!next) {
+      status.textContent = 'The transcript cannot be empty.';
+      return;
+    }
+    if (next === String(node.transcript || '').trim()) {
+      close();
+      return;
+    }
+    // The offsets behind every highlight point into the text that is being
+    // replaced, so they cannot survive as-is. Ask rather than decide: dropping
+    // them silently loses the presenter's phrase selections, and keeping them
+    // silently leaves highlights pointing at the wrong words.
+    const hasHighlights = (node.narrationSpans || []).some(span =>
+      span && span.bucket !== 'ignore');
+    const reanalyze = !hasHighlights || window.confirm(
+      'Re-analyze highlights from the corrected transcript?\n\n'
+      + 'OK: find filmable phrases again in the new wording.\n'
+      + 'Cancel: keep the current highlights (their positions may no longer match).\n\n'
+      + 'Footage you have already chosen is kept either way.');
+    if (!commitActBoardTranscriptEdit(node, next, reanalyze)) {
+      close();
+      return;
+    }
+    if (reanalyze) requestActBoardNarrationAnalysis(node);
+    close();
+    rerenderActBoard({ preservePlayback: true });
+  });
+
+  host.append(editButton, form);
+  return host;
+}
+
+// Commit a corrected transcript. Transcription is imperfect - a misheard word
+// makes its phrase unmatchable, which then costs the presenter the filmable
+// highlight and Smart arrange's word-level alignment for that phrase.
+//
+// Footage is always kept: losing a clip the presenter chose because they fixed
+// a typo would be far worse than a stale phrase label. The highlights are a
+// different matter - their character offsets point into the OLD string and are
+// meaningless against the new one - so the caller decides whether to re-analyze
+// (see the confirm in the editor below) rather than this silently discarding
+// work or silently keeping something broken.
+function commitActBoardTranscriptEdit(narrationNode, nextTranscript, reanalyze) {
+  if (!narrationNode) return false;
+  const next = String(nextTranscript || '').trim();
+  const previous = String(narrationNode.transcript || '').trim();
+  if (!next || next === previous) return false;
+  narrationNode.transcript = next;
+  narrationNode.transcriptEditedByUser = true;
+  if (reanalyze) {
+    narrationNode.narrationSpanHash = '';
+    narrationNode.narrationCandidateSpans = [];
+    narrationNode.narrationSpans = [];
+    narrationNode.narrationSpanStatus = 'stale';
+  } else {
+    // Declining means "leave my highlights alone", and that takes more than
+    // not clearing them: the board re-runs analysis whenever a transcript's
+    // hash stops matching its spans, which would clear them moments later.
+    // Adopt the new hash so that automatic pass sees nothing to do.
+    narrationNode.narrationSpanHash = actBoardNarrationTextHash(next);
+    narrationNode.narrationSpanStatus = 'ready';
+  }
+  // Whisper's word timings belong to the audio, not to the edited text, and
+  // the aligner matches them to the transcript BY POSITION - so a correction
+  // that changes the word count would shift every timestamp. Re-align against
+  // the corrected wording; alignActBoardNarrationFragments falls back to a
+  // proportional estimate for anything it can no longer match exactly.
+  alignActBoardNarrationFragments(narrationNode);
+  saveDebugSession();
+  return true;
+}
+
 function editActBoardNarrationPhrase(narrationNode, original, replacement, sourceField = 'auto') {
   if (!narrationNode || !original || !replacement) return;
   const field = sourceField === 'text' || sourceField === 'transcript'
@@ -11001,6 +11136,26 @@ function createActBoardAudioTrackSegment(actKey, scene = null) {
   return node;
 }
 
+// Open a node in the selected-node content panel. A node is created empty, so
+// the presenter's next move is always to choose its media - showing it straight
+// away saves hunting for the new card and clicking it. The panel restores
+// whatever `actBoardSelectedNodeId` / `actBoardFullPlaybackView` say when it is
+// rebuilt, so setting them before the rerender is all this needs to do.
+function openActBoardNodeInContentPanel(actKey, node) {
+  if (!node?.id) return;
+  actBoardSelectedNodeId = node.id;
+  actBoardSelectedNodeActKey = String(actKey || '');
+  actBoardFullPlaybackView = 'node';
+  // rerenderActBoard reads the panel's dataset BEFORE these variables when it
+  // decides which node to restore, so leaving the dataset on the previously
+  // selected node would silently win and the new node would never open.
+  const panel = document.querySelector('.storyboard-act-board-full-playback-panel');
+  if (panel) {
+    panel.dataset.selectedNodeId = actBoardSelectedNodeId;
+    panel.dataset.selectedActKey = actBoardSelectedNodeActKey;
+  }
+}
+
 function spawnActBoardNodeAt(actKey, type, x, y) {
   if (type === 'narration') {
     // Narration is now managed by the scene's narration section. Keep the
@@ -11012,6 +11167,7 @@ function spawnActBoardNodeAt(actKey, type, x, y) {
       || null;
     if (scene) {
       const node = createActBoardNarrationSegmentNode(actKey, scene);
+      openActBoardNodeInContentPanel(actKey, node);
       saveDebugSession();
       rerenderActBoard();
       const act = currentArcSections.find(item => item.key === actKey)
@@ -11025,7 +11181,9 @@ function spawnActBoardNodeAt(actKey, type, x, y) {
   if (type === 'audio') {
     // Music/sound is edited directly on its scene rail now. Add a blank
     // segment without creating another visible canvas node.
-    if (createActBoardAudioTrackSegment(actKey)) {
+    const audioNode = createActBoardAudioTrackSegment(actKey);
+    if (audioNode) {
+      openActBoardNodeInContentPanel(actKey, audioNode);
       saveDebugSession();
       rerenderActBoard();
     }
@@ -11058,6 +11216,7 @@ function spawnActBoardNodeAt(actKey, type, x, y) {
   attachActBoardNodeToScene(actKey, node, actBoardOpenSceneForAct(actKey));
   bringNewActBoardNodeToFront(actKey, node);
   actBoardNodesForAct(actKey).push(node);
+  openActBoardNodeInContentPanel(actKey, node);
   saveDebugSession();
   rerenderActBoard();
 }
@@ -20918,14 +21077,20 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
     const sideNarrationLabel = node.transcript
       ? 'Recorded narration: '
       : 'Suggested narration: ';
+    // Filmable-phrase detection is transcript-only (see
+    // requestActBoardNarrationAnalysis): a suggested draft is reference copy,
+    // not spoken narration, so it carries no entity highlights and no
+    // selection affordances - its spans would not correspond to anything that
+    // was actually said.
+    const sideIsRecorded = Boolean(node.transcript);
     const sideText = buildActBoardSuggestedNarrationText(
       sideNarrationText,
-      fragments,
+      sideIsRecorded ? fragments : [],
       null,
       sideNarrationLabel,
-      onFilmableSpanSelect,
-      !analysisPending && smartSpans.length > 0,
-      onFilmableSpanRemove,
+      sideIsRecorded ? onFilmableSpanSelect : null,
+      sideIsRecorded && !analysisPending && smartSpans.length > 0,
+      sideIsRecorded ? onFilmableSpanRemove : null,
     );
     sideText.classList.add('storyboard-act-board-narration-side-preview-text');
     sideText.dataset.actBoardNarrationNodeId = node.id;
@@ -21141,16 +21306,14 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
     let recordingTimings = null;
     let recordingAlignment = null;
     if (!node.transcript && node.text) {
+      // No highlights on a suggested draft - see the side-preview note above.
       const primaryNarration = buildActBoardSuggestedNarrationText(
-        node.text, fragments,
+        node.text, [],
         null,
-        'Suggested narration: ', null, !analysisPending && smartSpans.length > 0,
-        onFilmableSpanRemove);
+        'Suggested narration: ', null, false,
+        null);
       primaryNarration.classList.add('storyboard-act-board-narration-primary');
       primaryNarration.dataset.actBoardNarrationNodeId = node.id;
-      if (hasRecordedNarration) {
-        applyActBoardNarrationPhraseSelection(primaryNarration, node, onFilmableSpanRemove);
-      }
       suggestedView.appendChild(primaryNarration);
       suggestedView.append(sourceNotesPanel);
     } else if (!node.transcript) {
@@ -21213,17 +21376,17 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
         recordingTimings = timings;
       }
       if (node.text) {
+        // The draft sits next to the real transcript, which is where the
+        // highlights belong. Duplicating them here made the same phrase look
+        // selectable in copy that was never spoken.
         recordedSuggestedNarration = buildActBoardSuggestedNarrationText(
-          node.text, suggestedReferenceFragments,
+          node.text, [],
           null,
           'Suggested narration: ', null,
-          !analysisPending && smartSpans.length > 0,
-          onFilmableSpanRemove);
+          false,
+          null);
         recordedSuggestedNarration.classList.add('storyboard-act-board-narration-primary');
         recordedSuggestedNarration.dataset.actBoardNarrationNodeId = node.id;
-        applyActBoardNarrationPhraseSelection(
-          recordedSuggestedNarration, node, onFilmableSpanRemove,
-        );
       }
     }
     if (recordingAudio) {
@@ -21279,6 +21442,7 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
         recordedTranscript, node, onFilmableSpanRemove,
       );
       suggestedView.appendChild(recordedTranscript);
+      suggestedView.appendChild(buildActBoardTranscriptEditor(actKey, node));
     }
     if (node.transcript) {
       if (recordedSuggestedNarration) suggestedView.appendChild(recordedSuggestedNarration);
