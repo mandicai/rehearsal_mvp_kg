@@ -8667,7 +8667,18 @@ function enableActBoardInlineTranscriptEditing(element, actKey, node) {
   let original = String(node.transcript || '');
   let committing = false;
 
-  const readText = () => element.textContent.replace(/\s+/g, ' ').trim();
+  // textContent concatenates EVERY descendant, and a highlight's delete control
+  // is a CHILD of the highlight span. Reading it raw bakes that button's "x"
+  // glyph into the transcript as a real character, which then outlives the
+  // entity it came from and cannot be deleted by removing the highlight.
+  // Strip the injected controls from a clone before reading the words.
+  const readText = () => {
+    const clone = element.cloneNode(true);
+    clone.querySelectorAll(
+      '.storyboard-act-board-narration-span-remove, .storyboard-act-board-entity-grip',
+    ).forEach(control => control.remove());
+    return clone.textContent.replace(/\s+/g, ' ').trim();
+  };
 
   const commit = () => {
     if (committing) return;
@@ -10285,6 +10296,11 @@ const ACT_BOARD_DROP_HOVER_DELAY_MS = 750;
 // Track segments can move immediately; a deliberate press-and-hold lifts the
 // segment into its elevated/free-placement state for longer moves.
 const ACT_BOARD_TRACK_LIFT_DELAY_MS = 1000;
+
+// Breathing room left of a narration slide when clicking a segment scrolls it
+// into view. At 0 the slide sits flush against the viewport's left edge and
+// its first words read as clipped. Raise for more space before the transcript.
+const ACT_BOARD_NARRATION_SCROLL_GUTTER_PX = 24;
 
 // How long the final shot stays on screen after its own duration ends, so a
 // sequence landing exactly on that boundary does not flash the placeholder
@@ -24882,7 +24898,15 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
           `.storyboard-act-board-scene-narration-slide[data-narration-node-id="${node.id}"]`,
         );
         if (selectedSlide) {
-          narrationViewport.scrollTo({ left: selectedSlide.offsetLeft, behavior: 'smooth' });
+          // offsetLeft is measured against the slide's offsetParent, which is
+          // the scene-sections wrapper rather than this scroller - using it
+          // overshoots by that wrapper's own offset and clips the first words.
+          // Measure the slide's real distance from the viewport instead.
+          const slideLeft = selectedSlide.getBoundingClientRect().left;
+          const viewportLeft = narrationViewport.getBoundingClientRect().left;
+          const target = narrationViewport.scrollLeft + (slideLeft - viewportLeft)
+            - ACT_BOARD_NARRATION_SCROLL_GUTTER_PX;
+          narrationViewport.scrollTo({ left: Math.max(0, target), behavior: 'smooth' });
         }
       },
     })
