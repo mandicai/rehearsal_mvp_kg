@@ -5569,6 +5569,15 @@ audio.storyboard-act-board-node-audio {
   transition: opacity .12s ease, background-color .12s ease;
 }
 
+/* applyActBoardNarrationPhraseSelection hides the delete control of a phrase
+   that is no longer in any of the node's live phrase lists (see
+   `livePhraseKeys`). The inline-flex above would otherwise override the
+   browser's [hidden] rule and strand a bare "x" in the transcript after the
+   entity behind it is deleted. */
+.storyboard-act-board-narration-span-remove[hidden] {
+  display: none !important;
+}
+
 .storyboard-act-board-narration-span:hover .storyboard-act-board-narration-span-remove,
 .storyboard-act-board-narration-span:focus-within .storyboard-act-board-narration-span-remove,
 .storyboard-act-board-narration-word:hover .storyboard-act-board-narration-user-highlight-remove,
