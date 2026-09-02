@@ -1157,6 +1157,7 @@ body.pub-to-doc-page .action-bar {
 .storyboard-act-board-full-playback-node-details .storyboard-act-board-node-text {
   font-size: 12px;
   color: var(--cd-button-text);
+  margin-top: 10px;
 }
 
 .storyboard-act-board-full-playback-node-details h3 {
@@ -12419,32 +12420,32 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
   top: 25px;
   right: 3px;
   display: grid;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   place-items: center;
   padding: 0;
-  border: 1px solid rgba(38, 37, 35, .25);
   border-radius: 50%;
-  background: rgba(255, 255, 255, .88);
-  color: rgba(38, 37, 35, .55);
+  background: var(--cd-accent-special) !important;
+  color: #fff !important;
   font-size: 12px;
   line-height: 1;
   cursor: pointer;
 }
-.storyboard-act-board-footage-reference-btn:hover {
-  border-color: var(--cd-accent-special);
-  color: var(--cd-accent-special);
+
+.storyboard-act-board-footage-reference-btn:hover,
+.storyboard-act-board-footage-reference-btn:focus-visible {
+  background: var(--cd-accent);
+  outline: 2px solid rgba(241, 135, 0, .25);
 }
+
 .storyboard-act-board-footage-reference-btn.is-reference {
   /* !important for the same reason the pin button uses it: a generic
      small-button rule otherwise wins and the active state reads as inactive. */
   /* --cd-accent-hover is a light grey, which reads as inactive at this size.
      Use the orange accent so the pinned reference is unmistakable. */
-  border-color: var(--cd-accent-special) !important;
   background: var(--cd-accent-special) !important;
   color: var(--cd-accent-text) !important;
 }
-
 
 /* On the selected preview the pin sits at 28px (below Replace), so the
    reference control stacks under that one instead. */

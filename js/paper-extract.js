@@ -22331,7 +22331,7 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
       const pinButton = document.createElement('button');
       pinButton.type = 'button';
       pinButton.className = 'storyboard-act-board-footage-pin-btn';
-      pinButton.textContent = option.pinned ? '★' : '☆';
+      pinButton.textContent = option.pinned ? '◉' : '◎';
       pinButton.title = option.pinned ? 'Unpin this footage' : 'Pin this footage';
       pinButton.setAttribute('aria-label', pinButton.title);
       pinButton.classList.toggle('pinned', option.pinned);
@@ -22354,7 +22354,7 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
       button.className = 'storyboard-act-board-footage-reference-btn';
       // Filled when in use, hollow when not - readable at 18px without relying
       // on colour alone.
-      button.textContent = isReference ? '◉' : '◎';
+      button.textContent = isReference ? '★' : '☆';
       button.title = isReference
         ? 'Stop using this image as the generation reference'
         : 'Use this image as the reference for generating images and video';
@@ -22379,7 +22379,7 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
           .forEach(other => {
             const isReference = Boolean(next) && other === button;
             other.classList.toggle('is-reference', isReference);
-            other.textContent = isReference ? '◉' : '◎';
+            other.textContent = isReference ? '★' : '☆';
             other.setAttribute('aria-pressed', String(isReference));
             other.title = isReference
               ? 'Stop using this image as the generation reference'
