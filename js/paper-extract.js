@@ -8358,6 +8358,30 @@ function applyActBoardNarrationPhraseSelection(root, narrationNode, onPhraseRemo
       hasFootage && !insidePhraseSpan
       && !word.closest('.storyboard-act-board-narration-span-depictable'));
   });
+  // A delete control belongs to a live entity, so decide from the DATA rather
+  // than from the classes on the rendered span. Correcting the transcript can
+  // leave a previously rendered `-depictable` span in place after every phrase
+  // list has been cleared; trusting that class kept its "x" on screen with
+  // nothing behind it and no way to remove it. If the phrase is not in one of
+  // the node's live lists, the control does not belong to anything.
+  const livePhraseKeys = new Set([
+    ...(narrationNode.narrationSpans || []),
+    ...(narrationNode.selectedFootagePhrases || []),
+    ...(narrationNode.footageSuggestedPhrases || []),
+    ...(narrationNode.userFilmablePhrases || []),
+    ...(narrationNode.footageFragments || []),
+  ].map(item => actBoardNarrationSpanTextKey(
+    typeof item === 'string' ? item : (item?.text || item?.fragment || ''),
+  )).filter(Boolean));
+  root.querySelectorAll('.storyboard-act-board-narration-span-remove').forEach(button => {
+    const owner = button.closest('[data-narration-fragment], [data-narration-source-start]')
+      || button.parentElement;
+    // The button's own glyph is part of the owner's textContent; strip it
+    // before matching the phrase.
+    const ownerText = String(owner?.dataset?.narrationFragment
+      || owner?.textContent?.replace(button.textContent || '', '') || '').trim();
+    button.hidden = !livePhraseKeys.has(actBoardNarrationSpanTextKey(ownerText));
+  });
   root.querySelectorAll('[data-narration-fragment]').forEach(fragment => {
     const value = fragment.dataset.narrationFragment || '';
     const source = String(narrationNode.transcript || narrationNode.text || '');
@@ -8719,6 +8743,29 @@ function commitActBoardTranscriptEdit(narrationNode, nextTranscript, reanalyze) 
     // Adopt the new hash so that automatic pass sees nothing to do.
     narrationNode.narrationSpanHash = actBoardNarrationTextHash(next);
     narrationNode.narrationSpanStatus = 'ready';
+    // Every kept phrase still carries offsets into the OLD text. Editing a word
+    // earlier in the transcript shifts all of them, and the several matchers
+    // then disagree: the highlight stops being painted while the phrase's
+    // delete control is still rendered, leaving a stray "x" that nothing can
+    // remove. Re-anchor each phrase to where its text now sits, and drop the
+    // ones whose wording no longer exists.
+    const lower = next.toLocaleLowerCase();
+    ['narrationSpans', 'narrationCandidateSpans', 'selectedFootagePhrases',
+      'footageSuggestedPhrases', 'userFilmablePhrases'].forEach(field => {
+      if (!Array.isArray(narrationNode[field])) return;
+      let searchFrom = 0;
+      narrationNode[field] = narrationNode[field].map(item => {
+        const text = String(item?.text || item?.fragment || '').trim();
+        if (!text) return null;
+        let index = lower.indexOf(text.toLocaleLowerCase(), searchFrom);
+        // A phrase can legitimately sit before the edit point; fall back to a
+        // search from the start before giving up on it.
+        if (index < 0) index = lower.indexOf(text.toLocaleLowerCase());
+        if (index < 0) return null;
+        searchFrom = index + text.length;
+        return { ...item, start: index, end: index + text.length };
+      }).filter(Boolean);
+    });
   }
   // Whisper's word timings belong to the audio, not to the edited text, and
   // the aligner matches them to the transcript BY POSITION - so a correction
@@ -11353,8 +11400,8 @@ function buildActBoardNarrationModeToggle() {
   toggle.setAttribute('role', 'group');
   toggle.setAttribute('aria-label', 'Narration slide mode');
   [
-    ['highlight', 'Highlight entities', 'Click or drag words to mark them; drag an entity edge to resize it'],
     ['edit', 'Edit narration', 'Correct what the transcription heard'],
+    ['highlight', 'Highlight entities', 'Click or drag words to mark them; drag an entity edge to resize it'],
   ].forEach(([mode, label, title]) => {
     const button = document.createElement('button');
     button.type = 'button';
