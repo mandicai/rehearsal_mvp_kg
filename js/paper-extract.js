@@ -9990,6 +9990,12 @@ const ACT_BOARD_DROP_HOVER_DELAY_MS = 750;
 // segment into its elevated/free-placement state for longer moves.
 const ACT_BOARD_TRACK_LIFT_DELAY_MS = 1000;
 
+// How long the final shot stays on screen after its own duration ends, so a
+// sequence landing exactly on that boundary does not flash the placeholder
+// before the transport's stop tick. Past this the stage goes to "No footage
+// selected" while narration or music keeps running.
+const ACT_BOARD_PLAYBACK_FINAL_HOLD_SECONDS = 0.25;
+
 // Shared pointer interaction for narration, footage, and audio rails. A
 // normal drag edits the segment's time immediately; holding for the lift
 // delay switches to a visual reorder mode without continuously mutating
@@ -13970,6 +13976,9 @@ async function generateActBoardNodeExamples(
           count: Math.max(1, Number(count) || ACT_BOARD_IMAGE_SAMPLE_COUNT),
           video: false,
           projectId: premiereProjectId,
+          // When the presenter has pinned a reference image, generate as an
+          // edit of it rather than from the prompt alone.
+          referenceSketchUrl: actBoardReferenceImageUrl(node),
           signal: generationController?.signal,
         }),
         generationController?.signal,
@@ -14134,7 +14143,11 @@ async function generateActBoardNodeVideo(actKey, act, node) {
       : (selected && selected.kind !== 'video' ? selected : null))
     : selected;
   const endVisual = twoFrameEnabled ? actBoardVisualForKey(node, endKey) : null;
-  const chosenImageUrl = startVisual && startVisual.kind !== 'video' ? startVisual.url : '';
+  // A pinned reference image is the explicit answer to "what should this video
+  // be built from", so it wins over whichever visual is merely selected.
+  const referenceVisual = twoFrameEnabled ? null : actBoardReferenceVisual(node);
+  const seedVisual = referenceVisual || startVisual;
+  const chosenImageUrl = seedVisual && seedVisual.kind !== 'video' ? seedVisual.url : '';
   if (!chosenImageUrl) {
     node.error = twoFrameEnabled
       ? 'Choose a still image for the start frame before generating a video.'
@@ -14664,6 +14677,37 @@ function actBoardSelectedFootageMedia(footage, sourceNodes = null) {
   const muteAudio = kind === 'video'
     && (footage.mediaOrigin === 'generated' || Boolean(generated));
   return { url, kind, thumbnailUrl, muteAudio };
+}
+
+// The presenter's explicit reference image for this node: new images are
+// generated as an edit OF it (the backend's images.edit path, reached via
+// `reference_sketch_url`), and a generated video is seeded from it instead of
+// from whichever visual happens to be selected.
+//
+// Only a still qualifies. The image models take an image, and a video would
+// need a frame extracted first - the backend can do that for an open slot, but
+// keeping this to stills makes what the reference does obvious in the UI.
+function actBoardReferenceVisual(node) {
+  const key = String(node?.referenceVisualKey || '');
+  if (!key) return null;
+  const visual = actBoardVisualForKey(node, key);
+  if (!visual || visual.kind === 'video') return null;
+  return (visual.url || visual.thumbnailUrl) ? visual : null;
+}
+
+// The URL to hand the generator. Prefer the full-size image over a thumbnail:
+// the backend reads these bytes as the edit source, so resolution matters.
+function actBoardReferenceImageUrl(node) {
+  const visual = actBoardReferenceVisual(node);
+  return visual ? (visual.url || visual.thumbnailUrl || '') : '';
+}
+
+function toggleActBoardReferenceVisual(node, key) {
+  if (!node) return '';
+  const next = String(node.referenceVisualKey || '') === String(key) ? '' : String(key || '');
+  node.referenceVisualKey = next;
+  saveDebugSession();
+  return next;
 }
 
 // Resolve an Act Board footage visual by the stable gallery key used by the
@@ -15436,16 +15480,29 @@ function buildActBoardNarrationPlayback(actKey, node, boardLayer, playbackNode =
     });
   };
 
+  const lastFootageEndSeconds = () => linked.reduce((end, node) => Math.max(end,
+    (Number(node.startSeconds) || 0) + Math.max(0.5, Number(node.durationSeconds) || 1)), 0);
+
   const setStage = (footage, nowSeconds = readAudioTime(), forceSeek = false) => {
     if (!footage || (!hasNarrationMedia && !hasFootageMedia && !hasAudioMedia)) {
       stage.replaceChildren();
+      // Removing the element from the DOM does not stop it: a detached <video>
+      // keeps playing, and uploaded/stock footage audio is not muted, so the
+      // outgoing clip would keep sounding over the placeholder.
+      state.video?.pause();
+      state.video = null;
       pauseActBoardSplitVideos(state);
       state.splitVideos = [];
       state.currentFootageId = null;
       const empty = document.createElement('span');
       empty.textContent = !hasNarrationMedia && !hasFootageMedia && !hasAudioMedia
         ? 'There is no narration or media yet.'
-        : linked.length ? 'No footage in this interval.'
+        : linked.length
+          // Past the final clip is a different situation from a gap between two
+          // clips: nothing further is coming, the narration or music is simply
+          // still running.
+          ? (nowSeconds >= lastFootageEndSeconds() ? 'No footage selected'
+            : 'No footage in this interval.')
           : hasNarrationMedia ? 'Narration only' : 'Sound effects only';
       stage.appendChild(empty);
       return;
@@ -15727,7 +15784,13 @@ function buildActBoardNarrationPlayback(actKey, node, boardLayer, playbackNode =
         ? (Number(finalFootage.startSeconds) || 0)
           + Math.max(0.5, Number(finalFootage.durationSeconds) || 1)
         : 0;
-      if (finalFootage && now >= finalEnd - 0.05) {
+      // Hold the last frame only across the tick that lands on the end of the
+      // sequence. This used to have no upper bound, so whenever narration or
+      // music ran past the final clip it re-seeked that clip on every tick for
+      // the remainder of the track - which is what made the last shot stutter
+      // and appear to loop instead of ending.
+      if (finalFootage && now >= finalEnd - 0.05
+        && now < finalEnd + ACT_BOARD_PLAYBACK_FINAL_HOLD_SECONDS) {
         const finalTime = Math.max(
           Number(finalFootage.startSeconds) || 0,
           finalEnd - 0.01,
@@ -21797,6 +21860,47 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
       });
       return pinButton;
     };
+    // Pin a still as the basis for generation: new images are produced as an
+    // edit of it, and a generated video is seeded from it. Videos are excluded
+    // because the image models take an image, not a clip.
+    const createReferenceButton = option => {
+      if (!option || option.kind === 'video') return null;
+      if (!(option.url || option.thumbnailUrl)) return null;
+      const isReference = String(node.referenceVisualKey || '') === String(option.key);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'storyboard-act-board-footage-reference-btn';
+      button.textContent = '◎';
+      button.title = isReference
+        ? 'Stop using this image as the generation reference'
+        : 'Use this image as the reference for generating images and video';
+      button.setAttribute('aria-label', button.title);
+      button.setAttribute('aria-pressed', String(isReference));
+      button.classList.toggle('is-reference', isReference);
+      button.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        const next = toggleActBoardReferenceVisual(node, option.key);
+        // Update every reference control in place rather than rerendering: the
+        // selected-visual DOM patch does not rebuild the thumbnail rail, so a
+        // rerender is both heavier and unreliable for this. Only one image can
+        // be the reference, so the others are cleared here too.
+        const scope = button.closest('.storyboard-act-board-node-panel-host')
+          || button.closest('.storyboard-act-board-footage-gallery')?.parentElement
+          || document;
+        scope.querySelectorAll('.storyboard-act-board-footage-reference-btn')
+          .forEach(other => {
+            const isReference = Boolean(next) && other === button;
+            other.classList.toggle('is-reference', isReference);
+            other.setAttribute('aria-pressed', String(isReference));
+            other.title = isReference
+              ? 'Stop using this image as the generation reference'
+              : 'Use this image as the reference for generating images and video';
+            other.setAttribute('aria-label', other.title);
+          });
+      });
+      return button;
+    };
     const splitVisualNodes = node.compositionMode === 'split-screen'
       ? (node.splitScreenNodeIds || [])
         .map(id => actBoardNodesForAct(actKey).find(item => item.type === 'footage' && item.id === id))
@@ -21882,6 +21986,10 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
       appendFeaturedVisual(featured, selectedVisual, node.fragment);
       const selectedPinButton = createPinButton(selectedVisual);
       if (selectedPinButton) featured.appendChild(selectedPinButton);
+      // The upload only ever appears here, not in the thumbnail rail, so this
+      // is the one place a presenter can pin their own image as the reference.
+      const selectedReferenceButton = createReferenceButton(selectedVisual);
+      if (selectedReferenceButton) featured.appendChild(selectedReferenceButton);
       const replacePicker = createUploadPicker();
       const replaceButton = document.createElement('button');
       replaceButton.type = 'button';
@@ -22125,6 +22233,8 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
       }
       const pinButton = createPinButton(option);
       if (pinButton) thumbWrap.appendChild(pinButton);
+      const referenceButton = createReferenceButton(option);
+      if (referenceButton) thumbWrap.appendChild(referenceButton);
       thumbRail.appendChild(thumbWrap);
     });
     if (alternateVisualOptions.length || node.status === 'generating'

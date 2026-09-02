@@ -12399,3 +12399,35 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
   margin: 0;
   pointer-events: auto;
 }
+
+/* The generation reference: a still pinned as the basis for new images and
+   video. Sits beside the pin control on a gallery thumbnail and on the
+   selected preview, and stays visible once set so it is obvious which image
+   the next generation will be built from. */
+.storyboard-act-board-footage-reference-btn {
+  position: absolute;
+  z-index: 3;
+  top: 4px;
+  left: 4px;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(38, 37, 35, .25);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .88);
+  color: rgba(38, 37, 35, .55);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+.storyboard-act-board-footage-reference-btn:hover {
+  border-color: var(--cd-accent-hover);
+  color: var(--cd-accent-hover);
+}
+.storyboard-act-board-footage-reference-btn.is-reference {
+  border-color: var(--cd-accent-hover);
+  background: var(--cd-accent-hover);
+  color: #fff;
+}
