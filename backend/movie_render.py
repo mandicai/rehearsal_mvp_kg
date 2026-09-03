@@ -256,7 +256,14 @@ def _audio_inputs_and_filter(shot, effective_seconds, audio_base_index=1, source
     if source:
         # Preserve camera/production audio, but keep it below narration when
         # narration is present so the spoken track remains intelligible.
-        source_volume = 0.35 if (narration or shot.get('duck_source_audio')) else 1.0
+        # The presenter's own level for this clip, ducked under narration so the
+        # spoken track stays intelligible. Without the node level a clip turned
+        # down on the board came back at full volume in the export.
+        node_volume = shot.get('source_volume')
+        node_volume = (float(node_volume)
+                       if isinstance(node_volume, (int, float)) and node_volume >= 0 else 1.0)
+        duck = 0.35 if (narration or shot.get('duck_source_audio')) else 1.0
+        source_volume = round(max(0.0, min(1.0, node_volume)) * duck, 4)
         filters.append(f'{source},volume={source_volume}[source]')
         labels.append('[source]')
     if narration:

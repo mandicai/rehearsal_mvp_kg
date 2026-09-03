@@ -1261,15 +1261,49 @@ def run_smart_arrange(page, calls: list[dict[str, Any]]) -> None:
 
     # The first shot owns the pre-roll, so it starts at 0 rather than at its own
     # phrase; every later shot starts on its phrase's own word timestamp.
-    check(nodes["f1"].get("startSeconds") == 0,
+    #
+    # Smart arrange may then deliberately slide a boundary off its word to make
+    # a shot anticipate or hold on its entity (planActBoardNarrationCuts). Such
+    # a shot records the hard cut it came from, so the word-alignment invariant
+    # is asserted against that: the arrangement is still word-exact, and any
+    # deviation must be exactly the recorded transition, never drift.
+    def aligned_start(node: dict) -> float:
+        hard = node.get("hardCutStartSeconds")
+        return float(hard if isinstance(hard, (int, float)) else node.get("startSeconds", -1))
+
+    check(aligned_start(nodes["f1"]) == 0,
           "Smart arrange did not anchor the first footage shot at narration start.")
     for node_id, phrase in [("f2", "tidal wetlands"), ("f3", "storm surge")]:
         expected = word_start(phrase)
-        actual = float(nodes[node_id].get("startSeconds", -1))
+        actual = aligned_start(nodes[node_id])
         check(abs(actual - expected) < 0.01,
               f"Smart arrange put {node_id} ({phrase!r}) at {actual}s, not its word timestamp {expected}s.")
         check(nodes[node_id].get("alignedToNarration") is True,
               f"Smart arrange did not mark {node_id} as aligned to the narration.")
+
+    # A shaped shot must differ from its word timestamp by exactly its recorded
+    # transition - that is what separates an intentional cut from drift.
+    for node in nodes.values():
+        if not node.get("narrationCutWasSuggested"):
+            continue
+        seconds = float(node.get("narrationCutSeconds") or 0)
+        check(seconds > 0,
+              f"{node['id']} is marked as a narration cut but records no duration.")
+        moved = abs(float(node.get("startSeconds", 0)) - aligned_start(node))
+        check(node.get("narrationCutKind") == "linger" or abs(moved - seconds) < 0.01,
+              f"{node['id']} moved {moved}s from its word but records a {seconds}s cut.")
+
+    # Shaped or not, the run must stay contiguous: a boundary move takes from
+    # one neighbour exactly what it gives the other.
+    run = sorted((node for node in nodes.values() if node.get("type") == "footage"),
+                 key=lambda item: float(item.get("startSeconds") or 0))
+    for previous, following in zip(run, run[1:]):
+        seam = (float(following.get("startSeconds") or 0)
+                - (float(previous.get("startSeconds") or 0)
+                   + float(previous.get("durationSeconds") or 0)))
+        check(abs(seam) < 0.02,
+              f"Smart arrange left a {seam:.2f}s seam between "
+              f"{previous['id']} and {following['id']}.")
 
     # Only the clip that names nothing in the transcript may reach the backend.
     match_calls = [item for item in calls if item["path"].endswith("/narration/match_footage")]

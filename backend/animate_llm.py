@@ -58,6 +58,17 @@ MODEL = 'vertex_ai/veo-3.1-fast-generate-001'
 # features (export-time zoom vs. a live preview clip) are otherwise unrelated.
 TECHNIQUES = ('left_to_right', 'right_to_left', 'in', 'out')
 
+# The board owns the spoken track: the presenter's recorded narration is mixed
+# in separately, and a model-invented voice underneath it is never wanted - it
+# competes with the real narration and puts words in the documentary's mouth
+# that nobody wrote. Ambient/diegetic sound is the only audio worth generating.
+_NO_SPEECH_AUDIO_CLAUSE = (
+    ' Audio: ambient diegetic sound only - room tone, weather, water, traffic, '
+    'machinery, crowd murmur, footsteps. Absolutely no speech, dialogue, '
+    'voiceover, narration, singing, or intelligible words of any kind, and no '
+    'added music score.'
+)
+
 _TECHNIQUE_PROMPTS = {
     'left_to_right': 'The camera slowly pans from left to right across the scene.',
     'right_to_left': 'The camera slowly pans from right to left across the scene.',
@@ -245,7 +256,7 @@ class AnimateLLMClient:
         prompt = (
             'Animate this rough black-and-white pencil-sketch storyboard panel exactly as drawn - '
             'keep the loose hand-drawn line art style, do not redraw it realistically or add color. '
-            f'{_TECHNIQUE_PROMPTS[technique]}{feel_clause}'
+            f'{_TECHNIQUE_PROMPTS[technique]}{feel_clause}{_NO_SPEECH_AUDIO_CLAUSE}'
         )
 
         try:
@@ -318,6 +329,7 @@ class AnimateLLMClient:
             'the same people and objects, and do not redraw, stylize, or add or remove people.'
             f'{framing_clause}{subject_action_clause}{animation_direction_clause}{move_support_clause}{feel_clause}'
             f'{visual_clause}{operation_clause}{notes_clause}{techniques_clause}'
+            f'{_NO_SPEECH_AUDIO_CLAUSE}'
         )
 
         try:
@@ -351,7 +363,8 @@ class AnimateLLMClient:
             'Generate photorealistic live-action documentary footage of the described scene, with '
             'natural human anatomy, believable materials, physically plausible lighting, and cinematic '
             'camera motion. Do not turn it into an illustration, storyboard panel, animation, or 3D '
-            f'render. {_TECHNIQUE_PROMPTS[technique]}{feel_clause} The scene: {visual}'
+            f'render. {_TECHNIQUE_PROMPTS[technique]}{feel_clause}'
+            f'{_NO_SPEECH_AUDIO_CLAUSE} The scene: {visual}'
         )
 
         try:

@@ -4267,9 +4267,17 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  justify-content: space-between;
+  /* Each section's action sits directly beside its heading. Pinning it to the
+     row's right edge put it under the fixed content panel, which overlays the
+     right ~425px of every scene card and swallowed the clicks. */
+  justify-content: flex-start;
   gap: 8px;
   min-height: 18px;
+  /* The actions are taller than the 18px heading and overflow it; the
+     narration scroller that follows paints later, so the row needs its own
+     stacking context to stay clickable. */
+  position: relative;
+  z-index: 3;
 }
 
 .storyboard-act-board-scene-section .storyboard-act-board-footage-track,
@@ -6410,7 +6418,6 @@ audio.storyboard-act-board-node-audio {
 .storyboard-act-board-board-scene-organize,
 .storyboard-act-board-board-scene-smart-arrange {
   flex: 0 0 auto;
-  margin-left: auto;
   padding: 2px 6px;
   border: 1px solid var(--cd-border);
   border-radius: 3px;
@@ -6502,8 +6509,11 @@ audio.storyboard-act-board-node-audio {
 
 .storyboard-act-board-card-top {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  align-items: center;
+  /* Smart arrange and the minus control belong to the scene title, so they
+     follow it directly instead of being spread to the card's right edge. */
+  justify-content: flex-start;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -12665,4 +12675,178 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
 
 @media (prefers-reduced-motion: reduce) {
   .storyboard-act-board-narration-slide-bar { transition: none; }
+}
+
+/* First-run affordance for the board's double-click-to-spawn gesture. Purely
+   decorative: pointer-events stay off so the very gesture it advertises still
+   lands on the canvas underneath. See showActBoardSpawnHint. */
+.storyboard-act-board-spawn-hint {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 14px 8px 11px;
+  border: 1px dashed var(--cd-accent-special);
+  border-radius: 999px;
+  background: var(--cd-surface, #fff);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .1);
+  color: var(--cd-text);
+  font: 12px var(--cd-font-body);
+  letter-spacing: .03em;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translate(-50%, -6px);
+  opacity: 0;
+  animation: act-board-spawn-hint-in .42s cubic-bezier(.2, .8, .3, 1) forwards;
+}
+
+.storyboard-act-board-spawn-hint.is-leaving {
+  animation: act-board-spawn-hint-out .3s ease forwards;
+}
+
+/* The two rings read as the two clicks of the gesture: the second fires on a
+   delay so the pair is legible as "double". */
+.storyboard-act-board-spawn-hint-cursor {
+  position: relative;
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--cd-accent-special);
+}
+
+.storyboard-act-board-spawn-hint-cursor::before,
+.storyboard-act-board-spawn-hint-cursor::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid var(--cd-accent-special);
+  border-radius: 50%;
+  animation: act-board-spawn-hint-ping 1.6s ease-out infinite;
+}
+
+.storyboard-act-board-spawn-hint-cursor::after { animation-delay: .26s; }
+
+@keyframes act-board-spawn-hint-in {
+  from { opacity: 0; transform: translate(-50%, -6px) scale(.96); }
+  to   { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
+@keyframes act-board-spawn-hint-out {
+  from { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  to   { opacity: 0; transform: translate(-50%, -5px) scale(.97); }
+}
+
+@keyframes act-board-spawn-hint-ping {
+  0%        { opacity: .85; transform: scale(1); }
+  70%, 100% { opacity: 0;   transform: scale(2.5); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .storyboard-act-board-spawn-hint {
+    animation: none;
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  .storyboard-act-board-spawn-hint.is-leaving { opacity: 0; animation: none; }
+  .storyboard-act-board-spawn-hint-cursor::before,
+  .storyboard-act-board-spawn-hint-cursor::after { animation: none; opacity: 0; }
+}
+
+/* J/L-cut tabs on a footage segment. The tab hangs off the edge the audio
+   crosses, so the direction of the spill is readable without hovering:
+   a J-cut reaches back before the picture, an L-cut runs on past it. */
+.storyboard-act-board-footage-track-audio-cut {
+  position: absolute;
+  top: 50%;
+  /* Above the segment's start/end drag handles, which own the same edge. */
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid var(--cd-accent-special);
+  border-radius: 3px;
+  background: var(--cd-surface, #fff);
+  color: var(--cd-accent-special);
+  font: 700 9px/1 var(--cd-font-mono);
+  cursor: pointer;
+  transform: translateY(-50%);
+  opacity: .9;
+  transition: opacity .12s ease, background-color .12s ease, transform .12s ease;
+}
+
+/* Inside the segment, not overhanging it: the segment and the strip are both
+   `overflow: hidden`, so a tab hanging off the edge is simply clipped away.
+   Offset past the drag handle that owns the very edge. */
+.storyboard-act-board-footage-track-audio-cut.j-cut { left: 6px; }
+.storyboard-act-board-footage-track-audio-cut.l-cut { right: 6px; }
+
+.storyboard-act-board-footage-track-audio-cut:hover,
+.storyboard-act-board-footage-track-audio-cut:focus-visible {
+  opacity: 1;
+  background: var(--cd-accent-special);
+  color: var(--cd-surface, #fff);
+  transform: translateY(-50%) scale(1.12);
+  outline: none;
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+  .storyboard-act-board-footage-track-audio-cut { transition: none; }
+  .storyboard-act-board-footage-track-audio-cut:hover,
+  .storyboard-act-board-footage-track-audio-cut:focus-visible {
+    transform: translateY(-50%);
+  }
+}
+
+/* Narration-relative cut tabs. Deliberately a different shape and colour from
+   the J/L audio-cut tabs: both systems can shape the same run, and "the shot
+   moved against the words" must not read as "the sound crossed the cut". */
+.storyboard-act-board-footage-track-narration-cut {
+  position: absolute;
+  top: 50%;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid var(--cd-text);
+  border-radius: 50%;
+  background: var(--cd-surface, #fff);
+  color: var(--cd-text);
+  font: 700 9px/1 var(--cd-font-mono);
+  cursor: pointer;
+  transform: translateY(-50%);
+  opacity: .82;
+  transition: opacity .12s ease, background-color .12s ease, transform .12s ease;
+}
+
+/* A sits at the head of the shot it pulled earlier; H at the tail of the shot
+   that is holding. */
+.storyboard-act-board-footage-track-narration-cut.anticipate { left: 22px; }
+.storyboard-act-board-footage-track-narration-cut.linger { right: 22px; }
+
+.storyboard-act-board-footage-track-narration-cut:hover,
+.storyboard-act-board-footage-track-narration-cut:focus-visible {
+  opacity: 1;
+  background: var(--cd-text);
+  color: var(--cd-surface, #fff);
+  transform: translateY(-50%) scale(1.12);
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .storyboard-act-board-footage-track-narration-cut { transition: none; }
+  .storyboard-act-board-footage-track-narration-cut:hover,
+  .storyboard-act-board-footage-track-narration-cut:focus-visible {
+    transform: translateY(-50%);
+  }
 }

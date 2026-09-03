@@ -2476,6 +2476,7 @@ def premiere_export():
     figures_dir = project_dir_path / 'premiere_figures'
 
     shots = []
+    cut_audio_events = []
     for i, section in enumerate(sections):
         if not isinstance(section, dict):
             return jsonify({'error': f'section {i} must be an object'}), 400
@@ -2538,6 +2539,13 @@ def premiere_export():
             'narration_audio_path': str(narration) if narration else None,
             'narration_duration_seconds': section.get('narration_duration_seconds'),
             'mute_source_audio': bool(section.get('_board_mute_audio')),
+            # The board's per-node footage volume. Narration ducking is applied
+            # on top of this in the renderer, so a clip the presenter turned
+            # down stays down rather than snapping back to the default level.
+            'source_volume': (
+                float(section['_board_source_volume'])
+                if isinstance(section.get('_board_source_volume'), (int, float))
+                else None),
             # Uploaded footage (a real local path this machine's Premiere can
             # import directly) takes priority; otherwise this just notes
             # which Pexels clip was picked - the file itself isn't
@@ -2550,6 +2558,30 @@ def premiere_export():
             'split_source_start_seconds': split_source_start_seconds,
             'edit_plan': section.get('edit_plan') or None,
         })
+
+        # J/L-cut: the clip's own audio is muted inside its shot (above, via
+        # _board_mute_audio) and re-emitted here as one timeline-absolute
+        # event. A shot's audio is mixed inside its own concat segment and so
+        # can never cross a cut; mix_global_sound_effects runs over the joined
+        # video, which is exactly what a J/L-cut needs. The file is the shot's
+        # already-resolved local media, so no new download path is involved.
+        lead = float(section.get('_board_audio_lead_seconds') or 0)
+        tail = float(section.get('_board_audio_tail_seconds') or 0)
+        if footage_path and (lead > 0 or tail > 0) and isinstance(start_seconds, (int, float)):
+            shot_seconds = float(section.get('_board_audio_duration_seconds') or 0)
+            span = lead + shot_seconds + tail
+            if span > 0:
+                cut_audio_events.append({
+                    'section_index': index,
+                    'name': f'{title} transition audio',
+                    'file_path': str(footage_path),
+                    # A lead cannot pull audio before the timeline's own start.
+                    'start_seconds': max(0.0, float(start_seconds) - lead),
+                    'source_start_seconds': float(
+                        section.get('_board_audio_source_start_seconds') or 0),
+                    'duration_seconds': span,
+                    'lane': 900 + i,
+                })
 
     sound_effects = []
     if not isinstance(sound_effect_specs, list):
@@ -2601,6 +2633,10 @@ def premiere_export():
             'source_start_seconds': float(source_start),
             'duration_seconds': float(duration), 'lane': lane,
         })
+
+    # J/L-cut audio joins the global mix alongside the SFX events - same
+    # absolute-time treatment, so it lands past the concat boundaries.
+    sound_effects.extend(cut_audio_events)
 
     edit_plan_path = project_dir_path / 'edit_plan.json'
     edit_plan_path.write_text(json.dumps({
