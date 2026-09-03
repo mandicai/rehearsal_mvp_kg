@@ -7668,7 +7668,8 @@ function removeActBoardNarrationHighlight(narrationNode, metadata, renderedText)
     narrationNode.footageFragments = narrationNode.footageFragments.filter(item =>
       !samePhrase(item));
   }
-  removeActBoardFootageNodesForDeletedPhrases(narrationNode.actKey, narrationNode, [textKey]);
+  const removedFootageCount = removeActBoardFootageNodesForDeletedPhrases(
+    narrationNode.actKey, narrationNode, [textKey]);
   // Keep the current scene narration slide selected while the text is
   // rerendered. Phrase deletion should change highlighting/footage, not move
   // the presenter to another narration segment.
@@ -7683,23 +7684,33 @@ function removeActBoardNarrationHighlight(narrationNode, metadata, renderedText)
   narrationNode.narrationSpanStatus = 'ready';
   narrationNode.narrationSpanError = '';
   saveDebugSession();
-  rerenderActBoard();
+  // Deleting a highlight that owned no footage changes text only. A full
+  // rerenderActBoard here cost ~46ms of the ~61ms delete - 76% of the work -
+  // to rebuild rails and cards that did not change. The in-place highlight
+  // refresh does the same visible job in well under a millisecond.
+  if (removedFootageCount) {
+    rerenderActBoard();
+    return;
+  }
+  unwrapActBoardNarrationSpanInDom(narrationNode, textKey);
+  refreshActBoardNarrationHighlightDom(narrationNode);
+  refreshActBoardNodeContentPanel(narrationNode.actKey, narrationNode);
 }
 
 function removeActBoardFootageNodesForDeletedPhrases(actKey, narrationNode, phraseKeys = null) {
-  if (!narrationNode) return;
+  if (!narrationNode) return 0;
   const deletedPhrases = new Set((Array.isArray(phraseKeys) ? phraseKeys : [])
     .map(key => String(key).split('|')[0])
     .map(actBoardNarrationSpanTextKey)
     .filter(Boolean));
-  if (!deletedPhrases.size) return;
+  if (!deletedPhrases.size) return 0;
   const nodes = actBoardNodesForAct(actKey);
   const removeIds = new Set((narrationNode.footageNodeIds || [])
     .map(id => nodes.find(node => node.id === id))
     .filter(node => node?.type === 'footage'
       && deletedPhrases.has(actBoardNarrationSpanTextKey(node.fragment)))
     .map(node => node.id));
-  if (!removeIds.size) return;
+  if (!removeIds.size) return 0;
   removeIds.forEach(id => cancelActBoardFootageMediaJob(actKey, id));
   removeIds.forEach(id => {
     const node = nodes.find(item => item.id === id);
@@ -7736,6 +7747,9 @@ function removeActBoardFootageNodesForDeletedPhrases(actKey, narrationNode, phra
     .filter(fragment => !deletedPhrases.has(actBoardNarrationSpanTextKey(fragment)));
   recomputeActBoardTiming(narrationNode);
   syncActBoardLiveSceneSnapshots();
+  // The caller needs to know: removing shots changes the rails and the canvas,
+  // while deleting a highlight that owned no footage only changes the text.
+  return removeIds.size;
 }
 
 function requestActBoardNarrationAnalysis(narrationNode) {
@@ -8464,6 +8478,36 @@ function applyActBoardNarrationPhraseSelection(root, narrationNode, onPhraseRemo
       anchor.appendChild(removeButton);
     });
   }
+}
+
+// Take one entity's wrapper out of the rendered transcript, leaving its words
+// behind as ordinary selectable word spans.
+//
+// applyActBoardNarrationPhraseSelection only toggles classes and rebuilds the
+// small delete affordances - it never removes a classifier span element. So an
+// in-place delete cleared the data while the blue highlight stayed on screen,
+// which is the "old and new highlighting at once" the mode split was meant to
+// end. Unwrapping here keeps the fast path visually honest.
+function unwrapActBoardNarrationSpanInDom(narrationNode, textKey) {
+  if (!narrationNode?.id || !textKey) return 0;
+  const roots = Array.from(document.querySelectorAll('[data-act-board-narration-node-id]'))
+    .filter(root => root.dataset.actBoardNarrationNodeId === String(narrationNode.id));
+  let unwrapped = 0;
+  roots.forEach(root => {
+    Array.from(root.querySelectorAll('[data-narration-fragment]')).forEach(span => {
+      if (actBoardNarrationSpanTextKey(span.dataset.narrationFragment || '') !== textKey) return;
+      // The controls belong to the entity, not to the words underneath it.
+      span.querySelectorAll(
+        '.storyboard-act-board-narration-span-remove, .storyboard-act-board-entity-grip',
+      ).forEach(control => control.remove());
+      const parent = span.parentNode;
+      if (!parent) return;
+      while (span.firstChild) parent.insertBefore(span.firstChild, span);
+      span.remove();
+      unwrapped += 1;
+    });
+  });
+  return unwrapped;
 }
 
 function refreshActBoardNarrationHighlightDom(narrationNode) {
@@ -9782,7 +9826,14 @@ function applyActBoardFootageAlignment(plan, llmMatches) {
   placed.forEach((item, index) => {
     const window = actBoardNarrationFootageWindow(rows, index, duration, previousStart);
     const start = Math.max(cursor, window.startSeconds);
-    const length = Math.max(0.5, window.endSeconds - start);
+    // The phrase window says how long this shot COULD hold; the clip says how
+    // long it actually has. Taking the shorter leaves a gap before the next
+    // shot rather than looping the clip to fill it - a visible gap reads as an
+    // editing decision, a repeating clip reads as a broken player.
+    const length = Math.min(
+      Math.max(ACT_BOARD_MIN_SHOT_SECONDS, window.endSeconds - start),
+      actBoardFootageMaxDurationSeconds(item.node),
+    );
     item.node.sequenceIndex = index;
     item.node.startSeconds = Number((narrationStart + start).toFixed(2));
     item.node.durationSeconds = Number(length.toFixed(2));
@@ -9800,7 +9851,10 @@ function applyActBoardFootageAlignment(plan, llmMatches) {
   // Park it after the aligned clips in its existing order rather than dropping
   // it or cutting it to words it does not name.
   parked.forEach((node, offset) => {
-    const length = Math.max(0.5, Number(node.durationSeconds) || 0.5);
+    const length = Math.min(
+      Math.max(ACT_BOARD_MIN_SHOT_SECONDS, Number(node.durationSeconds) || ACT_BOARD_MIN_SHOT_SECONDS),
+      actBoardFootageMaxDurationSeconds(node),
+    );
     node.sequenceIndex = placed.length + offset;
     node.startSeconds = Number((narrationStart + cursor).toFixed(2));
     node.durationSeconds = Number(length.toFixed(2));
@@ -9871,7 +9925,8 @@ function planActBoardNarrationCuts(placedNodes) {
     ).toFixed(2));
 
     // Alternate so a run does not read as all-anticipation or all-linger.
-    if (!preferLinger && room(previous, shot, seconds)) {
+    if (!preferLinger && room(previous, shot, seconds)
+      && shot.duration + seconds <= actBoardFootageMaxDurationSeconds(shot.node)) {
       // Anticipate: this shot arrives early, so the boundary before it moves
       // earlier - the previous shot gives up exactly what this one gains.
       remember(previous);
@@ -9889,7 +9944,8 @@ function planActBoardNarrationCuts(placedNodes) {
       cuts.push({ kind: 'anticipate', nodeId: shot.node.id, seconds });
       lastIndex = index;
       preferLinger = true;
-    } else if (room(shot, previous, seconds)) {
+    } else if (room(shot, previous, seconds)
+      && previous.duration + seconds <= actBoardFootageMaxDurationSeconds(previous.node)) {
       // Linger: the PREVIOUS shot holds past its own entity, so the boundary
       // moves later and this shot starts late and is correspondingly shorter.
       remember(previous);
@@ -10536,6 +10592,13 @@ const ACT_BOARD_NARRATION_CUT_MAX_SECONDS = 0.9;
 // for the transition on top of it.
 const ACT_BOARD_NARRATION_CUT_MIN_SHOT_SECONDS = 0.6;
 const ACT_BOARD_NARRATION_CUT_SPACING = 2;
+
+// Generated video is capped by the model. When a clip's real duration is not
+// known yet, this is the assumption to plan against - stretching past it makes
+// the clip repeat rather than hold.
+const ACT_BOARD_GENERATED_VIDEO_MAX_SECONDS = 8;
+// A shot shorter than this is a flash, not a shot.
+const ACT_BOARD_MIN_SHOT_SECONDS = 0.5;
 let actBoardSpawnHintShown = false;
 
 // How long the final shot stays on screen after its own duration ends, so a
@@ -15545,6 +15608,29 @@ function actBoardFootageSourceDuration(footage) {
   ) || 0);
 }
 
+// The longest a shot can honestly stay on screen.
+//
+// A video has exactly as much material as remains after its source in-point.
+// Asking for more does not hold the last frame - playback wraps with
+// `localSeconds % usedLength` and the export loops the file, so the clip
+// visibly restarts. Generated clips are the common casualty: the model caps
+// them at ACT_BOARD_GENERATED_VIDEO_MAX_SECONDS, well short of most narration
+// phrases. A still image has no such limit; holding one longer is just a
+// longer hold.
+//
+// Returns Infinity when there is no limit to apply, so callers can clamp
+// unconditionally with Math.min.
+function actBoardFootageMaxDurationSeconds(footage) {
+  if (!footage) return Infinity;
+  const media = actBoardSelectedFootageMedia(footage);
+  if (media?.kind !== 'video') return Infinity;
+  const source = actBoardFootageSourceDuration(footage);
+  const available = source > 0
+    ? source - Math.max(0, Number(footage.trimStartSeconds) || 0)
+    : ACT_BOARD_GENERATED_VIDEO_MAX_SECONDS;
+  return Math.max(ACT_BOARD_MIN_SHOT_SECONDS, available);
+}
+
 // A track deletion is intentionally non-destructive: the node stays on the
 // board and in the scene, but its segment is hidden until the presenter drops
 // the node back onto a compatible track. Keeping this as a small predicate
@@ -16174,7 +16260,9 @@ function buildActBoardNarrationPlayback(actKey, node, boardLayer, playbackNode =
           Math.max(0.05, sourceDuration - sourceIn),
         ));
         const target = Math.min(Number(video.duration) - 0.01,
-          sourceIn + (localSeconds % usedLength));
+          // Clamp, not wrap - see the single-clip stage below. A split pane
+          // that outlives its material holds rather than restarting.
+          sourceIn + Math.min(localSeconds, Math.max(0, usedLength - 0.05)));
         if (forceSeek && Number.isFinite(target)
           && Math.abs(video.currentTime - target) > 0.08) {
           try { video.currentTime = target; } catch (err) { /* metadata race */ }
@@ -16205,8 +16293,12 @@ function buildActBoardNarrationPlayback(actKey, node, boardLayer, playbackNode =
       const usedLength = Math.max(0.05, Math.min(
         Number(footage.durationSeconds) || available, available,
       ));
+      // Clamp rather than wrap. `localSeconds % usedLength` restarted the clip
+      // every time a shot outlived its material, which is the repeat-playing
+      // glitch; holding the last frame is the honest thing for a clip that has
+      // simply run out.
       const target = Math.min(state.video.duration - 0.01,
-        sourceIn + (localSeconds % usedLength));
+        sourceIn + Math.min(localSeconds, Math.max(0, usedLength - 0.05)));
       // Seeking on every audio timeupdate makes a CDN clip visibly flicker.
       // Only seek when entering a shot or when the user explicitly scrubs.
       if (forceSeek && Math.abs(state.video.currentTime - target) > 0.08) {
@@ -16367,7 +16459,9 @@ function buildActBoardNarrationPlayback(actKey, node, boardLayer, playbackNode =
           video.poster = splitVisual.thumbnailUrl || '';
           video.muted = true;
           video.playsInline = true;
-          video.loop = true;
+          // Same rule as the single-clip stage: a pane that runs out holds its
+          // last frame instead of restarting under the others.
+          video.loop = false;
           video.preload = 'auto';
           video.addEventListener('click', event => event.stopPropagation());
           video.addEventListener('loadedmetadata', () => {
@@ -16396,7 +16490,9 @@ function buildActBoardNarrationPlayback(actKey, node, boardLayer, playbackNode =
       video.muted = muteAudio === true;
       video.volume = video.muted ? 0 : actBoardNodeVolume(footage, 1);
       video.playsInline = true;
-      video.loop = true;
+      // Never loop a shot. A clip that ends before its slot holds its last
+      // frame; restarting reads as a broken player rather than an edit.
+      video.loop = false;
       video.preload = 'auto';
       // The narration can finish before the last footage shot. Use the
       // shared playback clock here instead of the now-stale audio time so a

@@ -183,17 +183,28 @@ def _video_filter_for_still(shot, total_frames, overlay_file):
     return ','.join(chain)
 
 
-def _video_filter_for_clip(overlay_file):
+def _video_filter_for_clip(overlay_file, pad_seconds=0.0):
     """Filter chain for a real clip: scale+pad into the target frame (letter/
     pillarbox rather than crop, so nothing important is cut off), normalize
     sar/fps, optional overlay, yuv420p. Ken Burns is intentionally ignored
-    for clips (it's a stills technique - matches edit_plan_llm's own note)."""
+    for clips (it's a stills technique - matches edit_plan_llm's own note).
+
+    `pad_seconds` appends black to the end so a clip shorter than its shot
+    still fills the slot exactly. The alternative - looping the clip - makes it
+    visibly restart, which reads as a broken player rather than an edit. A gap
+    is the honest outcome when a clip has run out of material.
+    """
     chain = [
         f'scale={_WIDTH}:{_HEIGHT}:force_original_aspect_ratio=decrease',
         f'pad={_WIDTH}:{_HEIGHT}:(ow-iw)/2:(oh-ih)/2',
         'setsar=1',
         f'fps={_FPS}',
     ]
+    if pad_seconds > 0:
+        # -t on the command truncates the padded stream back to the shot's
+        # exact length, so over-padding here is safe and keeps concat aligned.
+        chain.append(
+            f'tpad=stop_mode=add:stop_duration={pad_seconds:.3f}:color=black')
     if overlay_file is not None:
         chain.append(_drawtext_expr(overlay_file))
     chain.append('format=yuv420p')
@@ -357,16 +368,25 @@ def render_shot(shot, output_path, tmp_dir):
         parts = []
         for index, path in enumerate(split_visual_paths):
             source_start = max(0.0, float(source_starts[index] or 0)) if index < len(source_starts) else 0.0
+            pane_pad = 0.0
             if _is_still(path):
                 video_input += ['-loop', '1', '-t', f'{seconds:.3f}', '-i', path]
             else:
-                video_input += ['-stream_loop', '-1']
+                # Pad a short pane with black rather than looping it - one pane
+                # restarting while the other plays on is especially obvious.
+                pane_seconds = probe_duration(path) or 0.0
+                pane_available = max(0.0, pane_seconds - source_start) if pane_seconds else 0.0
+                pane_pad = max(0.0, seconds - pane_available) if pane_available else 0.0
                 if source_start > 0:
                     video_input += ['-ss', f'{source_start:.3f}']
                 video_input += ['-i', path]
+            pane_pad_filter = (
+                f',tpad=stop_mode=add:stop_duration={pane_pad:.3f}:color=black'
+                if pane_pad > 0 else '')
             parts.append(
                 f'[{index}:v]scale={pane_width}:{_HEIGHT}:force_original_aspect_ratio=decrease,'
-                f'pad={pane_width}:{_HEIGHT}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={_FPS},format=yuv420p'
+                f'pad={pane_width}:{_HEIGHT}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={_FPS}'
+                f'{pane_pad_filter},format=yuv420p'
                 f'[split{index}]')
         split_inputs = ''.join(f'[split{index}]' for index in range(n))
         parts.append(f'{split_inputs}hstack=inputs={n}:shortest=1[vcat]')
@@ -430,17 +450,24 @@ def render_shot(shot, output_path, tmp_dir):
             video_filter = _video_filter_for_still(shot, total_frames, overlay_file)
             source_audio = False
         else:
-            # -stream_loop -1 loops a clip shorter than the shot (capped by -t);
-            # a longer clip is simply trimmed by -t. Either way the shot lasts
-            # exactly `seconds`. A board footage node can also choose a
-            # source in-point, which is applied before the input so the
-            # rendered shot uses the same portion selected in the browser.
+            # A clip shorter than its shot is padded with black to the end of
+            # the slot, never looped. Looping (-stream_loop -1, used here
+            # previously) makes a short clip restart on screen - the failure
+            # the board's own duration clamp exists to prevent, and the one
+            # generated clips hit constantly since the model caps them well
+            # short of most narration phrases. A longer clip is trimmed by -t
+            # as before. A board footage node can also choose a source
+            # in-point, applied before the input so the rendered shot uses the
+            # same portion selected in the browser.
             source_start = max(0.0, float(shot.get('source_start_seconds') or 0))
-            video_input = ['-stream_loop', '-1']
+            clip_seconds = probe_duration(visual_path) or 0.0
+            available = max(0.0, clip_seconds - source_start) if clip_seconds else 0.0
+            pad_seconds = max(0.0, seconds - available) if available else 0.0
+            video_input = []
             if source_start > 0:
                 video_input += ['-ss', f'{source_start:.3f}']
             video_input += ['-i', str(visual_path)]
-            video_filter = _video_filter_for_clip(overlay_file)
+            video_filter = _video_filter_for_clip(overlay_file, pad_seconds)
             # Some generated video models return an incidental soundtrack.
             # The caller can explicitly suppress it while keeping separate
             # narration/SFX inputs available to the mix.
