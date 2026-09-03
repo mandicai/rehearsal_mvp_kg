@@ -8490,7 +8490,10 @@ function applyActBoardNarrationPhraseSelection(root, narrationNode, onPhraseRemo
 // end. Unwrapping here keeps the fast path visually honest.
 function unwrapActBoardNarrationSpanInDom(narrationNode, textKey) {
   if (!narrationNode?.id || !textKey) return 0;
-  const roots = Array.from(document.querySelectorAll('[data-act-board-narration-node-id]'))
+  // Suggested drafts are excluded everywhere highlight roots are collected:
+  // they are not the spoken track, so nothing should highlight in them.
+  const roots = Array.from(document.querySelectorAll(
+    '[data-act-board-narration-node-id]:not([data-act-board-narration-suggested])'))
     .filter(root => root.dataset.actBoardNarrationNodeId === String(narrationNode.id));
   let unwrapped = 0;
   roots.forEach(root => {
@@ -8513,7 +8516,7 @@ function unwrapActBoardNarrationSpanInDom(narrationNode, textKey) {
 function refreshActBoardNarrationHighlightDom(narrationNode) {
   if (!narrationNode?.id) return false;
   const roots = Array.from(document.querySelectorAll(
-    '[data-act-board-narration-node-id]'))
+    '[data-act-board-narration-node-id]:not([data-act-board-narration-suggested])'))
     .filter(root => root.dataset.actBoardNarrationNodeId === String(narrationNode.id));
   if (!roots.length) return false;
   roots.forEach(root => {
@@ -8791,6 +8794,43 @@ function commitActBoardTranscriptEdit(narrationNode, nextTranscript, reanalyze) 
     narrationNode.narrationCandidateSpans = [];
     narrationNode.narrationSpans = [];
     narrationNode.narrationSpanStatus = 'stale';
+    // Clearing only the classifier spans was not enough. Visualize highlights
+    // reads selectedFootagePhrases/userFilmablePhrases/footageSuggestedPhrases,
+    // and Smart arrange reads footageFragments - so a highlight the presenter
+    // asked to re-derive survived in those lists and came back as generated
+    // footage, or pulled its old shot onto the rail again.
+    //
+    // A phrase whose wording still exists in the corrected transcript is kept
+    // and re-anchored: re-analysis is meant to refresh the highlights, not to
+    // silently discard a phrase the presenter chose and only moved. One whose
+    // wording is gone is dropped, because it no longer describes anything the
+    // narration says.
+    const survives = next.toLocaleLowerCase();
+    ['selectedFootagePhrases', 'footageSuggestedPhrases', 'userFilmablePhrases']
+      .forEach(field => {
+        if (!Array.isArray(narrationNode[field])) return;
+        narrationNode[field] = narrationNode[field].map(item => {
+          const text = String(item?.text || item?.fragment || item || '').trim();
+          if (!text) return null;
+          const index = survives.indexOf(text.toLocaleLowerCase());
+          if (index < 0) return null;
+          return typeof item === 'string'
+            ? item : { ...item, start: index, end: index + text.length };
+        }).filter(Boolean);
+      });
+    // footageFragments names the shots on the rail. Dropping a fragment whose
+    // wording is gone is what stops Smart arrange resurrecting its shot; the
+    // footage NODE itself is left alone, as the re-analysis prompt promises.
+    if (Array.isArray(narrationNode.footageFragments)) {
+      narrationNode.footageFragments = narrationNode.footageFragments.filter(item =>
+        survives.includes(String(item?.text || item?.fragment || item || '')
+          .trim().toLocaleLowerCase()));
+    }
+    if (Array.isArray(narrationNode.fragmentTimings)) {
+      narrationNode.fragmentTimings = narrationNode.fragmentTimings.filter(item =>
+        survives.includes(String(item?.text || item?.fragment || item || '')
+          .trim().toLocaleLowerCase()));
+    }
   } else {
     // Declining means "leave my highlights alone", and that takes more than
     // not clearing them: the board re-runs analysis whenever a transcript's
@@ -17185,7 +17225,9 @@ function actBoardNarrationTimingRoots(boardLayer, narrationNode) {
   }
   // Scene narration slides carry the same node id, and may be the only
   // transcript rendering available when node bodies are hidden.
-  boardLayer.querySelectorAll('[data-act-board-narration-node-id]').forEach(root => {
+  boardLayer.querySelectorAll(
+    '[data-act-board-narration-node-id]:not([data-act-board-narration-suggested])',
+  ).forEach(root => {
     if (root.dataset.actBoardNarrationNodeId === id) roots.push(root);
   });
   return Array.from(new Set(roots.filter(Boolean)));
@@ -17293,7 +17335,8 @@ function actBoardHighlightedNarrationEntities(boardLayer, narrationNode) {
     labels.push(text);
   };
   const roots = boardLayer
-    ? Array.from(boardLayer.querySelectorAll('[data-act-board-narration-node-id]'))
+    ? Array.from(boardLayer.querySelectorAll(
+      '[data-act-board-narration-node-id]:not([data-act-board-narration-suggested])'))
       .filter(root => root.dataset.actBoardNarrationNodeId === id)
     : [];
   roots.forEach(root => {
@@ -21939,6 +21982,7 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
     );
     sideText.classList.add('storyboard-act-board-narration-side-preview-text');
     sideText.dataset.actBoardNarrationNodeId = node.id;
+    if (!sideIsRecorded) sideText.dataset.actBoardNarrationSuggested = 'true';
     if (hasRecordedNarration) {
       applyActBoardNarrationPhraseSelection(sideText, node, onFilmableSpanRemove);
     }
@@ -22159,6 +22203,11 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
         null);
       primaryNarration.classList.add('storyboard-act-board-narration-primary');
       primaryNarration.dataset.actBoardNarrationNodeId = node.id;
+      // Suggested copy is a draft, not the spoken track. Entity offsets are
+      // measured against the TRANSCRIPT, so painting them here highlights
+      // whatever happens to sit at those character positions in different
+      // words entirely. Mark it so no highlight pass treats it as a root.
+      primaryNarration.dataset.actBoardNarrationSuggested = 'true';
       suggestedView.appendChild(primaryNarration);
       suggestedView.append(sourceNotesPanel);
     } else if (!node.transcript) {
@@ -22232,6 +22281,7 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
           null);
         recordedSuggestedNarration.classList.add('storyboard-act-board-narration-primary');
         recordedSuggestedNarration.dataset.actBoardNarrationNodeId = node.id;
+        recordedSuggestedNarration.dataset.actBoardNarrationSuggested = 'true';
       }
     }
     if (recordingAudio) {
