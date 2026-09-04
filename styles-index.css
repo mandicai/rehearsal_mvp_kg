@@ -12931,3 +12931,47 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
   background: var(--cd-accent-special) !important;
   color: var(--cd-accent-text) !important;
 }
+
+/* Narration recording state, spelled out. The record button's processing
+   state was a dimmed ellipsis and a tooltip; while a transcription is running
+   the presenter needs to see it without hovering. */
+.storyboard-act-board-record-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--cd-accent-special);
+  color: var(--cd-accent-special);
+  font: 600 10px/1.4 var(--cd-font-body);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.storyboard-act-board-record-status.is-processing::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid var(--cd-accent-special);
+  border-right-color: transparent;
+  animation: storyboard-act-board-record-status-spin .8s linear infinite;
+}
+.storyboard-act-board-record-status.is-recording {
+  background: var(--cd-accent-special);
+  color: var(--cd-accent-text);
+}
+.storyboard-act-board-record-status.is-error {
+  border-color: #b3261e;
+  color: #b3261e;
+}
+.storyboard-act-board-record-narration-btn.is-processing,
+.storyboard-act-board-scene-record-narration-btn.is-processing {
+  opacity: 1 !important;
+  box-shadow: 0 0 0 2px var(--cd-accent-special);
+  cursor: progress;
+}
+@keyframes storyboard-act-board-record-status-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .storyboard-act-board-record-status.is-processing::before { animation: none; }
+}

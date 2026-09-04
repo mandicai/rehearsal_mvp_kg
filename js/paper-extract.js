@@ -7638,11 +7638,40 @@ function normalizeActBoardFootagePhrase(value) {
     .trim();
 }
 
+// A highlight the presenter deleted must not come back on its own. Two
+// things brought it back: Visualize re-runs the classifier (forced, so an
+// edit cannot silence it), and the cached analysis is re-applied on render -
+// both re-proposed the same clause, and its footage nodes with it. So a
+// deletion is remembered against the CLASSIFIER only: a suggestion whose
+// wording matches an exclusion is dropped, while a phrase the presenter
+// highlights by hand is always accepted (and re-adding clears the exclusion).
 function actBoardNarrationSpanExcluded(node, span) {
-  // Legacy sessions may still contain narrationSpanExclusions from an older
-  // implementation. They are intentionally ignored: deleting a highlight
-  // must never make that phrase ineligible for a future user selection.
-  return false;
+  const list = Array.isArray(node?.narrationSpanExclusions) ? node.narrationSpanExclusions : [];
+  if (!list.length || !span) return false;
+  if (span.kind === 'user_selection' || span.origin === 'manual') return false;
+  const key = actBoardNarrationSpanTextKey(
+    typeof span === 'string' ? span : (span.text || span.fragment || ''));
+  if (!key) return false;
+  return list.some(item => actBoardNarrationSpanTextKey(
+    typeof item === 'string' ? item : (item?.text || '')) === key);
+}
+
+function rememberActBoardNarrationExclusion(node, text) {
+  if (!node) return;
+  const key = actBoardNarrationSpanTextKey(text);
+  if (!key) return;
+  if (!Array.isArray(node.narrationSpanExclusions)) node.narrationSpanExclusions = [];
+  if (!node.narrationSpanExclusions.some(item => actBoardNarrationSpanTextKey(
+    typeof item === 'string' ? item : (item?.text || '')) === key)) {
+    node.narrationSpanExclusions.push({ text: String(text || '').trim() });
+  }
+}
+
+function forgetActBoardNarrationExclusion(node, text) {
+  if (!node || !Array.isArray(node.narrationSpanExclusions)) return;
+  const key = actBoardNarrationSpanTextKey(text);
+  node.narrationSpanExclusions = node.narrationSpanExclusions.filter(item =>
+    actBoardNarrationSpanTextKey(typeof item === 'string' ? item : (item?.text || '')) !== key);
 }
 
 function stripActBoardNarrationExcludedPhrases(node, value) {
@@ -7671,6 +7700,7 @@ function removeActBoardNarrationHighlight(narrationNode, metadata, renderedText)
     text,
   });
   const textKey = actBoardNarrationSpanTextKey(text);
+  rememberActBoardNarrationExclusion(narrationNode, text);
   const samePhrase = item => actBoardNarrationSpanTextKey(
     item?.text || item?.fragment || item,
   ) === textKey;
@@ -8884,6 +8914,8 @@ function handleActBoardNarrationSpanSelect(narrationNode, metadata, renderedText
     offsetPhrase || renderedText || metadata.text,
   );
   if (!phrase) return;
+  // Highlighting these words by hand overrides an earlier deletion of them.
+  forgetActBoardNarrationExclusion(narrationNode, phrase);
   const fallbackStart = source.toLocaleLowerCase().indexOf(phrase.toLocaleLowerCase());
   const start = Number.isFinite(metadataStart) && metadataStart >= 0
     ? metadataStart : fallbackStart;
@@ -10079,9 +10111,12 @@ function planActBoardAudioCuts(placedNodes, mediaFor) {
   for (let index = 0; index < shots.length - 1; index += 1) {
     const outgoing = shots[index];
     const incoming = shots[index + 1];
-    // Two live tracks overlapping needs real ducking, not two ambiences laid
-    // on top of each other. Exactly one side may carry audio across the cut.
-    if (outgoing.hasAudio === incoming.hasAudio) continue;
+    // Silence on both sides has nothing to carry across. Sound on both sides
+    // is a crossfade: the outgoing tail fades out while the incoming lead
+    // fades in, which the fades make safe (before them, two ambiences at full
+    // level on top of each other was the reason both-loud was skipped - and
+    // since stock clips all carry audio, that skip meant no J/L at all).
+    if (!outgoing.hasAudio && !incoming.hasAudio) continue;
     const room = Math.min(outgoing.duration, incoming.duration)
       * ACT_BOARD_AUDIO_CUT_MAX_SHOT_SHARE;
     const seconds = Math.min(ACT_BOARD_AUDIO_CUT_MAX_SECONDS, room);
@@ -10091,7 +10126,8 @@ function planActBoardAudioCuts(placedNodes, mediaFor) {
       outgoing,
       incoming,
       seconds: Number(seconds.toFixed(2)),
-      kind: incoming.hasAudio ? 'j-cut' : 'l-cut',
+      kind: outgoing.hasAudio && incoming.hasAudio ? 'crossfade'
+        : (incoming.hasAudio ? 'j-cut' : 'l-cut'),
     });
   }
 
@@ -10107,7 +10143,20 @@ function planActBoardAudioCuts(placedNodes, mediaFor) {
     if (candidate.kind === lastKind && next && next.kind !== lastKind
       && next.index - lastIndex >= ACT_BOARD_AUDIO_CUT_SPACING) return;
 
-    if (candidate.kind === 'j-cut') {
+    if (candidate.kind === 'crossfade') {
+      // Both sides: an L tail on the outgoing clip and a J lead on the
+      // incoming one over the same span; the two layers ramp against each
+      // other. Each node carries its half, so the rail shows both markers and
+      // either can be removed on its own.
+      candidate.outgoing.node.audioTailSeconds = candidate.seconds;
+      candidate.outgoing.node.transitionWasSuggested = true;
+      candidate.outgoing.node.transitionKind = 'l-cut';
+      candidate.incoming.node.audioLeadSeconds = candidate.seconds;
+      candidate.incoming.node.transitionWasSuggested = true;
+      candidate.incoming.node.transitionKind = candidate.incoming.node.transitionKind === 'l-cut'
+        ? 'l-cut' : 'j-cut';
+      cuts.push({ kind: 'crossfade', nodeId: candidate.incoming.node.id, seconds: candidate.seconds });
+    } else if (candidate.kind === 'j-cut') {
       // J-cut: pull the incoming clip's sound back under the outgoing picture.
       candidate.incoming.node.audioLeadSeconds = candidate.seconds;
       candidate.incoming.node.transitionWasSuggested = true;
@@ -10675,10 +10724,13 @@ const ACT_BOARD_SPAWN_HINT_MS = 5200;
 // Both are audio-only shifts - a clip's startSeconds/durationSeconds still
 // describe its VISUAL, so the rail, the ordering pass and manual timing all
 // keep their existing meaning.
-// Long enough to register as a transition (2-3s), not a blip. The audio that
-// crosses the cut fades in over a J lead and out over an L tail - see
-// syncFootageCutLayers (preview) and mix_global_sound_effects (export).
-const ACT_BOARD_AUDIO_CUT_MIN_SECONDS = 2.0;
+// A cut runs 2-3s when the shots around it are long enough to carry that,
+// and scales down with the shorter shot otherwise - three interspersed clause
+// shots of ~1.3s cannot host a 2s transition, and a hard 2s minimum meant no
+// cut was ever suggested on a clause-mode rail. The audio that crosses the
+// cut fades in over a J lead and out over an L tail - see syncFootageCutLayers
+// (preview) and mix_global_sound_effects (export).
+const ACT_BOARD_AUDIO_CUT_MIN_SECONDS = 0.5;
 const ACT_BOARD_AUDIO_CUT_MAX_SECONDS = 3.0;
 // A cut may never eat more than this share of either neighbouring shot, so a
 // short shot cannot be swallowed by its own transition.
@@ -10694,7 +10746,7 @@ const ACT_BOARD_AUDIO_CUT_SPACING = 2;
 //   linger     - the shot stays on screen after its entity is spoken
 // Each is a single boundary between two adjacent shots sliding earlier or
 // later, so the rail stays contiguous: no overlap, no gap.
-const ACT_BOARD_NARRATION_CUT_MIN_SECONDS = 2.0;
+const ACT_BOARD_NARRATION_CUT_MIN_SECONDS = 0.5;
 const ACT_BOARD_NARRATION_CUT_MAX_SECONDS = 3.0;
 // Neither neighbour may be pushed below this, or a shot vanishes to make room
 // for the transition on top of it.
@@ -18054,19 +18106,23 @@ function buildActBoardFootageTrack(actKey, narrationNode, boardLayer, linkedOver
     // drawn as a tab hanging off the edge the sound crosses: a J-cut reaches
     // back before the segment starts, an L-cut runs on past its end. Clicking
     // the tab drops that one cut without touching the rest of the arrange.
-    const cutSeconds = Math.max(0, Number(footage.audioLeadSeconds) || 0,
-      Number(footage.audioTailSeconds) || 0);
-    if (footage.transitionWasSuggested && cutSeconds > 0) {
-      const isLead = (Number(footage.audioLeadSeconds) || 0) > 0;
-      const kind = isLead ? 'j-cut' : 'l-cut';
+    // One marker per side: a J tab at the head when this clip's audio leads
+    // its picture, an L tab at the tail when it runs on past it. A crossfade
+    // gives the outgoing clip a tail and the incoming clip a lead, so a clip
+    // in the middle of two crossfades legitimately carries both. Each tab
+    // removes only its own side.
+    [['j-cut', Number(footage.audioLeadSeconds) || 0, 'audioLeadSeconds'],
+      ['l-cut', Number(footage.audioTailSeconds) || 0, 'audioTailSeconds']].forEach(([kind, seconds, field]) => {
+      if (!footage.transitionWasSuggested || !(seconds > 0)) return;
+      const isLead = kind === 'j-cut';
       const marker = document.createElement('button');
       marker.type = 'button';
       marker.className = `storyboard-act-board-footage-track-audio-cut ${kind}`;
       marker.dataset.cutKind = kind;
       marker.textContent = isLead ? 'J' : 'L';
       marker.title = isLead
-        ? `J-cut · this clip's audio starts ${cutSeconds.toFixed(2)}s before its picture · click to remove`
-        : `L-cut · this clip's audio runs ${cutSeconds.toFixed(2)}s past its picture · click to remove`;
+        ? `J-cut · this clip's audio starts ${seconds.toFixed(2)}s before its picture · click to remove`
+        : `L-cut · this clip's audio runs ${seconds.toFixed(2)}s past its picture · click to remove`;
       marker.setAttribute('aria-label', marker.title);
       // The segment itself is draggable and Delete-able; neither belongs to
       // the marker.
@@ -18075,15 +18131,16 @@ function buildActBoardFootageTrack(actKey, narrationNode, boardLayer, linkedOver
       marker.addEventListener('click', event => {
         event.preventDefault();
         event.stopPropagation();
-        footage.audioLeadSeconds = 0;
-        footage.audioTailSeconds = 0;
-        footage.transitionWasSuggested = false;
-        footage.transitionKind = '';
+        footage[field] = 0;
+        if (!(Number(footage.audioLeadSeconds) || 0) && !(Number(footage.audioTailSeconds) || 0)) {
+          footage.transitionWasSuggested = false;
+          footage.transitionKind = '';
+        }
         saveDebugSession();
         marker.remove();
       });
       segment.appendChild(marker);
-    }
+    });
     // Narration-relative cut. Distinct glyphs from the J/L audio cuts, because
     // both systems can shape the same run: A = arrives before its entity is
     // spoken, H = holds on screen after it. Clicking restores the hard cut for
@@ -20788,21 +20845,55 @@ async function selectRandomActBoardFootageVisual(actKey, node) {
     return true;
   }
 
-  const selected = stock[Math.floor(Math.random() * stock.length)];
-  const result = selected.result;
+  // Try the stock results in random order until one downloads. A single CDN
+  // failure used to end the attempt, and with automatic image generation off
+  // there was no AI image to fall back on - so the card stayed empty.
+  const shuffled = stock.slice().sort(() => Math.random() - 0.5);
+  let selected = null;
+  let downloaded = null;
+  for (const candidate of shuffled) {
+    try {
+      downloaded = await fetchDownloadStockMedia(
+        actBoardAssetSectionIndex(node),
+        'video',
+        candidate.result.video_url,
+        premiereProjectId,
+        // Auto-selecting a search result must use the same permissive download
+        // path as an explicit "Use this clip" click. Search/playback can still
+        // prefer clips long enough for the requested segment, but a shorter
+        // result should not be rejected while assigning a starter visual.
+        0,
+        candidate.result.id || node.id,
+      );
+      selected = candidate;
+      break;
+    } catch (error) {
+      downloaded = null;
+    }
+  }
+  if (!selected) {
+    // Nothing downloaded. Rather than leave the card empty, point it at the
+    // first result's remote URL: it plays in the browser, and the export path
+    // resolves board media on its own.
+    const remote = shuffled[0];
+    if (remote?.result?.video_url) {
+      const result = remote.result;
+      node.selectedVisualKey = `result-${remote.index}`;
+      node.selectedResultIndex = remote.index;
+      node.mediaUrl = result.video_url;
+      node.mediaThumbnailUrl = result.thumbnail_url || result.video_url;
+      node.mediaKind = 'video';
+      node.mediaOrigin = 'suggested';
+      node.sourceDurationSeconds = Number(result.duration_seconds || result.duration) || 0;
+      node.trimStartSeconds = 0;
+      return true;
+    }
+    if (!generated.length) return false;
+    selected = null;
+  }
+  const result = selected ? selected.result : null;
   try {
-    const downloaded = await fetchDownloadStockMedia(
-      actBoardAssetSectionIndex(node),
-      'video',
-      result.video_url,
-      premiereProjectId,
-      // Auto-selecting a search result must use the same permissive download
-      // path as an explicit "Use this clip" click. Search/playback can still
-      // prefer clips long enough for the requested segment, but a shorter
-      // result should not be rejected while assigning a starter visual.
-      0,
-      result.id || node.id,
-    );
+    if (!result) throw new Error('no stock result could be downloaded');
     premiereProjectId = downloaded.project_id || premiereProjectId;
     result.localPreviewUrl = downloaded.preview_url || '';
     result.thumbnail_url = downloaded.thumbnail_url || result.thumbnail_url || '';
@@ -22463,6 +22554,16 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
       // shells no longer render their full body on the canvas. Mirror the
       // state immediately so recording feedback is visible at the point of
       // interaction instead of waiting for the eventual rerender.
+      // The per-slide status label follows the same state as the button.
+      document.querySelectorAll('.storyboard-act-board-record-status').forEach(label => {
+        if (label.dataset.narrationNodeId !== String(node.id)) return;
+        const text = (recording || processing || failed) ? (status || accessibleLabel) : '';
+        label.textContent = text;
+        label.hidden = !text;
+        label.classList.toggle('is-recording', recording);
+        label.classList.toggle('is-processing', processing);
+        label.classList.toggle('is-error', failed);
+      });
       document.querySelectorAll('.storyboard-act-board-scene-record-narration-btn')
         .forEach(proxy => {
           if (proxy.dataset.narrationNodeId !== String(node.id)) return;
@@ -22903,37 +23004,7 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
     // timingHint.textContent = 'Drag the footage track segment to set when it appears · Source in = where to begin inside the file · Length = how long it plays';
     footageTiming.appendChild(timingHint);
     card.appendChild(footageTiming);
-    // Footage audio is now part of the mix (generated clips are prompted for
-    // ambient sound only, never speech), so it needs the same level control
-    // sound and narration nodes already have. 0 mutes the clip outright.
-    if (actBoardSelectedFootageMedia(node).kind === 'video') {
-      const volumeRow = document.createElement('label');
-      volumeRow.className = 'storyboard-act-board-audio-volume-row'
-        + ' storyboard-act-board-footage-volume-row';
-      volumeRow.textContent = 'Clip volume';
-      const volumeInput = document.createElement('input');
-      volumeInput.type = 'range';
-      volumeInput.min = '0';
-      volumeInput.max = '1';
-      volumeInput.step = '0.01';
-      volumeInput.value = String(actBoardNodeVolume(node, 1));
-      volumeInput.title = 'Level of this clip\u2019s own audio in playback and export';
-      volumeInput.addEventListener('pointerdown', event => event.stopPropagation());
-      volumeInput.addEventListener('input', () => {
-        node.volume = Number(volumeInput.value);
-        // Reach the element that is actually playing rather than rerendering
-        // the board mid-drag.
-        const live = card.querySelector('video');
-        if (live) {
-          live.muted = node.volume <= 0;
-          live.volume = node.volume;
-        }
-        refreshActBoardPlaybackVolumes();
-        saveDebugSession();
-      });
-      volumeRow.appendChild(volumeInput);
-      card.appendChild(volumeRow);
-    }
+    let clipVolumeRow = null;
     // When the selected visual has a known natural duration, expose the same
     // draggable source-window affordance used by sound nodes. This edits the
     // source in/out portion without changing the node's timeline start.
@@ -23527,6 +23598,40 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
     // before the alternate thumbnail gallery. The entire gallery is mounted
     // in the selected node-content panel, so this keeps the editor adjacent to
     // the media it controls instead of below unrelated search/generation UI.
+    // Clip volume sits directly under the featured footage, above the source
+    // editor, with the media it controls.
+    // Footage audio is now part of the mix (generated clips are prompted for
+    // ambient sound only, never speech), so it needs the same level control
+    // sound and narration nodes already have. 0 mutes the clip outright.
+    if (actBoardSelectedFootageMedia(node).kind === 'video') {
+      const volumeRow = document.createElement('label');
+      clipVolumeRow = volumeRow;
+      volumeRow.className = 'storyboard-act-board-audio-volume-row'
+        + ' storyboard-act-board-footage-volume-row';
+      volumeRow.textContent = 'Clip volume';
+      const volumeInput = document.createElement('input');
+      volumeInput.type = 'range';
+      volumeInput.min = '0';
+      volumeInput.max = '1';
+      volumeInput.step = '0.01';
+      volumeInput.value = String(actBoardNodeVolume(node, 1));
+      volumeInput.title = 'Level of this clip\u2019s own audio in playback and export';
+      volumeInput.addEventListener('pointerdown', event => event.stopPropagation());
+      volumeInput.addEventListener('input', () => {
+        node.volume = Number(volumeInput.value);
+        // Reach the element that is actually playing rather than rerendering
+        // the board mid-drag.
+        const live = card.querySelector('video');
+        if (live) {
+          live.muted = node.volume <= 0;
+          live.volume = node.volume;
+        }
+        refreshActBoardPlaybackVolumes();
+        saveDebugSession();
+      });
+      volumeRow.appendChild(volumeInput);
+    }
+    if (clipVolumeRow) visualGallery.appendChild(clipVolumeRow);
     if (selectedSourceEditor) visualGallery.appendChild(selectedSourceEditor);
     const thumbRail = document.createElement('div');
     thumbRail.className = 'storyboard-act-board-footage-thumb-rail';
@@ -25463,6 +25568,25 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
     const group = document.createElement('div');
     group.className = 'storyboard-act-board-narration-slide-actions';
     const record = makeSceneNarrationRecordButton(entry);
+    // What the recording is doing right now - "Transcribing narration…" and
+    // the steps before it - as visible text next to the button. The button's
+    // own processing state was a dimmed glyph and a tooltip, easy to miss.
+    const recordStatus = document.createElement('span');
+    recordStatus.className = 'storyboard-act-board-record-status';
+    recordStatus.dataset.narrationNodeId = entry.id || '';
+    recordStatus.setAttribute('role', 'status');
+    recordStatus.setAttribute('aria-live', 'polite');
+    // The slide bar is built after the narration card's own status pass, so
+    // seed the label from the node's current state; later changes arrive
+    // through setRecordButtonStatus.
+    const initialState = entry.recordingStatus === 'recording' ? 'Recording…'
+      : entry.recordingStatus === 'processing' ? 'Transcribing narration…'
+        : entry.recordingStatus === 'error' ? 'Narration recording failed' : '';
+    recordStatus.textContent = initialState;
+    recordStatus.hidden = !initialState;
+    recordStatus.classList.toggle('is-recording', entry.recordingStatus === 'recording');
+    recordStatus.classList.toggle('is-processing', entry.recordingStatus === 'processing');
+    recordStatus.classList.toggle('is-error', entry.recordingStatus === 'error');
     const upload = makeSceneNarrationUploadButton(entry);
 
     const download = document.createElement('button');
@@ -25512,7 +25636,7 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
     };
     refresh();
     group._actBoardRefresh = refresh;
-    group.append(record, upload, download, includeLabel);
+    group.append(record, recordStatus, upload, download, includeLabel);
     return group;
   };
 
