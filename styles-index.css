@@ -13015,11 +13015,9 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
 /* Primary actions share the look of a selected narration-mode pill: accent
    fill, small uppercase label. Each keeps its own border radius - only the
    fill, colour, type and padding are unified here. */
-#compose-storyboard-btn,
-#moodboard-next-btn,
+#moodboard-add-name-btn,
+#moodboard-add-url-btn,
 .suggest-arc-btn,
-.moodboard-back-btn,
-#back-to-setup-btn,
 #toggle-panels-btn,
 .storyboard-act-board-scene-visualize-highlights-btn,
 .storyboard-act-board-suggest-footage-btn,
@@ -13048,7 +13046,7 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
   box-shadow: none !important;
   opacity: 1;
 }
-#compose-storyboard-btn:hover, #moodboard-next-btn:hover, .suggest-arc-btn:hover, .moodboard-back-btn:hover, #back-to-setup-btn:hover,
+#moodboard-add-name-btn:hover, #moodboard-add-url-btn:hover, .suggest-arc-btn:hover,
 #toggle-panels-btn:hover, .storyboard-act-board-scene-visualize-highlights-btn:hover,
 .storyboard-act-board-suggest-footage-btn:hover, .storyboard-act-board-board-scene-smart-arrange:hover,
 .storyboard-act-board-board-scene-organize:hover, .storyboard-act-board-clear-board-btn:hover,
@@ -13057,8 +13055,9 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
 .generate-shot-video-btn:hover, .storyboard-act-board-generate-images-btn:hover,
 .storyboard-act-board-generate-video-btn:hover, .storyboard-act-board-image-generation-edit-techniques:hover {
   filter: brightness(.92);
+  color: #fff !important;
 }
-#compose-storyboard-btn:disabled, #moodboard-next-btn:disabled, .suggest-arc-btn:disabled,
+#moodboard-add-name-btn:disabled, #moodboard-add-url-btn:disabled, .suggest-arc-btn:disabled,
 .storyboard-act-board-scene-visualize-highlights-btn:disabled, .storyboard-act-board-suggest-footage-btn:disabled,
 .storyboard-act-board-board-scene-smart-arrange:disabled, .storyboard-act-board-board-scene-organize:disabled,
 .storyboard-act-board-find-footage-btn:disabled, .find-footage-btn:disabled, .generate-shot-examples-btn:disabled,
@@ -13078,4 +13077,30 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
    bordered pill wrapper must go with them or it lingers as an empty circle. */
 .storyboard-act-board-selected-scene-playback-panel.collapsed .storyboard-act-board-view-pill {
   display: none !important;
+}
+
+/* Next step and Back to are the page's primary navigation: the selected
+   narration-mode pill's accent fill and white type, their own radius kept. */
+#compose-storyboard-btn,
+#moodboard-next-btn,
+.moodboard-back-btn,
+#back-to-setup-btn {
+  padding: 2px 10px !important;
+  border: 0 !important;
+  background: var(--cd-accent-special) !important;
+  color: var(--cd-accent-text) !important;
+  font-size: 10px !important;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  line-height: 1.6;
+  box-shadow: none !important;
+  opacity: 1;
+}
+#compose-storyboard-btn:hover, #moodboard-next-btn:hover, .moodboard-back-btn:hover, #back-to-setup-btn:hover {
+  filter: brightness(.92);
+}
+#compose-storyboard-btn:disabled, #moodboard-next-btn:disabled {
+  opacity: .45;
+  filter: none;
 }
