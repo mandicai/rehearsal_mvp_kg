@@ -8734,7 +8734,7 @@ button:not(.clear-debug-session-btn):not(.narrative-arc-outline-item):not(.chip)
 #moodboard-next-row {
   position: fixed;
   bottom: 15px;
-  right: 20px;
+  right: 43%;
   z-index: 2000;
   text-align: right;
 }
