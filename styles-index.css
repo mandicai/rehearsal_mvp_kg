@@ -12883,3 +12883,15 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
   text-decoration-color: var(--cd-accent-special);
   text-underline-offset: 2px;
 }
+
+/* Reference thumbnail on the generation-inputs summary line, visible while the
+   panel is collapsed. */
+.storyboard-act-board-reference-summary-thumb {
+  width: 24px;
+  height: 16px;
+  margin: 0 8px 0 6px;
+  vertical-align: middle;
+  object-fit: cover;
+  border: 1px solid var(--cd-accent-special);
+  border-radius: 2px;
+}

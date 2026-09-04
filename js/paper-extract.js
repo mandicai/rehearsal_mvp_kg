@@ -7768,7 +7768,13 @@ function removeActBoardFootageNodesForDeletedPhrases(actKey, narrationNode, phra
   return removeIds.size;
 }
 
-function requestActBoardNarrationAnalysis(narrationNode) {
+// `force`: run even when the node believes its analysis is current. Editing
+// the transcript adopts the new hash so the automatic render-time pass stays
+// quiet, which also made the EXPLICIT pass - Visualize highlights - a no-op:
+// after any edit it found status 'ready' with a matching hash and returned
+// null, so no clauses were ever suggested again. An in-flight analysis for the
+// same text is still reused rather than restarted.
+function requestActBoardNarrationAnalysis(narrationNode, { force = false } = {}) {
   if (!narrationNode || narrationNode.type !== 'narration') return null;
   // Filmable-phrase detection is intentionally transcript-only. Suggested
   // drafts are reference copy, not spoken narration, so they must not create
@@ -7784,13 +7790,15 @@ function requestActBoardNarrationAnalysis(narrationNode) {
   if (actBoardNarrationAnalysisPromises.has(key)) {
     return actBoardNarrationAnalysisPromises.get(key);
   }
-  if (narrationNode.narrationSpanHash === hash
+  if (!force && narrationNode.narrationSpanHash === hash
     && ['extracting', 'classifying', 'ready', 'error'].includes(narrationNode.narrationSpanStatus)) return null;
   const previousController = actBoardNarrationAbortControllers.get(narrationNode.id);
   previousController?.abort?.();
   const controller = typeof AbortController === 'function' ? new AbortController() : null;
   actBoardNarrationAbortControllers.set(narrationNode.id, controller);
-  const persistentKey = `${hash}|${actBoardDocumentaryModeForNode(narrationNode.actKey, narrationNode)}`;
+  // The unit is part of the key: a phrase-era analysis of the same text must
+  // not be served as a clause analysis, or vice versa.
+  const persistentKey = `${hash}|${actBoardDocumentaryModeForNode(narrationNode.actKey, narrationNode)}|${ACT_BOARD_HIGHLIGHT_UNIT}`;
   const cachedAnalysis = readActBoardPersistentCache('narration', persistentKey);
   if (cachedAnalysis && Array.isArray(cachedAnalysis.spans)) {
     narrationNode.narrationSpanHash = hash;
@@ -10667,12 +10675,6 @@ const ACT_BOARD_NARRATION_CUT_SPACING = 2;
 // Generated video is capped by the model. When a clip's real duration is not
 // known yet, this is the assumption to plan against - stretching past it makes
 // the clip repeat rather than hold.
-// Playhead followers, keyed by timeline owner. Deliberately NOT a property on
-// the owner: a scene IS the timeline owner and a scene is persisted, so a Set
-// hung off it is serialized to {} and restored as a plain object - which then
-// throws the moment the clock tries to iterate it.
-const actBoardPlayheadFollowers = new WeakMap();
-
 const ACT_BOARD_GENERATED_VIDEO_MAX_SECONDS = 8;
 // A shot shorter than this is a flash, not a shot.
 const ACT_BOARD_MIN_SHOT_SECONDS = 0.5;
@@ -11697,16 +11699,44 @@ function createActBoardAudioTrackSegment(actKey, scene = null) {
 
 // Add/remove/refresh the reference row inside the open generation-inputs
 // panels, so pinning or clearing a reference is reflected immediately.
+// The reference's thumbnail on the inputs' summary line, so it is visible
+// while the panel is collapsed - the row inside is only seen once expanded.
+function applyActBoardReferenceSummaryThumb(summary, node) {
+  if (!summary) return;
+  const visual = actBoardReferenceVisual(node);
+  let thumb = summary.querySelector(':scope > .storyboard-act-board-reference-summary-thumb');
+  if (!visual) {
+    thumb?.remove();
+    return;
+  }
+  if (!thumb) {
+    thumb = document.createElement('img');
+    thumb.className = 'storyboard-act-board-reference-summary-thumb';
+    thumb.loading = 'lazy';
+    thumb.decoding = 'async';
+    // After the label text, before the action button the summary carries.
+    const button = summary.querySelector(':scope > button');
+    if (button) summary.insertBefore(thumb, button);
+    else summary.appendChild(thumb);
+  }
+  thumb.src = visual.thumbnailUrl || visual.url;
+  thumb.alt = visual.label ? `Reference: ${visual.label}` : 'Reference image';
+  thumb.title = thumb.alt;
+}
+
 function syncActBoardReferenceInputRows(node) {
   document.querySelectorAll('.storyboard-act-board-generation-inputs').forEach(panel => {
-    const isGenerationPanel = panel.classList
-      .contains('storyboard-act-board-image-generation-inputs');
+    // Both generation panels take the reference: images are edited from it,
+    // videos are seeded from it. The stock-search panel does not.
+    const isGenerationPanel = panel.classList.contains('storyboard-act-board-image-generation-inputs')
+      || panel.classList.contains('storyboard-act-board-video-generation-inputs');
     panel.querySelectorAll(':scope > .storyboard-act-board-reference-input-row')
       .forEach(row => row.remove());
     if (!isGenerationPanel) return;
+    const summary = panel.querySelector(':scope > summary');
+    applyActBoardReferenceSummaryThumb(summary, node);
     const row = buildActBoardReferenceInputRow(node);
     if (!row) return;
-    const summary = panel.querySelector(':scope > summary');
     if (summary?.nextSibling) panel.insertBefore(row, summary.nextSibling);
     else panel.appendChild(row);
   });
@@ -15375,13 +15405,6 @@ function registerActBoardScenePlayheadTrack(timelineOwner, track, {
       item.narrationVisual?.(safe);
       item.footageVisual?.(safe);
       item.audioVisual?.(safe);
-    });
-    // Anything else that wants to track the playhead - currently the narration
-    // slides, which scroll so the words on screen are the words being heard.
-    // Registered separately from the rails because it is not a rail and must
-    // survive their mount/unmount bookkeeping.
-    actBoardPlayheadFollowers.get(timelineOwner)?.forEach(follow => {
-      try { follow(safe); } catch (err) { /* a follower must never break the clock */ }
     });
   };
   timelineOwner._actBoardToggleNarrationPlayback = () => {
@@ -19317,7 +19340,11 @@ function rerenderActBoard(options = {}) {
   // any active scene transport across that rebuild so an async image/video
   // request cannot pause narration, music, or sound effects. Other callers
   // retain the historical stop-and-reset behavior by omitting this option.
-  const activePlayback = options.preservePlayback ? actBoardPlaybackState : null;
+  const activePlayback = options.preservePlayback
+    ? (actBoardPlaybackState
+      || document.querySelector('.storyboard-act-board-selected-scene-playback-panel .storyboard-act-board-playback')
+        ?._actBoardPlaybackState || null)
+    : null;
   const playbackResume = activePlayback && (activePlayback.playing
     || Number(activePlayback.clockTime) > 0)
     ? {
@@ -23733,6 +23760,7 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
     const imageInputsSummary = document.createElement('summary');
     imageInputsSummary.textContent = 'Image generation inputs';
     imageInputsSummary.appendChild(generateExamplesBtn);
+    applyActBoardReferenceSummaryThumb(imageInputsSummary, node);
     imageInputsPanel.appendChild(imageInputsSummary);
     const imageReferenceRow = buildActBoardReferenceInputRow(node);
     if (imageReferenceRow) imageInputsPanel.appendChild(imageReferenceRow);
@@ -23827,6 +23855,7 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
     const videoInputsSummary = document.createElement('summary');
     videoInputsSummary.textContent = 'Video generation inputs';
     videoInputsSummary.appendChild(generateVideoBtn);
+    applyActBoardReferenceSummaryThumb(videoInputsSummary, node);
     videoInputsPanel.appendChild(videoInputsSummary);
     const videoReferenceRow = buildActBoardReferenceInputRow(node);
     if (videoReferenceRow) videoInputsPanel.appendChild(videoReferenceRow);
@@ -24716,6 +24745,10 @@ function buildActBoardFullPlaybackPanel(board, exportActionGroup = null) {
     scenePlaybackViewButton.setAttribute('aria-pressed', String(!showingFull));
     fullPlaybackViewButton.setAttribute('aria-pressed', String(showingFull));
   };
+  selectedScenePlayback._actBoardSetView = setSelectedPlaybackView;
+  // A rebuilt panel starts on Scene play; put it back on the view the
+  // presenter had chosen so a patch or rerender does not flip Full play off.
+  setSelectedPlaybackView(actBoardSelectedPlaybackView);
   scenePlaybackViewButton.addEventListener('click', event => {
     event.preventDefault();
     event.stopPropagation();
@@ -24893,7 +24926,26 @@ function buildActBoardFullPlaybackPanel(board, exportActionGroup = null) {
       || String(activeScenePlaybackId || '') !== currentSceneId) return false;
     const scene = actBoardScenesForAct(currentActKey).find(item => item.id === currentSceneId);
     if (!scene) return false;
+    // Rebuilding the transport stops it and starts a fresh one on Scene play.
+    // Capture the clock, the play state and the Scene/Full choice first, and
+    // put them back after the rebuild, so a segment dropped on the rail
+    // updates playback without throwing away where the presenter was.
+    const previous = selectedScenePlaybackMount
+      .querySelector('.storyboard-act-board-playback')?._actBoardPlaybackState || null;
+    const resume = previous && (previous.playing || Number(previous.clockTime) > 0)
+      ? { time: Math.max(0, Number(previous.clockTime) || 0), playing: previous.playing === true }
+      : null;
+    const view = actBoardSelectedPlaybackView;
     mountSelectedScenePlayback(currentActKey, { sceneId: currentSceneId }, { force: true });
+    setSelectedPlaybackView(view);
+    if (resume) {
+      const next = selectedScenePlaybackMount
+        .querySelector('.storyboard-act-board-playback')?._actBoardPlaybackState;
+      if (next) {
+        next.seekPlaybackProgress?.(resume.time);
+        if (resume.playing && !next.playing) next.playButton?.click();
+      }
+    }
     selectedScenePlayback.classList.toggle(
       'collapsed', actBoardSelectedScenePlaybackPanelCollapsed,
     );
@@ -25458,7 +25510,7 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
         // newly classified spans are mounted as a second incremental batch;
         // they never hold up cards that were already highlighted.
         const analyses = targets.map(target =>
-          requestActBoardNarrationAnalysis(target)
+          requestActBoardNarrationAnalysis(target, { force: true })
             || actBoardNarrationAnalysisPromises.get(
               `${target.id}:${actBoardNarrationTextHash(actBoardNarrationSourceText(target))}`,
             )).filter(Boolean);
@@ -25629,7 +25681,7 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
   // place rather than being duplicated per entry point. Selection is applied
   // in place (classes plus each bar's own refresh); rerendering the board here
   // would throw away the transcript caret and cost ~35x as much.
-  const selectNarrationSegment = node => {
+  const selectNarrationSegment = (node, { scroll = true } = {}) => {
     if (!node?.id) return;
     actBoardSelectedNarrationSegmentByScene.set(sceneNarrationSelectionKey, node.id);
     sceneRecordButton._actBoardRefresh?.();
@@ -25646,8 +25698,29 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
     const selectedSlide = narrationSlides.querySelector(
       `.storyboard-act-board-scene-narration-slide[data-narration-node-id="${String(node.id).replace(/"/g, '\\"')}"]`,
     );
-    if (selectedSlide) scrollNarrationSlideIntoView(selectedSlide);
+    if (scroll && selectedSlide) scrollNarrationSlideIntoView(selectedSlide);
   };
+  // Scrolling the slides - wheel, trackpad or the arrow buttons - selects the
+  // slide that has come into view, so its control bar is always the one on
+  // screen rather than staying on a slide that has scrolled away. Selection
+  // here must not scroll back, or it would fight the gesture that caused it.
+  let narrationScrollSelectTimer = null;
+  narrationViewport.addEventListener('scroll', () => {
+    clearTimeout(narrationScrollSelectTimer);
+    narrationScrollSelectTimer = setTimeout(() => {
+      const viewportLeft = narrationViewport.getBoundingClientRect().left
+        + ACT_BOARD_NARRATION_SCROLL_GUTTER_PX;
+      let best = null;
+      let bestDistance = Infinity;
+      narrationSlides.querySelectorAll('.storyboard-act-board-scene-narration-slide').forEach(slide => {
+        const distance = Math.abs(slide.getBoundingClientRect().left - viewportLeft);
+        if (distance < bestDistance) { bestDistance = distance; best = slide; }
+      });
+      if (!best || best.classList.contains('selected')) return;
+      const entry = entriesForDisplay.find(item => String(item.id) === best.dataset.narrationNodeId);
+      if (entry) selectNarrationSegment(entry, { scroll: false });
+    }, 140);
+  }, { passive: true });
   const entriesForDisplay = narrationEntries.length ? narrationEntries : [primaryNarration].filter(Boolean);
   entriesForDisplay.forEach((entry, index) => {
     const slide = document.createElement('article');
@@ -25761,67 +25834,6 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
   );
   narrationSection.appendChild(narrationScroller);
 
-  // Follow the playhead: whichever segment is being heard is the one on
-  // screen. Registered against the scene's timeline owner so it is driven by
-  // the same clock as the rails - a scrub, a tick during Scene play, and a
-  // stop all arrive here identically.
-  if (timelineOwner && entriesForDisplay.length) {
-    let followers = actBoardPlayheadFollowers.get(timelineOwner);
-    if (!followers) {
-      followers = new Set();
-      actBoardPlayheadFollowers.set(timelineOwner, followers);
-    }
-    // A previously persisted session can carry the old serialized property.
-    delete timelineOwner._actBoardPlayheadFollowers;
-    // A rerender builds a new viewport; drop followers whose slides are gone
-    // rather than letting a detached scene keep a live reference.
-    followers.forEach(existing => {
-      if (existing._actBoardNarrationSlides
-        && !existing._actBoardNarrationSlides.isConnected) followers.delete(existing);
-    });
-    let lastFollowedId = null;
-    const follow = seconds => {
-      if (!narrationSlides.isConnected) {
-        // A follower is registered while its section is still being built, and
-        // the clock is set to 0 during teardown - so "detached" only means
-        // stale once these slides have actually been mounted. Same rule the
-        // rail registry uses above; without it the follower deleted itself on
-        // the very first tick and never scrolled anything.
-        if (follow._actBoardMounted) followers.delete(follow);
-        return;
-      }
-      follow._actBoardMounted = true;
-      const now = Math.max(0, Number(seconds) || 0);
-      // Mirror the narration rail's layout rule, not the raw data. Every new
-      // segment is created at startSeconds 0 and stays there until Smart
-      // arrange packs it, so several segments at 0 is the normal state. The
-      // rail draws those back-to-back - a segment's visual start is
-      // max(startSeconds, end of the previous one) in entry order - and the
-      // slide on screen must be the segment the rail shows under the playhead.
-      const lengthOf = entry => Math.max(0.5, actBoardNarrationSegmentDuration(entry)
-        || estimateActBoardNarrationSeconds(entry.transcript || entry.text));
-      let cursor = 0;
-      const packed = entriesForDisplay.map(entry => {
-        const start = Math.max(cursor, Math.max(0, Number(entry.startSeconds) || 0));
-        const length = lengthOf(entry);
-        cursor = start + length;
-        return { entry, start, end: start + length };
-      });
-      // Past the end, hold on the last segment instead of snapping to the top.
-      let target = (packed.find(item => now >= item.start && now < item.end)
-        || packed.filter(item => now >= item.end).pop()
-        || packed[0])?.entry || null;
-      if (!target?.id || String(target.id) === lastFollowedId) return;
-      // Only move when the segment actually changes. Scrolling on every tick
-      // would fight the presenter's own scrolling and restart the smooth
-      // animation dozens of times a second.
-      lastFollowedId = String(target.id);
-      const slide = narrationSlideFor(target.id);
-      if (slide) scrollNarrationSlideIntoView(slide);
-    };
-    follow._actBoardNarrationSlides = narrationSlides;
-    followers.add(follow);
-  }
 
   const narrationTrack = narrationEntries.length
     ? buildActBoardPlaybackAudioTrack({
