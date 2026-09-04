@@ -1209,18 +1209,24 @@ def run_highlight_stress(page, calls: list[dict[str, Any]]) -> None:
         print(f"STRESS_ERRORS {metrics['errors']}")
     media_search_count = len([item for item in calls if item["path"].endswith("/media/search_video")])
     image_generation_count = len([item for item in calls if item["path"].endswith("/paper/generate_shot_examples")])
-    check(metrics["footageNodes"] == 5,
-          f"Visualization created {metrics['footageNodes']} footage nodes instead of five.")
+    auto_images = bool(page.evaluate("() => ACT_BOARD_AUTO_GENERATE_FOOTAGE_IMAGES"))
+    # In clause mode every beat spawns ACT_BOARD_CLAUSE_ALTERNATES_MAX shots
+    # (the classifier's queries, topped up with deterministic variants), so the
+    # five mocked beats produce 5 x that many cards, searches and image jobs.
+    shots_per_beat = int(page.evaluate(
+        "() => ACT_BOARD_HIGHLIGHT_UNIT === 'clause' ? ACT_BOARD_CLAUSE_ALTERNATES_MAX : 1"))
+    expected_nodes = 5 * shots_per_beat
+    expected_image_jobs = expected_nodes if auto_images else 0
+    check(metrics["footageNodes"] == expected_nodes,
+          f"Visualization created {metrics['footageNodes']} footage nodes instead of {expected_nodes}.")
     # Automatic image generation is behind ACT_BOARD_AUTO_GENERATE_FOOTAGE_IMAGES
     # (off while credits are being protected). Expect exactly what the flag
     # says, so the simulation is truthful in either state rather than asserting
     # spend that was deliberately switched off.
-    auto_images = bool(page.evaluate("() => ACT_BOARD_AUTO_GENERATE_FOOTAGE_IMAGES"))
-    expected_image_jobs = 5 if auto_images else 0
     check(len(set(metrics["footageNodeIds"])) == metrics["footageNodes"],
           "Visualization mounted duplicate footage node cards.")
-    check(media_search_count == 5,
-          f"Visualization issued {media_search_count} stock searches instead of five.")
+    check(media_search_count == expected_nodes,
+          f"Visualization issued {media_search_count} stock searches instead of {expected_nodes}.")
     check(image_generation_count == expected_image_jobs,
           f"Visualization issued {image_generation_count} image jobs instead of {expected_image_jobs}"
           f" (auto-generation flag {'on' if auto_images else 'off'}).")
