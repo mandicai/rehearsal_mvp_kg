@@ -10486,7 +10486,17 @@ async function smartArrangeActBoardScene(scene, nodes, nodeStack, signal = null)
   };
   syncActBoardLiveSceneSnapshots(scene);
   saveDebugSession();
-  rerenderActBoard();
+  // A scene patch, not a full-board rebuild: the arrange only changed this
+  // scene's timing and membership, and the patch already rebuilds its rails
+  // and (via the panel hook) the Scene play transport. The full rerender was
+  // most of the stutter the rapid-Visualize stress simulation measured now
+  // that Visualize arranges automatically. queueActBoardScenePatch falls back
+  // to the full rerender itself when the incremental path is unavailable.
+  queueActBoardScenePatch(scene.actKey, scene.id, { persist: true });
+  const panelNodeId = actBoardFullPlaybackPanel?.dataset?.selectedNodeId;
+  const panelNode = panelNodeId && actBoardSceneNodes(scene, actBoardNodesForAct(scene.actKey))
+    .find(node => node.id === panelNodeId);
+  if (panelNode) refreshActBoardNodeContentPanel(scene.actKey, panelNode);
   return true;
 }
 
@@ -10903,22 +10913,29 @@ function wireActBoardTrackSegmentDrag({
       segment.removeEventListener('pointerup', finish);
       segment.removeEventListener('pointercancel', cancel);
     };
+    // Where a segment sits in the rail's layout, underneath any preview
+    // shift. A shift is a transitioned transform, so clearing it and measuring
+    // in the same frame reports a mid-animation rect: the segment appears far
+    // from its slot, the pointer lands on the wrong side of its midpoint, and
+    // a drop back across it computes the segment's own index (no reorder).
+    const layoutRect = element => {
+      const bounds = element.getBoundingClientRect();
+      const transform = getComputedStyle(element).transform;
+      const shift = transform && transform !== 'none' ? new DOMMatrixReadOnly(transform).e : 0;
+      return { left: bounds.left - shift, right: bounds.right - shift, width: bounds.width };
+    };
     const updateInsertionPreview = clientX => {
       const others = entries.filter(item => item !== entry);
-      // Measure the unshifted rail on every pointer frame. Otherwise a
-      // previous preview transform would move the midpoint used for the next
-      // insertion calculation and make the marker feel sticky/jittery.
-      transforms.forEach(item => item.segment.style.removeProperty('transform'));
       transforms = [];
       insertionIndex = 0;
       for (const item of others) {
-        const itemRect = item.segment.getBoundingClientRect();
+        const itemRect = layoutRect(item.segment);
         if (clientX > itemRect.left + itemRect.width / 2) insertionIndex += 1;
       }
       const fromIndex = entries.indexOf(entry);
       const markerX = insertionIndex >= others.length
-        ? (others.length ? others[others.length - 1].segment.getBoundingClientRect().right : rect.left)
-        : others[insertionIndex].segment.getBoundingClientRect().left;
+        ? (others.length ? layoutRect(others[others.length - 1].segment).right : rect.left)
+        : layoutRect(others[insertionIndex].segment).left;
       marker.style.left = `${Math.max(0, markerX - rect.left - 2)}px`;
       marker.style.height = `${Math.max(18, segmentRect.height)}px`;
       marker.hidden = false;
@@ -10932,6 +10949,8 @@ function wireActBoardTrackSegmentDrag({
           const amount = shouldShiftLeft ? -delta : delta;
           item.segment.style.transform = `translateX(${amount}px)`;
           transforms.push({ segment: item.segment });
+        } else {
+          item.segment.style.removeProperty('transform');
         }
       });
     };
