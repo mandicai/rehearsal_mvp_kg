@@ -12986,9 +12986,16 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
   border-right-color: transparent;
   animation: storyboard-act-board-record-status-spin .8s linear infinite;
 }
+/* While recording, the same red as the record button itself, pulsing with it. */
 .storyboard-act-board-record-status.is-recording {
-  background: var(--cd-accent-special);
-  color: var(--cd-accent-text);
+  border-color: #c62828;
+  background: #c62828;
+  color: #fff;
+  box-shadow: 0 0 0 2px rgba(198, 40, 40, .18);
+  animation: storyboard-act-board-record-pulse 1.05s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .storyboard-act-board-record-status.is-recording { animation: none; }
 }
 .storyboard-act-board-record-status.is-error {
   border-color: #b3261e;
@@ -13030,8 +13037,9 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
 .storyboard-act-board-image-generation-edit-techniques {
   padding: 2px 10px !important;
   border: 0 !important;
-  background: var(--cd-accent-special) !important;
-  color: var(--cd-accent-text) !important;
+  /* The slide bar's upload/download grey, with the pill's small uppercase type. */
+  background: #e4e4e4 !important;
+  color: #6a6a6a !important;
   font-size: 10px !important;
   font-weight: 600;
   text-transform: uppercase;
@@ -13063,5 +13071,11 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
 /* The status pill has its own display rule, which would otherwise beat the
    browser's [hidden] and leave an empty pill on screen while idle. */
 .storyboard-act-board-record-status[hidden] {
+  display: none !important;
+}
+
+/* Collapsed playback panel: the view pill's buttons are hidden, and the
+   bordered pill wrapper must go with them or it lingers as an empty circle. */
+.storyboard-act-board-selected-scene-playback-panel.collapsed .storyboard-act-board-view-pill {
   display: none !important;
 }

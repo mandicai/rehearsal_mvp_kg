@@ -251,10 +251,10 @@ const ACT_BOARD_IMAGE_SAMPLE_COUNT = 1;
 // separate from the manual Generate image button, which remains one image.
 const ACT_BOARD_SUGGESTED_FOOTAGE_IMAGE_SAMPLE_COUNT = 2;
 // Automatic AI image generation for footage nodes: the two samples requested
-// right after a card's stock search, and the one for a merged node. Off while
-// debugging so credits are not spent on every card that appears; a node's own
-// Generate button is unaffected. Set to true to restore the old behaviour.
-const ACT_BOARD_AUTO_GENERATE_FOOTAGE_IMAGES = false;
+// right after a card's stock search, and the one for a merged node. Set to
+// false to stop spending credits on every card that appears (a node's own
+// Generate button keeps working either way).
+const ACT_BOARD_AUTO_GENERATE_FOOTAGE_IMAGES = true;
 // What a suggested highlight is: 'phrase' (words / noun phrases, the original
 // model) or 'clause' (a whole spoken clause, each spawning several footage
 // nodes with different footage illustrating it). Flip back to 'phrase' to
@@ -263,9 +263,44 @@ const ACT_BOARD_HIGHLIGHT_UNIT = 'clause';
 // Footage nodes spawned per clause. All go on the rail, interspersed across
 // the clause's spoken window in order.
 const ACT_BOARD_CLAUSE_ALTERNATES_MAX = 3;
-// Used to top a clause up to that count when the classifier returned fewer
-// distinct queries: different scale/angle on the same subject.
+// Last-resort top-up when a clause has no distinct subjects to search for.
 const ACT_BOARD_CLAUSE_QUERY_VARIANTS = ['wide establishing shot', 'close-up detail'];
+const ACT_BOARD_QUERY_STOPWORDS = new Set(('a an and the of to in on at for from by with as but or nor so yet while '
+  + 'that this these those it its they them their there here is are was were be been being have has had do does did '
+  + 'not no into onto over under across after before during between through about against every each some any all '
+  + 'more most many much such very than then when where which who whom whose why how we our us you your he she his '
+  + 'her him i me my can could may might must shall should will would also just only even still').split(/\s+/));
+
+// Distinct subjects inside a clause, for one stock search each: adjacent
+// content-word pairs first ("tidal wetlands", "storm surge", "coastal change"),
+// then single content words as a fallback. No tagger is available locally,
+// so this is a stopword heuristic - good enough to give each of a clause's
+// shots its own subject rather than the same query with a suffix.
+function actBoardClauseSubjectQueries(text) {
+  const tokens = String(text || '').toLocaleLowerCase().replace(/[^a-z0-9\s'-]/g, ' ').split(/\s+/).filter(Boolean);
+  const content = tokens.map(token => !ACT_BOARD_QUERY_STOPWORDS.has(token) && token.length > 2);
+  const pairs = [];
+  const singles = [];
+  tokens.forEach((token, index) => {
+    if (!content[index]) return;
+    if (content[index + 1]) pairs.push(`${token} ${tokens[index + 1]}`);
+    else if (!content[index - 1]) singles.push(token);
+  });
+  // Pairs whose words look like nouns ("tidal wetlands") before pairs that
+  // straddle a verb ("wetlands shifted"), and never two subjects sharing a
+  // word, so a clause's shots search for genuinely different things.
+  const verbish = word => /(ed|ing)$/.test(word);
+  const ranked = [...pairs.filter(pair => !pair.split(' ').some(verbish)),
+    ...pairs.filter(pair => pair.split(' ').some(verbish)),
+    ...singles.filter(word => word.length > 3 && !verbish(word))];
+  const used = new Set();
+  return ranked.filter(query => {
+    const words = query.split(' ');
+    if (words.some(word => used.has(word))) return false;
+    words.forEach(word => used.add(word));
+    return true;
+  });
+}
 const ACT_BOARD_VIDEO_TECHNIQUE_CATEGORIES = new Set(['movement']);
 const ACT_BOARD_DEFAULT_VIDEO_TECHNIQUES = ['Pan'];
 // Linking is temporarily disabled in the Act Board UI while narration-driven
@@ -20097,6 +20132,13 @@ async function suggestActBoardSelectedFootage(
     // is available because it comes first.
     const isClause = phrase.kind === 'clause' || ACT_BOARD_HIGHLIGHT_UNIT === 'clause';
     if (isClause) {
+      // Each shot searches for a different subject from the clause, the way
+      // phrase-level highlights each searched for their own phrase. Only when
+      // the clause yields no further subjects do the scale/angle suffixes on
+      // the primary query fill the remaining slots.
+      actBoardClauseSubjectQueries(phrase.text).forEach(subject => {
+        if (queries.length < ACT_BOARD_CLAUSE_ALTERNATES_MAX) pushQuery(subject);
+      });
       const primary = queries[0] || normalizeActBoardFootagePhrase(phrase.text);
       ACT_BOARD_CLAUSE_QUERY_VARIANTS.forEach(suffix => {
         if (queries.length < ACT_BOARD_CLAUSE_ALTERNATES_MAX) pushQuery(`${primary} ${suffix}`);
