@@ -12526,30 +12526,6 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
   background: rgba(255, 255, 255, .6);
 }
 
-/* Entity edge grips. A marked entity is a run of word spans, so the grip is
-   what gives that run a draggable border. */
-.storyboard-act-board-entity-edge { position: relative; }
-.storyboard-act-board-entity-grip {
-  position: absolute;
-  z-index: 2;
-  top: -2px;
-  bottom: -2px;
-  width: 6px;
-  border-radius: 2px;
-  background: var(--cd-accent-special);
-  opacity: 0;
-  cursor: ew-resize;
-  transition: opacity .12s ease;
-}
-.storyboard-act-board-entity-grip-start { left: -4px; }
-.storyboard-act-board-entity-grip-end { right: -4px; }
-.storyboard-act-board-entity-edge:hover > .storyboard-act-board-entity-grip,
-.storyboard-act-board-entity-grip:hover { opacity: .85; }
-.storyboard-act-board-entity-resizing {
-  background: rgba(199, 107, 74, .28) !important;
-  border-radius: 2px;
-}
-
 /* --- Motion -------------------------------------------------------------
    Collapsing a panel and spawning a node were instant state swaps, which
    reads as the layout jumping rather than changing. These transitions are
@@ -12640,10 +12616,6 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
   color: var(--cd-accent-text) !important;
 }
 
-/* In edit mode the grips are hidden and inert; the caret is the only gesture. */
-[data-narration-mode="edit"] .storyboard-act-board-entity-grip {
-  display: none;
-}
 [data-narration-mode="highlight"] {
   cursor: pointer;
 }
@@ -12889,4 +12861,25 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
    upright so it reads as UI rather than as something someone said. */
 .storyboard-act-board-scene-recorded-narration.is-empty {
   font-style: normal;
+}
+
+/* Playback caption: the narration being heard, under the picture. */
+.storyboard-act-board-playback-caption {
+  display: block;
+  margin-top: 6px;
+  color: var(--cd-text);
+  font: 12px/1.45 var(--cd-font-body);
+  opacity: .8;
+}
+.storyboard-act-board-playback-caption.is-narration {
+  font: italic 14px/1.45 'Playfair Display', Georgia, serif;
+  opacity: 1;
+}
+.storyboard-act-board-playback-caption.is-narration::before { content: '\201C'; }
+.storyboard-act-board-playback-caption.is-narration::after { content: '\201D'; }
+.storyboard-act-board-playback-caption .is-current {
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-color: var(--cd-accent-special);
+  text-underline-offset: 2px;
 }

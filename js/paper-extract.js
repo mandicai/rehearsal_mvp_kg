@@ -250,6 +250,11 @@ const ACT_BOARD_IMAGE_SAMPLE_COUNT = 1;
 // compare visual directions without waiting for a large batch. This is
 // separate from the manual Generate image button, which remains one image.
 const ACT_BOARD_SUGGESTED_FOOTAGE_IMAGE_SAMPLE_COUNT = 2;
+// Automatic AI image generation for footage nodes: the two samples requested
+// right after a card's stock search, and the one for a merged node. Off while
+// debugging so credits are not spent on every card that appears; a node's own
+// Generate button is unaffected. Set to true to restore the old behaviour.
+const ACT_BOARD_AUTO_GENERATE_FOOTAGE_IMAGES = false;
 const ACT_BOARD_VIDEO_TECHNIQUE_CATEGORIES = new Set(['movement']);
 const ACT_BOARD_DEFAULT_VIDEO_TECHNIQUES = ['Pan'];
 // Linking is temporarily disabled in the Act Board UI while narration-driven
@@ -8501,7 +8506,7 @@ function unwrapActBoardNarrationSpanInDom(narrationNode, textKey) {
       if (actBoardNarrationSpanTextKey(span.dataset.narrationFragment || '') !== textKey) return;
       // The controls belong to the entity, not to the words underneath it.
       span.querySelectorAll(
-        '.storyboard-act-board-narration-span-remove, .storyboard-act-board-entity-grip',
+        '.storyboard-act-board-narration-span-remove',
       ).forEach(control => control.remove());
       const parent = span.parentNode;
       if (!parent) return;
@@ -8566,132 +8571,6 @@ const ACT_BOARD_ENTITY_CLASSES = [
   'storyboard-act-board-narration-phrase-has-footage',
 ];
 
-// A marked entity has two possible renderings: a classifier phrase is one
-// `[data-narration-fragment]` span, while an ad-hoc selection is a class on each
-// word. Collect both as runs so a grip can be attached either way.
-function actBoardEntityRuns(root) {
-  const runs = [];
-  const isMarked = el => ACT_BOARD_ENTITY_CLASSES.some(cls => el.classList.contains(cls));
-  root.querySelectorAll('[data-narration-fragment]').forEach(span => {
-    if (!isMarked(span)) return;
-    runs.push({
-      host: span,
-      words: Array.from(span.querySelectorAll('[data-narration-source-start]')),
-      fragment: span.dataset.narrationFragment || span.textContent || '',
-    });
-  });
-  let current = null;
-  Array.from(root.querySelectorAll('[data-narration-source-start]')).forEach(word => {
-    // Words inside a phrase span are already covered by that span's run.
-    if (word.closest('[data-narration-fragment]') || !isMarked(word)) {
-      current = null;
-      return;
-    }
-    if (current) current.words.push(word);
-    else {
-      current = { host: null, words: [word], fragment: '' };
-      runs.push(current);
-    }
-  });
-  return runs;
-}
-
-function attachActBoardEntityResizeHandles(root, narrationNode, onResize) {
-  if (!root || !narrationNode || typeof onResize !== 'function') return;
-  root.querySelectorAll('.storyboard-act-board-entity-grip').forEach(grip => grip.remove());
-  const source = String(narrationNode.transcript || narrationNode.text || '');
-  const words = Array.from(root.querySelectorAll('[data-narration-source-start]'));
-  if (!words.length) return;
-
-  actBoardEntityRuns(root).forEach(run => {
-    const first = run.words[0];
-    const last = run.words[run.words.length - 1];
-    // A phrase span whose words were not individually wrapped still has a
-    // findable position in the source text.
-    const fallbackStart = run.fragment
-      ? source.toLocaleLowerCase().indexOf(run.fragment.trim().toLocaleLowerCase()) : -1;
-    const runStart = first ? Number(first.dataset.narrationSourceStart) : fallbackStart;
-    const runEnd = last ? Number(last.dataset.narrationSourceEnd)
-      : (fallbackStart >= 0 ? fallbackStart + run.fragment.trim().length : -1);
-    if (!Number.isFinite(runStart) || !Number.isFinite(runEnd)
-      || runStart < 0 || runEnd <= runStart) return;
-
-    // Grips go on the run's own element when it has one, otherwise on its
-    // first and last word.
-    [['start', run.host || first], ['end', run.host || last]].forEach(([edge, host]) => {
-      if (!host) return;
-      const grip = document.createElement('span');
-      grip.className = `storyboard-act-board-entity-grip storyboard-act-board-entity-grip-${edge}`;
-      // Inside a contenteditable transcript the grip must not be typed into or
-      // swallowed by the caret.
-      grip.contentEditable = 'false';
-      grip.title = 'Drag to extend this entity across more words';
-      grip.setAttribute('aria-label', grip.title);
-      grip.addEventListener('pointerdown', event => {
-        if (actBoardNarrationSlideEditing()) return;
-        event.preventDefault();
-        event.stopPropagation();
-        let nextStart = runStart;
-        let nextEnd = runEnd;
-        const preview = word => {
-          words.forEach(item => {
-            const ws = Number(item.dataset.narrationSourceStart);
-            const we = Number(item.dataset.narrationSourceEnd);
-            item.classList.toggle('storyboard-act-board-entity-resizing',
-              we > nextStart && ws < nextEnd);
-          });
-        };
-        // Find the word by geometry rather than by hit-testing: the narration
-        // slide sits under its own scroller/overlay, so elementFromPoint at a
-        // word returns that container instead of the word.
-        const wordAt = (x, y) => {
-          let best = null;
-          let bestDistance = Infinity;
-          words.forEach(item => {
-            const rect = item.getBoundingClientRect();
-            if (!rect.width || !rect.height) return;
-            const dy = y < rect.top ? rect.top - y : (y > rect.bottom ? y - rect.bottom : 0);
-            const dx = x < rect.left ? rect.left - x : (x > rect.right ? x - rect.right : 0);
-            // Weight the vertical gap heavily so a word on the pointer's own
-            // line always beats a horizontally closer word on another line.
-            const distance = dy * 1000 + dx;
-            if (distance < bestDistance) {
-              bestDistance = distance;
-              best = item;
-            }
-          });
-          return best;
-        };
-        const move = moveEvent => {
-          const target = wordAt(moveEvent.clientX, moveEvent.clientY);
-          if (!target || !root.contains(target)) return;
-          const ts = Number(target.dataset.narrationSourceStart);
-          const te = Number(target.dataset.narrationSourceEnd);
-          if (!Number.isFinite(ts) || !Number.isFinite(te)) return;
-          // Dragging the left grip past the right edge (or vice versa) would
-          // invert the range; clamp so a run is always at least one word.
-          if (edge === 'start') nextStart = Math.min(ts, runEnd - 1);
-          else nextEnd = Math.max(te, runStart + 1);
-          preview();
-        };
-        const finish = () => {
-          document.removeEventListener('pointermove', move);
-          document.removeEventListener('pointerup', finish);
-          words.forEach(item => item.classList.remove('storyboard-act-board-entity-resizing'));
-          if (nextStart === runStart && nextEnd === runEnd) return;
-          onResize({
-            previous: { start: runStart, end: runEnd, text: source.slice(runStart, runEnd) },
-            next: { start: nextStart, end: nextEnd, text: source.slice(nextStart, nextEnd) },
-          });
-        };
-        document.addEventListener('pointermove', move);
-        document.addEventListener('pointerup', finish, { once: true });
-      });
-      host.classList.add('storyboard-act-board-entity-edge');
-      host.appendChild(grip);
-    });
-  });
-}
 
 // Make a rendered transcript directly editable in place.
 //
@@ -8722,7 +8601,7 @@ function enableActBoardInlineTranscriptEditing(element, actKey, node) {
   const readText = () => {
     const clone = element.cloneNode(true);
     clone.querySelectorAll(
-      '.storyboard-act-board-narration-span-remove, .storyboard-act-board-entity-grip',
+      '.storyboard-act-board-narration-span-remove',
     ).forEach(control => control.remove());
     return clone.textContent.replace(/\s+/g, ' ').trim();
   };
@@ -8732,19 +8611,15 @@ function enableActBoardInlineTranscriptEditing(element, actKey, node) {
     const next = readText();
     if (!next || next === original.replace(/\s+/g, ' ').trim()) return;
     committing = true;
-    // The offsets behind every highlight point into the text being replaced.
-    // Ask rather than decide: dropping them silently loses the presenter's
-    // phrase selections, keeping them silently leaves them on the wrong words.
-    const hasHighlights = (node.narrationSpans || []).some(span =>
-      span && span.bucket !== 'ignore');
-    const reanalyze = !hasHighlights || window.confirm(
-      'Re-analyze highlights from the corrected transcript?\n\n'
-      + 'OK: find filmable phrases again in the new wording.\n'
-      + 'Cancel: keep the current highlights (their positions may no longer match).\n\n'
-      + 'Footage you have already chosen is kept either way.');
-    if (commitActBoardTranscriptEdit(node, next, reanalyze)) {
+    // A correction is a correction, not a request for new highlights. The
+    // existing phrases are re-anchored to where their wording now sits (and
+    // dropped if the wording is gone); nothing is analysed, so no filmable
+    // phrases appear that the presenter did not ask for. Visualize highlights
+    // remains the one explicit trigger for the classifier. Previously an edit
+    // with no highlights yet re-analysed automatically, which painted
+    // suggestions into the transcript the moment Enter was pressed.
+    if (commitActBoardTranscriptEdit(node, next, false)) {
       original = next;
-      if (reanalyze) requestActBoardNarrationAnalysis(node);
       rerenderActBoard({ preservePlayback: true });
     }
     committing = false;
@@ -10145,6 +10020,52 @@ function planActBoardAudioCuts(placedNodes, mediaFor) {
   return cuts;
 }
 
+// Run Smart arrange with its veil, abort handling and floor. Shared by the
+// scene's Smart arrange button and by Visualize highlights, which arranges
+// automatically once its cards are mounted so a presenter does not have to
+// press two buttons to get footage onto the rail in the right places.
+// `shownAt`: when chained behind another veil (Visualize highlights), reuse
+// that veil's start so the readable-floor is shared rather than served twice.
+function runActBoardSmartArrange(scene, liveNodes, nodeStack, { shownAt = null } = {}) {
+  if (!scene || !nodeStack) return Promise.resolve(false);
+  const actKey = scene.actKey;
+  const sceneId = scene.id;
+  // A second run supersedes the first. Same identity-checked cleanup as the
+  // narration analysis, so the older run cannot clear the veil or write a
+  // partial arrangement after the newer one has started.
+  actBoardArrangeAbortControllers.get(sceneId)?.abort?.();
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  actBoardArrangeAbortControllers.set(sceneId, controller);
+  const floorStart = Number(shownAt) || Date.now();
+  const loadingKey = `${actKey}:${sceneId}`;
+  actBoardSceneArrangeKeys.add(loadingKey);
+  setActBoardSceneLoading(actKey, sceneId, true, 'Syncing footage to the narration…');
+  return smartArrangeActBoardScene(scene, liveNodes, nodeStack, controller?.signal)
+    .catch(error => {
+      if (error?.name !== 'AbortError') {
+        setActBoardSceneLoadingMessage(sceneId, 'Could not sync footage to the narration.');
+      }
+      return false;
+    })
+    .finally(async () => {
+      // The veil is reference-counted, and this run took exactly one hold on
+      // it, so it must always release exactly one - a superseded run that
+      // simply returned here would leave the veil up forever.
+      if (actBoardArrangeAbortControllers.get(sceneId) !== controller) {
+        setActBoardSceneLoading(actKey, sceneId, false);
+        return;
+      }
+      actBoardArrangeAbortControllers.delete(sceneId);
+      // The arrange rerenders the board mid-run; the loading count survives
+      // that (see teardownActBoardView) and refreshActBoardDomRegistry
+      // re-attaches the veil to the new scene card, so there is nothing to
+      // re-assert here - only the floor to wait out.
+      await waitForActBoardSceneLoadingFloor(floorStart);
+      actBoardSceneArrangeKeys.delete(loadingKey);
+      setActBoardSceneLoading(actKey, sceneId, false);
+    });
+}
+
 // Arrange a scene's timeline rails against its narration rather than against
 // the current canvas positions. Narration phrase timings are the source of
 // truth for footage; sound nodes follow their linked target when a legacy link
@@ -11278,7 +11199,7 @@ async function applyActBoardFootageDropChoice(actKey, source, target, choice) {
     saveDebugSession();
     rerenderActBoard();
     const act = currentArcSections.find(item => item.key === actKey);
-    if (act) await generateActBoardNodeExamples(actKey, act, mergedNode);
+    if (act && ACT_BOARD_AUTO_GENERATE_FOOTAGE_IMAGES) await generateActBoardNodeExamples(actKey, act, mergedNode);
     return;
   }
 
@@ -16559,6 +16480,69 @@ function buildActBoardNarrationPlayback(actKey, node, boardLayer, playbackNode =
   const lastFootageEndSeconds = () => linked.reduce((end, node) => Math.max(end,
     (Number(node.startSeconds) || 0) + Math.max(0.5, Number(node.durationSeconds) || 1)), 0);
 
+  // Caption under the picture: the narration being heard right now, so the
+  // words on screen are the words in the ear. Segments are laid out the way
+  // the rail draws them (end to end), and when a segment carries Whisper word
+  // timings the word being spoken is emphasised. Rebuilt only when the
+  // segment or the word changes - the clock ticks many times a second.
+  const captionState = { segmentId: null, wordIndex: -2 };
+  const narrationCaptionAt = nowSeconds => {
+    const now = Math.max(0, Number(nowSeconds) || 0);
+    let cursor = 0;
+    for (const segment of narrationTrackEntries) {
+      const start = Math.max(cursor, Math.max(0, Number(segment.startSeconds) || 0));
+      const length = readNarrationLayerDuration({ node: segment, source: null });
+      cursor = start + length;
+      if (now < start || now >= start + length) continue;
+      const text = String(segment.transcript || '').trim();
+      if (!text) return null;
+      const words = Array.isArray(segment.transcriptWords) ? segment.transcriptWords : [];
+      const local = now - start + Math.max(0, Number(segment.trimStartSeconds) || 0);
+      let wordIndex = -1;
+      words.forEach((word, index) => { if (Number(word?.start) <= local) wordIndex = index; });
+      return { segment, text, words, wordIndex };
+    }
+    return null;
+  };
+  const renderPlaybackCaption = (nowSeconds, force = false) => {
+    const caption = stage.querySelector('.storyboard-act-board-playback-caption');
+    if (!caption) return;
+    const info = narrationCaptionAt(nowSeconds);
+    if (!info) {
+      if (force || captionState.segmentId !== null) {
+        captionState.segmentId = null;
+        captionState.wordIndex = -2;
+        caption.textContent = caption.dataset.fallback || '';
+        caption.classList.remove('is-narration');
+      }
+      return;
+    }
+    if (!force && info.segment.id === captionState.segmentId
+      && info.wordIndex === captionState.wordIndex) return;
+    captionState.segmentId = info.segment.id;
+    captionState.wordIndex = info.wordIndex;
+    caption.classList.add('is-narration');
+    if (!info.words.length) {
+      caption.textContent = info.text;
+      return;
+    }
+    caption.replaceChildren();
+    info.words.forEach((word, index) => {
+      const span = document.createElement('span');
+      span.textContent = String(word?.word || '');
+      if (index === info.wordIndex) span.className = 'is-current';
+      caption.appendChild(span);
+      if (index < info.words.length - 1) caption.appendChild(document.createTextNode(' '));
+    });
+  };
+  const mountPlaybackCaption = (nowSeconds, fallback = '') => {
+    const caption = document.createElement('small');
+    caption.className = 'storyboard-act-board-playback-caption';
+    caption.dataset.fallback = fallback;
+    caption.textContent = fallback;
+    stage.appendChild(caption);
+    renderPlaybackCaption(nowSeconds, true);
+  };
   const setStage = (footage, nowSeconds = readAudioTime(), forceSeek = false) => {
     if (!footage || (!hasNarrationMedia && !hasFootageMedia && !hasAudioMedia)) {
       stage.replaceChildren();
@@ -16581,6 +16565,7 @@ function buildActBoardNarrationPlayback(actKey, node, boardLayer, playbackNode =
             : 'No footage in this interval.')
           : hasNarrationMedia ? 'Narration only' : 'Sound effects only';
       stage.appendChild(empty);
+      mountPlaybackCaption(nowSeconds);
       return;
     }
     // Do not rebuild the DOM while the narration clock advances within the
@@ -16682,9 +16667,7 @@ function buildActBoardNarrationPlayback(actKey, node, boardLayer, playbackNode =
       stage.appendChild(empty);
       state.video = null;
     }
-    const caption = document.createElement('small');
-    caption.textContent = footageNodeVisualSummary(footage) || 'Linked footage';
-    stage.appendChild(caption);
+    mountPlaybackCaption(nowSeconds, footageNodeVisualSummary(footage) || 'Linked footage');
     syncVideoToNarration(footage, nowSeconds, true);
   };
 
@@ -16773,6 +16756,7 @@ function buildActBoardNarrationPlayback(actKey, node, boardLayer, playbackNode =
       }
     }
     if (hasChainedNarration) syncNarrationLayers(next, true);
+    renderPlaybackCaption(next);
     syncAudioLayers(next, true);
     syncFootageCutLayers(next, true);
     updateAtTime();
@@ -16901,6 +16885,7 @@ function buildActBoardNarrationPlayback(actKey, node, boardLayer, playbackNode =
       if (hasChainedNarration) {
         state.clockTime = (performance.now() - state.clockStartedAt) / 1000;
         syncNarrationLayers(state.clockTime);
+        renderPlaybackCaption(state.clockTime);
       } else if (audioSource && !state.audioEnded && !audio.paused) {
         const audioTime = readAudioTime();
         // currentTime can briefly remain at zero while a restored/uploaded
@@ -17065,6 +17050,7 @@ function buildActBoardNarrationPlayback(actKey, node, boardLayer, playbackNode =
       if (!state.playing || actBoardPlaybackState !== state) return null;
       if (hasChainedNarration) {
         syncNarrationLayers(state.clockTime, true);
+        renderPlaybackCaption(state.clockTime);
         startPlaybackClock();
         return Promise.resolve(true);
       }
@@ -19512,7 +19498,7 @@ async function findActBoardFootageNode(
     footageNode.query = normalizeActBoardFootagePhrase(
       result.video_query || footageNode.fragment,
     );
-    if (generateExamplesAfterSearch && requestIsCurrent()) {
+    if (generateExamplesAfterSearch && ACT_BOARD_AUTO_GENERATE_FOOTAGE_IMAGES && requestIsCurrent()) {
       // AI image generation only needs the narration/phrase context, so it
       // can start as soon as the filmability query is known instead of
       // waiting for the stock provider response.
@@ -19679,11 +19665,15 @@ async function findActBoardFootageNode(
   if (backgroundImagePromise && requestIsCurrent()) await backgroundImagePromise;
 }
 
+// Identity of a media search: WHAT is being looked for, never WHEN it plays.
+// Timing used to be part of this hash, so any retiming - and Smart arrange now
+// runs automatically after Visualize - made the next Visualize see a "new"
+// input for every card, abort its in-flight search and start it again. The
+// rapid-repeat stress simulation caught it as 10 stock searches for 5 cards.
 function actBoardFootageMediaInputHash(actKey, narrationNode, footageNode) {
   return JSON.stringify({
     phrase: footageNode?.fragment || '',
     query: footageNode?.filmabilityQuery || footageNode?.query || '',
-    duration: Number(footageNode?.durationSeconds) || 1,
     narration: actBoardNarrationSourceText(narrationNode),
     documentaryMode: actBoardDocumentaryModeForNode(actKey, footageNode),
   });
@@ -24137,41 +24127,7 @@ function buildActBoardBoardSceneCard(scene, nodes, nodeStack) {
     smartArrangeNodes.addEventListener('click', event => {
       event.preventDefault();
       event.stopPropagation();
-      const actKey = scene.actKey;
-      const sceneId = scene.id;
-      // A second click supersedes the first. Same identity-checked cleanup as
-      // the narration analysis, so the older run cannot clear the veil or write
-      // a partial arrangement after the newer one has started.
-      actBoardArrangeAbortControllers.get(sceneId)?.abort?.();
-      const controller = typeof AbortController === 'function' ? new AbortController() : null;
-      actBoardArrangeAbortControllers.set(sceneId, controller);
-      const shownAt = Date.now();
-      const loadingKey = `${actKey}:${sceneId}`;
-      actBoardSceneArrangeKeys.add(loadingKey);
-      setActBoardSceneLoading(actKey, sceneId, true, 'Syncing footage to the narration…');
-      smartArrangeActBoardScene(scene, liveNodes, nodeStack, controller?.signal)
-        .catch(error => {
-          if (error?.name !== 'AbortError') {
-            setActBoardSceneLoadingMessage(sceneId, 'Could not sync footage to the narration.');
-          }
-        })
-        .finally(async () => {
-          // The veil is reference-counted, and this run took exactly one hold
-          // on it, so it must always release exactly one - a superseded run
-          // that simply returned here would leave the veil up forever.
-          if (actBoardArrangeAbortControllers.get(sceneId) !== controller) {
-            setActBoardSceneLoading(actKey, sceneId, false);
-            return;
-          }
-          actBoardArrangeAbortControllers.delete(sceneId);
-          // The arrange rerenders the board mid-run; the loading count survives
-          // that (see teardownActBoardView) and refreshActBoardDomRegistry
-          // re-attaches the veil to the new scene card, so there is nothing to
-          // re-assert here - only the floor to wait out.
-          await waitForActBoardSceneLoadingFloor(shownAt);
-          actBoardSceneArrangeKeys.delete(loadingKey);
-          setActBoardSceneLoading(actKey, sceneId, false);
-        });
+      runActBoardSmartArrange(scene, liveNodes, nodeStack);
     });
     clearNodes = document.createElement('button');
     clearNodes.type = 'button';
@@ -25397,9 +25353,22 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
       } finally {
         if (isCurrentBatch()) {
           actBoardSceneVisualizeTokens.delete(loadingKey);
+          if (scenePatchNeeded) queueActBoardScenePatch(actKey, sceneId, { persist: true });
+          // New cards are on the board; put them on the rail where their
+          // phrases are spoken without a second click. Media is still
+          // arriving, but placement only needs the phrase text and the word
+          // timings, both of which exist now. It runs under this same veil
+          // with a shared floor, so the presenter sees one continuous wait
+          // rather than the veil dropping and immediately coming back. Nothing
+          // mounted means nothing to move, so it is skipped.
+          if (scenePatchNeeded && scene) {
+            await runActBoardSmartArrange(
+              scene, actBoardSceneNodes(scene, actBoardNodesForAct(actKey)), boardLayer,
+              { shownAt: loadingShownAt },
+            );
+          }
           await waitForActBoardSceneLoadingFloor(loadingShownAt);
           setActBoardSceneLoading(actKey, sceneId, false);
-          if (scenePatchNeeded) queueActBoardScenePatch(actKey, sceneId, { persist: true });
         }
       }
     })();
@@ -25582,23 +25551,10 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
       recorded.querySelector('strong')?.remove();
       // Highlights are painted in both modes so the presenter can always see
       // what they have marked. What changes is whether anything responds: in
-      // edit mode there is a caret and no selection gesture or resize grip, so
-      // a click can only ever do one thing.
+      // edit mode there is a caret and no selection gesture, so a click can
+      // only ever do one thing.
       applyActBoardNarrationPhraseSelection(recorded, entry);
-      {
-        enableActBoardInlineTranscriptEditing(recorded, actKey, entry);
-        attachActBoardEntityResizeHandles(recorded, entry, ({ previous, next }) => {
-          // Replace rather than add: the run being dragged is one entity that
-          // changed extent, not a second overlapping one. Remove first and let
-          // the render settle before adding, so the old and new highlight are
-          // never both painted.
-          onSceneNarrationSpanRemove({ ...previous }, previous.text);
-          onSceneNarrationSpanSelect({
-            text: next.text, start: next.start, end: next.end,
-            kind: 'user_selection', origin: 'manual', bucket: 'pending', query: '',
-          }, next.text, true);
-        });
-      }
+      enableActBoardInlineTranscriptEditing(recorded, actKey, entry);
     } else {
       recorded.textContent = 'No recorded narration yet';
     }
@@ -25647,7 +25603,7 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
       if (slide.classList.contains('selected')) return;
       if (event.target.closest(
         'button, input, select, textarea, a, label,'
-        + ' [contenteditable="true"], .storyboard-act-board-entity-grip')) return;
+        + ' [contenteditable="true"]')) return;
       selectNarrationSegment(entry);
     });
     slide.append(recorded, suggested);
