@@ -9219,7 +9219,13 @@ function actBoardPhraseOffsetsFor(narrationNode) {
   return offsets;
 }
 
-function alignActBoardNarrationFragments(narrationNode, fragmentOverride = null) {
+// `resetPinned`: a shot the presenter or Smart arrange has placed is pinned
+// (timingWasManuallyAdjusted). By default the aligner leaves pinned shots
+// where they are and only times the rest - this runs from span analysis,
+// transcript edits and the narration audio's own metadata event, none of
+// which should silently undo a placement. A NEW recording is a new timeline,
+// so that caller passes resetPinned to re-time everything.
+function alignActBoardNarrationFragments(narrationNode, fragmentOverride = null, { resetPinned = false } = {}) {
   const transcript = (narrationNode.transcript || '').trim();
   const hasOverride = Array.isArray(fragmentOverride);
   const fragments = hasOverride
@@ -9291,6 +9297,16 @@ function alignActBoardNarrationFragments(narrationNode, fragmentOverride = null)
     // contains an older footage phrase.  The sequence index is also what the
     // playback rail uses as its deterministic tie-breaker.
     node.sequenceIndex = index;
+    if (node.timingWasManuallyAdjusted && !resetPinned) {
+      // Placed by the presenter or by Smart arrange. This aligner used to
+      // overwrite it regardless and then clear the pin, so a narration audio
+      // element's loadedmetadata event ~150ms after an arrange silently threw
+      // the arrangement away. Keep it, and keep later shots from being timed
+      // on top of it.
+      previousStart = Math.max(previousStart,
+        (Number(node.startSeconds) || 0) + Math.max(0.5, Number(node.durationSeconds) || 0.5));
+      return;
+    }
     const timing = byFragment.get(node.fragment);
     if (!timing) {
       // A prior footage card can legitimately outlive the transcript that
@@ -9306,12 +9322,17 @@ function alignActBoardNarrationFragments(narrationNode, fragmentOverride = null)
       duration,
       previousStart,
     );
+    // The phrase window says how long the shot could hold; the clip says how
+    // long it actually has. The last phrase's window runs to the end of the
+    // narration, which for a short generated clip meant looping it for the
+    // rest of the recording. Leave a gap instead.
+    const length = Math.min(window.durationSeconds, actBoardFootageMaxDurationSeconds(node));
     node.startSeconds = window.startSeconds;
-    node.durationSeconds = window.durationSeconds;
+    node.durationSeconds = Number(Math.max(0.5, length).toFixed(2));
     node.durationWasSuggested = false;
     node.alignedToNarration = true;
     node.timingWasManuallyAdjusted = false;
-    previousStart = Math.max(previousStart, window.startSeconds + window.durationSeconds);
+    previousStart = Math.max(previousStart, window.startSeconds + node.durationSeconds);
   });
   narrationNode.durationSeconds = duration;
 }
@@ -9410,8 +9431,9 @@ async function recordActBoardNarration(node, blob, filename, statusEl) {
       node.footageFragments = actBoardNarrationFragments(node.transcript);
     }
     // Align after replacing the phrase list so the first rendered timing rows
-    // already belong to the newly uploaded transcript.
-    alignActBoardNarrationFragments(node);
+    // already belong to the newly uploaded transcript. A new recording is a
+    // new timeline, so previously placed shots are re-timed as well.
+    alignActBoardNarrationFragments(node, null, { resetPinned: true });
     setActBoardNarrationRecordStatus(statusEl, '');
     saveDebugSession();
     rerenderActBoard();
@@ -9959,6 +9981,18 @@ function planActBoardNarrationCuts(placedNodes) {
     if (index - lastIndex < ACT_BOARD_NARRATION_CUT_SPACING) continue;
     const previous = shots[index - 1];
     const shot = shots[index];
+    // These shots are ordered by when their phrase is spoken, but
+    // orderedActBoardSceneFootage re-enforces contiguity in CHAIN order and
+    // snaps back anything that starts before its chain predecessor's end.
+    // When the two orders disagree, the neighbour whose duration this cut
+    // shortens is not the one the repack measures against, and the cut is
+    // silently undone while its rail marker survives - a marker claiming a
+    // transition that is not there. Only shape a boundary both passes agree on.
+    const chainAdjacent = String(previous.node.nextFootageNodeId || '') === String(shot.node.id)
+      || String(shot.node.previousFootageNodeId || '') === String(previous.node.id)
+      // An unlinked run has no chain to disagree with.
+      || (!previous.node.nextFootageNodeId && !shot.node.previousFootageNodeId);
+    if (!chainAdjacent) continue;
     const seconds = Number(Math.min(
       ACT_BOARD_NARRATION_CUT_MAX_SECONDS,
       Math.min(previous.duration, shot.duration) * 0.5,
@@ -10636,9 +10670,21 @@ const ACT_BOARD_NARRATION_CUT_SPACING = 2;
 // Generated video is capped by the model. When a clip's real duration is not
 // known yet, this is the assumption to plan against - stretching past it makes
 // the clip repeat rather than hold.
+// Playhead followers, keyed by timeline owner. Deliberately NOT a property on
+// the owner: a scene IS the timeline owner and a scene is persisted, so a Set
+// hung off it is serialized to {} and restored as a plain object - which then
+// throws the moment the clock tries to iterate it.
+const actBoardPlayheadFollowers = new WeakMap();
+
 const ACT_BOARD_GENERATED_VIDEO_MAX_SECONDS = 8;
 // A shot shorter than this is a flash, not a shot.
 const ACT_BOARD_MIN_SHOT_SECONDS = 0.5;
+// Two shots meeting exactly are not overlapping. Timings are rounded to 2dp
+// independently on each side of a seam, so an exact join can land a hair below
+// the running cursor; without a tolerance the overlap repair below snaps it
+// forward and silently erases a deliberate anticipate cut. Well under a frame
+// at 30fps (0.033s), so nothing visible survives inside it.
+const ACT_BOARD_TRACK_SEAM_TOLERANCE_SECONDS = 0.02;
 let actBoardSpawnHintShown = false;
 
 // How long the final shot stays on screen after its own duration ends, so a
@@ -15292,6 +15338,13 @@ function registerActBoardScenePlayheadTrack(timelineOwner, track, {
       item.footageVisual?.(safe);
       item.audioVisual?.(safe);
     });
+    // Anything else that wants to track the playhead - currently the narration
+    // slides, which scroll so the words on screen are the words being heard.
+    // Registered separately from the rails because it is not a rail and must
+    // survive their mount/unmount bookkeeping.
+    actBoardPlayheadFollowers.get(timelineOwner)?.forEach(follow => {
+      try { follow(safe); } catch (err) { /* a follower must never break the clock */ }
+    });
   };
   timelineOwner._actBoardToggleNarrationPlayback = () => {
     for (const item of registry) {
@@ -15835,12 +15888,27 @@ function orderedActBoardSceneFootage(actKey, scene, nodes = actBoardNodesForAct(
     const duration = Math.max(0.5, Number(node.durationSeconds) || 1);
     if (!node.timingWasManuallyAdjusted) {
       node.startSeconds = Number(cursorSeconds.toFixed(2));
-    } else if ((Number(node.startSeconds) || 0) < cursorSeconds) {
+    } else if ((Number(node.startSeconds) || 0)
+      < cursorSeconds - ACT_BOARD_TRACK_SEAM_TOLERANCE_SECONDS) {
       // Relinking or changing the scene start can leave a manually timed
       // shot carrying its old timestamp. Preserve intentional gaps, but
       // never allow a later linked shot to overlap or fall behind the prior
-      // shot on the playback rail.
+      // shot on the playback rail. The tolerance keeps a seam that is only
+      // rounding-distance early from being treated as an overlap.
       node.startSeconds = Number(cursorSeconds.toFixed(2));
+      // This pass is the last word on where a shot sits, and it has just
+      // undone whatever offset an anticipate cut applied. Retract the cut
+      // rather than leaving a rail marker advertising a transition that no
+      // longer exists - the layout is the source of truth, not the record of
+      // what was once planned.
+      if (node.narrationCutKind === 'anticipate') {
+        node.narrationCutKind = '';
+        node.narrationCutSeconds = 0;
+        node.narrationCutWasSuggested = false;
+        delete node.narrationCutNeighbourId;
+        delete node.hardCutStartSeconds;
+        delete node.hardCutDurationSeconds;
+      }
     }
     node.sequenceIndex = index;
     cursorSeconds = Math.max(cursorSeconds, (Number(node.startSeconds) || 0) + duration);
@@ -17823,9 +17891,24 @@ function buildActBoardFootageTrack(actKey, narrationNode, boardLayer, linkedOver
     // both systems can shape the same run: A = arrives before its entity is
     // spoken, H = holds on screen after it. Clicking restores the hard cut for
     // this boundary only.
-    if (footage.narrationCutWasSuggested && Number(footage.narrationCutSeconds) > 0) {
+    // Derived from the shot's ACTUAL offset from its hard cut, never from the
+    // stored intent. orderedActBoardSceneFootage re-enforces contiguity in
+    // chain order and can legitimately undo an anticipate; four attempts at
+    // keeping a stored flag in sync with that all leaked, leaving a marker
+    // advertising a transition the timeline no longer had. Reading the offset
+    // makes the marker true by construction: no offset, no marker.
+    const hardStart = Number(footage.hardCutStartSeconds);
+    const hardDuration = Number(footage.hardCutDurationSeconds);
+    const startOffset = Number.isFinite(hardStart)
+      ? (Number(footage.startSeconds) || 0) - hardStart : 0;
+    const durationOffset = Number.isFinite(hardDuration)
+      ? (Number(footage.durationSeconds) || 0) - hardDuration : 0;
+    const realCutSeconds = footage.narrationCutKind === 'anticipate'
+      ? Math.abs(startOffset) : Math.abs(durationOffset);
+    if (footage.narrationCutKind
+      && realCutSeconds > ACT_BOARD_TRACK_SEAM_TOLERANCE_SECONDS) {
       const anticipate = footage.narrationCutKind === 'anticipate';
-      const seconds = Number(footage.narrationCutSeconds);
+      const seconds = realCutSeconds;
       const narrationMarker = document.createElement('button');
       narrationMarker.type = 'button';
       narrationMarker.className = 'storyboard-act-board-footage-track-narration-cut '
@@ -25355,6 +25438,24 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
   narrationViewport.className = 'storyboard-act-board-scene-narration-viewport';
   const narrationSlides = document.createElement('div');
   narrationSlides.className = 'storyboard-act-board-scene-narration-slides';
+  const narrationSlideFor = nodeId => narrationSlides.querySelector(
+    `.storyboard-act-board-scene-narration-slide[data-narration-node-id="${String(nodeId).replace(/"/g, '\\"')}"]`,
+  );
+  // offsetLeft is measured against the slide's offsetParent, which is the
+  // scene-sections wrapper rather than this scroller - using it overshoots by
+  // that wrapper's own offset and clips the first words. Measure the slide's
+  // real distance from the viewport instead.
+  const scrollNarrationSlideIntoView = (slide, smooth = true) => {
+    if (!slide?.isConnected) return;
+    const slideLeft = slide.getBoundingClientRect().left;
+    const viewportLeft = narrationViewport.getBoundingClientRect().left;
+    const target = narrationViewport.scrollLeft + (slideLeft - viewportLeft)
+      - ACT_BOARD_NARRATION_SCROLL_GUTTER_PX;
+    narrationViewport.scrollTo({
+      left: Math.max(0, target),
+      behavior: smooth ? 'smooth' : 'auto',
+    });
+  };
   // Selecting a narration segment is reachable two ways - a segment on the
   // narration track, and the slide itself - so the behaviour lives in one
   // place rather than being duplicated per entry point. Selection is applied
@@ -25377,16 +25478,7 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
     const selectedSlide = narrationSlides.querySelector(
       `.storyboard-act-board-scene-narration-slide[data-narration-node-id="${String(node.id).replace(/"/g, '\\"')}"]`,
     );
-    if (!selectedSlide) return;
-    // offsetLeft is measured against the slide's offsetParent, which is the
-    // scene-sections wrapper rather than this scroller - using it overshoots
-    // by that wrapper's own offset and clips the first words. Measure the
-    // slide's real distance from the viewport instead.
-    const slideLeft = selectedSlide.getBoundingClientRect().left;
-    const viewportLeft = narrationViewport.getBoundingClientRect().left;
-    const target = narrationViewport.scrollLeft + (slideLeft - viewportLeft)
-      - ACT_BOARD_NARRATION_SCROLL_GUTTER_PX;
-    narrationViewport.scrollTo({ left: Math.max(0, target), behavior: 'smooth' });
+    if (selectedSlide) scrollNarrationSlideIntoView(selectedSlide);
   };
   const entriesForDisplay = narrationEntries.length ? narrationEntries : [primaryNarration].filter(Boolean);
   entriesForDisplay.forEach((entry, index) => {
@@ -25426,6 +25518,9 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
       )
       : document.createElement('div');
     recorded.classList.add('storyboard-act-board-scene-recorded-narration');
+    // The placeholder is UI copy, not speech - the quote marks and italics
+    // belong only to an actual transcript.
+    recorded.classList.toggle('is-empty', !recordedText);
     recorded.dataset.actBoardNarrationNodeId = entry.id || '';
     if (recordedText) {
       recorded.querySelector('strong')?.remove();
@@ -25510,6 +25605,66 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
     scrollButton(1, 'Scroll narration right'),
   );
   narrationSection.appendChild(narrationScroller);
+
+  // Follow the playhead: whichever segment is being heard is the one on
+  // screen. Registered against the scene's timeline owner so it is driven by
+  // the same clock as the rails - a scrub, a tick during Scene play, and a
+  // stop all arrive here identically.
+  if (timelineOwner && entriesForDisplay.length) {
+    let followers = actBoardPlayheadFollowers.get(timelineOwner);
+    if (!followers) {
+      followers = new Set();
+      actBoardPlayheadFollowers.set(timelineOwner, followers);
+    }
+    // A previously persisted session can carry the old serialized property.
+    delete timelineOwner._actBoardPlayheadFollowers;
+    // A rerender builds a new viewport; drop followers whose slides are gone
+    // rather than letting a detached scene keep a live reference.
+    followers.forEach(existing => {
+      if (existing._actBoardNarrationSlides
+        && !existing._actBoardNarrationSlides.isConnected) followers.delete(existing);
+    });
+    let lastFollowedId = null;
+    const follow = seconds => {
+      if (!narrationSlides.isConnected) {
+        // A follower is registered while its section is still being built, and
+        // the clock is set to 0 during teardown - so "detached" only means
+        // stale once these slides have actually been mounted. Same rule the
+        // rail registry uses above; without it the follower deleted itself on
+        // the very first tick and never scrolled anything.
+        if (follow._actBoardMounted) followers.delete(follow);
+        return;
+      }
+      follow._actBoardMounted = true;
+      const now = Math.max(0, Number(seconds) || 0);
+      // Match the narration track's own start/duration rule exactly, so the
+      // slide on screen is the segment the playhead is sitting on in the rail.
+      const startOf = entry => Math.max(0, Number(entry.startSeconds) || 0);
+      const lengthOf = entry => Math.max(0.5, actBoardNarrationSegmentDuration(entry)
+        || estimateActBoardNarrationSeconds(entry.transcript || entry.text));
+      // First match wins, so overlapping segments resolve in the order they
+      // are drawn rather than by whichever happens to be scanned last. Past
+      // the end, hold on the last segment instead of snapping back to the top.
+      let target = entriesForDisplay.find(entry =>
+        now >= startOf(entry) && now < startOf(entry) + lengthOf(entry)) || null;
+      if (!target) {
+        target = entriesForDisplay.reduce((best, entry) => (
+          now >= startOf(entry) + lengthOf(entry)
+            && (!best || startOf(entry) >= startOf(best)) ? entry : best), null);
+      }
+      if (!target) target = entriesForDisplay[0];
+      if (!target?.id || String(target.id) === lastFollowedId) return;
+      // Only move when the segment actually changes. Scrolling on every tick
+      // would fight the presenter's own scrolling and restart the smooth
+      // animation dozens of times a second.
+      lastFollowedId = String(target.id);
+      const slide = narrationSlideFor(target.id);
+      if (slide) scrollNarrationSlideIntoView(slide);
+    };
+    follow._actBoardNarrationSlides = narrationSlides;
+    followers.add(follow);
+  }
+
   const narrationTrack = narrationEntries.length
     ? buildActBoardPlaybackAudioTrack({
       actKey,

@@ -2563,6 +2563,20 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   pointer-events: none !important;
 }
 
+/* Sound is a segment on the Music / sound track, not a card on the canvas.
+   Same treatment as narration above and for the same reason: the backing node
+   stays in the DOM so links, saved ownership, and programmatic activation keep
+   working, but it is not something to look at or drag on the board. */
+.storyboard-act-board-node[data-node-type="audio"] {
+  opacity: 0;
+  pointer-events: none !important;
+  user-select: none;
+}
+
+.storyboard-act-board-node[data-node-type="audio"] > * {
+  pointer-events: none !important;
+}
+
 /* Use the supplied hand-drawn narration shape as a scalable outline over the
    card. The SVG remains a decorative layer, so dragging, linking, and the
    compact audio control continue to operate on the normal card DOM. */
@@ -12849,4 +12863,30 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
   .storyboard-act-board-footage-track-narration-cut:focus-visible {
     transform: translateY(-50%);
   }
+}
+
+/* Transcribed narration reads as spoken words, so present it as a quotation:
+   italic, wrapped in curly quotes.
+
+   The quotes are pseudo-element content on purpose. Putting real characters in
+   the DOM would put them inside the contenteditable transcript, where the
+   commit path reads textContent - exactly how a delete button's glyph once got
+   baked into a transcript as a literal character. Pseudo-element content is
+   never part of textContent, so this cannot leak into the saved text. */
+.storyboard-act-board-scene-recorded-narration {
+  font-style: italic;
+}
+
+.storyboard-act-board-scene-recorded-narration:not(.is-empty)::before {
+  content: '\201C';
+}
+
+.storyboard-act-board-scene-recorded-narration:not(.is-empty)::after {
+  content: '\201D';
+}
+
+/* The placeholder ("No recorded narration yet") is not speech - no quotes, and
+   upright so it reads as UI rather than as something someone said. */
+.storyboard-act-board-scene-recorded-narration.is-empty {
+  font-style: normal;
 }

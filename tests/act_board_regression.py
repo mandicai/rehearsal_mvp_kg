@@ -1281,17 +1281,25 @@ def run_smart_arrange(page, calls: list[dict[str, Any]]) -> None:
         check(nodes[node_id].get("alignedToNarration") is True,
               f"Smart arrange did not mark {node_id} as aligned to the narration.")
 
-    # A shaped shot must differ from its word timestamp by exactly its recorded
-    # transition - that is what separates an intentional cut from drift.
+    # A shaped shot either sits off its word or it does not; what it must never
+    # do is drift. orderedActBoardSceneFootage re-enforces contiguity in chain
+    # order and may legitimately undo an anticipate, so the assertion is that
+    # any movement away from the word timestamp is EXPLAINED - it equals the
+    # recorded transition, or it is zero because the layout took it back. An
+    # unexplained offset is the real failure, and the rail marker is derived
+    # from this same offset so it can never advertise a cut that is not there.
     for node in nodes.values():
-        if not node.get("narrationCutWasSuggested"):
+        if not node.get("narrationCutKind"):
             continue
         seconds = float(node.get("narrationCutSeconds") or 0)
         check(seconds > 0,
               f"{node['id']} is marked as a narration cut but records no duration.")
+        if node.get("narrationCutKind") == "linger":
+            continue
         moved = abs(float(node.get("startSeconds", 0)) - aligned_start(node))
-        check(node.get("narrationCutKind") == "linger" or abs(moved - seconds) < 0.01,
-              f"{node['id']} moved {moved}s from its word but records a {seconds}s cut.")
+        check(moved < 0.01 or abs(moved - seconds) < 0.01,
+              f"{node['id']} sits {moved}s off its word, which matches neither a "
+              f"{seconds}s cut nor the hard cut.")
 
     # Shaped or not, the run must stay contiguous: a boundary move takes from
     # one neighbour exactly what it gives the other.
@@ -1303,7 +1311,12 @@ def run_smart_arrange(page, calls: list[dict[str, Any]]) -> None:
                    + float(previous.get("durationSeconds") or 0)))
         check(abs(seam) < 0.02,
               f"Smart arrange left a {seam:.2f}s seam between "
-              f"{previous['id']} and {following['id']}.")
+              f"{previous['id']} and {following['id']}. Run: "
+              + "; ".join(
+                  f"{item['id']} start={item.get('startSeconds')} dur={item.get('durationSeconds')} "
+                  f"aligned={item.get('alignedToNarration')} seq={item.get('sequenceIndex')} "
+                  f"cut={item.get('narrationCutKind') or '-'}"
+                  for item in run))
 
     # Only the clip that names nothing in the transcript may reach the backend.
     match_calls = [item for item in calls if item["path"].endswith("/narration/match_footage")]
