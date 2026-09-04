@@ -5108,7 +5108,7 @@ function renderArcSuggestion(current, others) {
   const customBtn = document.createElement('button');
   customBtn.type = 'button';
   customBtn.id = 'suggest-own-arc-btn';
-  customBtn.className = 'btn-secondary';
+  customBtn.className = 'btn-secondary suggest-arc-btn';
   customBtn.textContent = 'Suggest arc';
   customBtn.addEventListener('click', () => {
     const customText = customInput.value.trim();
@@ -23927,7 +23927,7 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
     card.appendChild(footageSearchPanel);
     const generateExamplesBtn = document.createElement('button');
     generateExamplesBtn.type = 'button';
-    generateExamplesBtn.className = 'btn-secondary storyboard-act-board-node-action';
+    generateExamplesBtn.className = 'btn-secondary storyboard-act-board-node-action storyboard-act-board-generate-images-btn';
     generateExamplesBtn.textContent = node.generationStatus === 'generating-images'
       ? 'Generating image…' : 'Generate image';
     generateExamplesBtn.disabled = node.generationStatus === 'generating-images' || node.generationStatus === 'generating-video';
@@ -23948,7 +23948,7 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
     });
     const generateVideoBtn = document.createElement('button');
     generateVideoBtn.type = 'button';
-    generateVideoBtn.className = 'btn-secondary storyboard-act-board-node-action';
+    generateVideoBtn.className = 'btn-secondary storyboard-act-board-node-action storyboard-act-board-generate-video-btn';
     generateVideoBtn.textContent = node.generationStatus === 'generating-video'
       ? 'Generating video…' : 'Generate video';
     const configuredStartVisual = node.twoFrameVideoEnabled === true

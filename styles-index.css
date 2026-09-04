@@ -1793,7 +1793,12 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
    transparent to pointer input so other acts/panels remain usable. */
 .storyboard-act-board-scene-loading {
   position: absolute;
-  z-index: 20;
+  /* Node cards carry inline z-indexes from an unbounded bring-to-front
+     counter, so a small fixed value here ended up underneath them and the
+     "Syncing footage…" / "Analyzing narration…" messages were hidden behind
+     the very cards they were about. Well above any counter, still below the
+     fixed panels (which sit in their own stacking contexts). */
+  z-index: 100000000;
   inset: 0;
   display: grid;
   place-items: start center;
@@ -12974,4 +12979,65 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
 @keyframes storyboard-act-board-record-status-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
   .storyboard-act-board-record-status.is-processing::before { animation: none; }
+}
+
+/* Primary actions share the look of a selected narration-mode pill: accent
+   fill, small uppercase label. Each keeps its own border radius - only the
+   fill, colour, type and padding are unified here. */
+#compose-storyboard-btn,
+#moodboard-next-btn,
+.suggest-arc-btn,
+.moodboard-back-btn,
+#back-to-setup-btn,
+#toggle-panels-btn,
+.storyboard-act-board-scene-visualize-highlights-btn,
+.storyboard-act-board-suggest-footage-btn,
+.storyboard-act-board-board-scene-smart-arrange,
+.storyboard-act-board-board-scene-organize,
+.storyboard-act-board-clear-board-btn,
+.clear-all-scenes-btn,
+.storyboard-act-board-footage-replace-btn,
+.storyboard-act-board-find-footage-btn,
+.find-footage-btn,
+.generate-shot-examples-btn,
+.generate-shot-video-btn,
+.storyboard-act-board-generate-images-btn,
+.storyboard-act-board-generate-video-btn,
+.storyboard-act-board-image-generation-edit-techniques {
+  padding: 2px 10px !important;
+  border: 0 !important;
+  background: var(--cd-accent-special) !important;
+  color: var(--cd-accent-text) !important;
+  font-size: 10px !important;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  line-height: 1.6;
+  box-shadow: none !important;
+  opacity: 1;
+}
+#compose-storyboard-btn:hover, #moodboard-next-btn:hover, .suggest-arc-btn:hover, .moodboard-back-btn:hover, #back-to-setup-btn:hover,
+#toggle-panels-btn:hover, .storyboard-act-board-scene-visualize-highlights-btn:hover,
+.storyboard-act-board-suggest-footage-btn:hover, .storyboard-act-board-board-scene-smart-arrange:hover,
+.storyboard-act-board-board-scene-organize:hover, .storyboard-act-board-clear-board-btn:hover,
+.clear-all-scenes-btn:hover, .storyboard-act-board-footage-replace-btn:hover,
+.storyboard-act-board-find-footage-btn:hover, .find-footage-btn:hover, .generate-shot-examples-btn:hover,
+.generate-shot-video-btn:hover, .storyboard-act-board-generate-images-btn:hover,
+.storyboard-act-board-generate-video-btn:hover, .storyboard-act-board-image-generation-edit-techniques:hover {
+  filter: brightness(.92);
+}
+#compose-storyboard-btn:disabled, #moodboard-next-btn:disabled, .suggest-arc-btn:disabled,
+.storyboard-act-board-scene-visualize-highlights-btn:disabled, .storyboard-act-board-suggest-footage-btn:disabled,
+.storyboard-act-board-board-scene-smart-arrange:disabled, .storyboard-act-board-board-scene-organize:disabled,
+.storyboard-act-board-find-footage-btn:disabled, .find-footage-btn:disabled, .generate-shot-examples-btn:disabled,
+.generate-shot-video-btn:disabled, .storyboard-act-board-generate-images-btn:disabled,
+.storyboard-act-board-generate-video-btn:disabled, .storyboard-act-board-image-generation-edit-techniques:disabled {
+  opacity: .45;
+  filter: none;
+}
+
+/* The status pill has its own display rule, which would otherwise beat the
+   browser's [hidden] and leave an empty pill on screen while idle. */
+.storyboard-act-board-record-status[hidden] {
+  display: none !important;
 }

@@ -1007,94 +1007,117 @@ def narration_spans():
     return jsonify({'spans': deduped, 'text': text})
 
 
+# Clause boundaries, broadest to narrowest. A clause is meant to be a short,
+# filmable thought - a few seconds of narration - not a whole sentence.
+# Words that start a clause. Prepositions that also read as conjunctions
+# ("after", "before", "as", "since", "until", "that", "when", "where") are left
+# out on purpose: cutting at "shifted | after every storm surge" splits a
+# thought, while "seasons | and found that" starts a new one.
+_CLAUSE_CONJUNCTIONS = ('and', 'but', 'while', 'so', 'which', 'whereas', 'yet',
+                        'because', 'although', 'then', 'nor', 'or')
+_CLAUSE_MIN_WORDS = 4
+_CLAUSE_MAX_WORDS = 14
+
+
+def _split_clause_text(text, start, end, add):
+    """Split text[start:end] (one sentence) into clauses and hand each to add().
+
+    Boundaries, in order of preference: ";" and ":", a dash, a comma followed
+    by a conjunction, a bare conjunction, a bare comma. A cut is taken only when
+    both sides keep _CLAUSE_MIN_WORDS words. A piece still longer than
+    _CLAUSE_MAX_WORDS is split again at its most central boundary, so a long
+    sentence with only weak boundaries still comes out in beats.
+    """
+    body = text[start:end]
+    conj = '|'.join(_CLAUSE_CONJUNCTIONS)
+    strong = list(re.finditer(r'[;:]|\s[—–-]\s|,\s+(?=(?:%s)\b)' % conj, body, re.I))
+    weak = list(re.finditer(r'\s(?=(?:%s)\b)|,\s+' % conj, body, re.I))
+
+    def words(a, b):
+        return len(body[a:b].split())
+
+    def cut_at(a, b, candidates):
+        # Cuts inside [a, b) where both halves keep enough words, nearest the
+        # middle first.
+        usable = [m for m in candidates if a < m.start() < b
+                  and words(a, m.start()) >= _CLAUSE_MIN_WORDS
+                  and words(m.end(), b) >= _CLAUSE_MIN_WORDS]
+        if not usable:
+            return None
+        mid = (a + b) / 2
+        return min(usable, key=lambda m: abs(m.start() - mid))
+
+    def emit(a, b):
+        if words(a, b) > _CLAUSE_MAX_WORDS:
+            m = cut_at(a, b, strong) or cut_at(a, b, weak)
+            if m:
+                emit(a, m.start())
+                emit(m.end(), b)
+                return
+        add(start + a, start + b)
+
+    # First pass: every strong boundary that leaves both sides whole.
+    pieces = []
+    a = 0
+    for m in strong:
+        if words(a, m.start()) >= _CLAUSE_MIN_WORDS and words(m.end(), len(body)) >= _CLAUSE_MIN_WORDS:
+            pieces.append((a, m.start()))
+            a = m.end()
+    pieces.append((a, len(body)))
+    for piece in pieces:
+        emit(*piece)
+
+
 @app.route('/narration/clauses', methods=['POST'])
 def narration_clauses():
-    """Split narration into whole filmable clauses, with character offsets.
+    """Split narration into short filmable clauses, with character offsets.
 
     The phrase route above proposes words and noun phrases; this one proposes
     the clause each of them lives in, so a highlight reads as a complete
-    thought ("the tidal wetlands shifted after every storm surge") rather than
-    a fragment ("tidal wetlands"). Sentences come from spaCy; a sentence is
-    further split at a clause boundary (";", or "," followed by a coordinating
-    or subordinating conjunction) only when both halves carry a verb, so a list
-    of nouns is never chopped into non-clauses. No LLM here - the classifier
-    route buckets these and proposes several distinct visual queries per clause.
+    thought rather than a fragment - but a SHORT one: sentences are cut at
+    semicolons, dashes, conjunctions and commas, and anything still over
+    _CLAUSE_MAX_WORDS words is cut again at its most central boundary. No LLM
+    here - the classifier route buckets these and proposes several distinct
+    visual queries per clause.
     """
     data = request.get_json(silent=True) or {}
     text = str(data.get('text') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS]
     if not text:
         return jsonify({'spans': [], 'text': ''})
-    conjunctions = {'and', 'but', 'while', 'so', 'which', 'whereas', 'yet', 'because', 'although', 'then'}
     spans = []
 
-    def has_verb(tokens):
-        return any(token.pos_ in {'VERB', 'AUX'} for token in tokens)
-
-    def add(start, end):
-        raw = text[start:end]
+    def add(s, e):
+        raw = text[s:e]
         match = re.match(r'^[\s,;:\-–—]*(.*?)[\s,;:\-–—.!?]*$', raw, re.S)
         if not match or not match.group(1).strip():
             return
-        s = start + match.start(1)
-        e = start + match.end(1)
-        value = text[s:e]
+        s2 = s + match.start(1)
+        e2 = s + match.end(1)
+        value = text[s2:e2]
         if len(value.split()) < 3 or all(not ch.isalnum() for ch in value):
             return
-        spans.append({'text': value, 'start': s, 'end': e, 'kind': 'clause',
+        spans.append({'text': value, 'start': s2, 'end': e2, 'kind': 'clause',
                       'label': 'CLAUSE', 'salience': 0.7})
 
+    # Sentences from spaCy when it is installed, a regex otherwise; the clause
+    # split within a sentence is the same either way.
+    sentences = []
+    source = 'regex'
     try:
         doc = _get_narration_nlp()(text)
         try:
-            sentences = list(doc.sents)
+            sentences = [(sent.start_char, sent.end_char) for sent in doc.sents]
+            source = 'spacy'
         except ValueError:
-            sentences = [doc[:]]
+            sentences = [(0, len(text))]
     except ImportError:
-        # spaCy is not installed in this environment (the phrase route has the
-        # same dependency). Fall back to a regex split: sentences on . ! ?,
-        # clauses on ";" and ", <conjunction>", requiring three words a side.
-        # No verb check is possible here, so a comma list may occasionally be
-        # split - a tolerable degradation for a first pass.
-        for sentence in re.finditer(r'[^.!?]+[.!?]*', text):
-            piece_start = sentence.start()
-            body = sentence.group(0)
-            pattern = r';|,\s+(?=(?:%s)\b)' % '|'.join(sorted(conjunctions))
-            for cut in re.finditer(pattern, body):
-                left_len = len(body[piece_start - sentence.start():cut.start()].split())
-                right_len = len(body[cut.end():].split())
-                if left_len >= 3 and right_len >= 3:
-                    add(piece_start, sentence.start() + cut.start())
-                    piece_start = sentence.start() + cut.end()
-            add(piece_start, sentence.end())
-            if len(spans) >= 24:
-                break
-        spans.sort(key=lambda item: item['start'])
-        return jsonify({'spans': spans[:24], 'text': text, 'source': 'regex'})
-
-    for sent in sentences:
-        tokens = list(sent)
-        piece_start = 0  # index into tokens
-        for index, token in enumerate(tokens):
-            boundary = False
-            if token.text == ';':
-                boundary = True
-            elif token.text == ',' and index + 1 < len(tokens) \
-                    and tokens[index + 1].lower_ in conjunctions:
-                boundary = True
-            if not boundary:
-                continue
-            left = tokens[piece_start:index]
-            right = tokens[index + 1:]
-            if has_verb(left) and has_verb(right):
-                add(left[0].idx, left[-1].idx + len(left[-1]))
-                piece_start = index + 1
-        rest = tokens[piece_start:]
-        if rest:
-            add(rest[0].idx, rest[-1].idx + len(rest[-1]))
+        sentences = [(m.start(), m.end()) for m in re.finditer(r'[^.!?]+[.!?]*', text)]
+    for s, e in sentences:
+        _split_clause_text(text, s, e, add)
         if len(spans) >= 24:
             break
     spans.sort(key=lambda item: item['start'])
-    return jsonify({'spans': spans[:24], 'text': text})
+    return jsonify({'spans': spans[:24], 'text': text, 'source': source})
 
 
 @app.route('/narration/classify', methods=['POST'])
