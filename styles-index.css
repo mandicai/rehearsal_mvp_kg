@@ -12895,3 +12895,39 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
   border: 1px solid var(--cd-accent-special);
   border-radius: 2px;
 }
+
+/* Entity delete controls belong to Highlight entities mode. In Edit narration
+   mode the caret is the only gesture, so the "x" on each highlight is hidden -
+   the highlights themselves stay painted so the presenter can still see them. */
+[data-narration-mode="edit"] .storyboard-act-board-narration-span-remove {
+  display: none !important;
+}
+
+/* Story outline / Media content and Scene play / Full play: the same pill
+   toggle as Edit narration / Highlight entities on the narration slides. The
+   earlier view-button rules used !important, so these do too. */
+.storyboard-act-board-view-pill {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--cd-border);
+  border-radius: 999px;
+}
+.storyboard-act-board-view-pill > .storyboard-act-board-full-playback-view-btn {
+  padding: 2px 10px !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: transparent !important;
+  color: var(--cd-text) !important;
+  font-size: 10px !important;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  box-shadow: none !important;
+  opacity: 1 !important;
+}
+.storyboard-act-board-view-pill > .storyboard-act-board-full-playback-view-btn.selected,
+.storyboard-act-board-view-pill > .storyboard-act-board-full-playback-view-btn.active,
+.storyboard-act-board-view-pill > .storyboard-act-board-full-playback-view-btn[aria-pressed="true"] {
+  background: var(--cd-accent-special) !important;
+  color: var(--cd-accent-text) !important;
+}

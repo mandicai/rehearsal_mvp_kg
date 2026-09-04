@@ -4704,7 +4704,27 @@ function compactArcSuggestedNarration(value) {
   return text;
 }
 
+// One draft per arc part, kept for the session. A part is identified by its
+// name and the paper sections it covers (plus the documentary mode the draft
+// was written for), so re-suggesting arcs, promoting an alternative, or
+// re-rendering the panel never re-drafts a part the presenter has already
+// read - the narration they saw is the narration they keep, and it is the
+// same text that seeds the act's first narration segment on the storyboard.
+const arcNarrationDraftCache = new Map();
+function arcNarrationDraftKey(part, documentaryMode) {
+  return [
+    String(part?.name || part?.label || part?.key || ''),
+    (part?.section_indices || []).join(','),
+    String(documentaryMode || ''),
+  ].join('|');
+}
+
 function suggestNarrationForArcPart(part, documentaryMode) {
+  const cached = arcNarrationDraftCache.get(arcNarrationDraftKey(part, documentaryMode));
+  if (cached) {
+    part.suggested_narration = cached;
+    return Promise.resolve();
+  }
   const sourceByIndex = new Map(currentSections.map(section => [section.index, section]));
   const sectionText = (part.section_indices || [])
     .map(index => sourceByIndex.get(index))
@@ -4722,6 +4742,9 @@ function suggestNarrationForArcPart(part, documentaryMode) {
     maxSentences: 2,
   }).then(({ narration }) => {
     part.suggested_narration = compactArcSuggestedNarration(narration);
+    if (part.suggested_narration) {
+      arcNarrationDraftCache.set(arcNarrationDraftKey(part, documentaryMode), part.suggested_narration);
+    }
   });
 }
 
@@ -4734,6 +4757,12 @@ function renderArcSuggestionWithNarration(current, others, documentaryMode) {
   const arcs = [current].filter(Boolean);
   arcs.forEach(arc => (arc.sections || []).forEach(part => {
     arcNarrationFailedParts.delete(part);
+    // A part rebuilt from a fresh suggestion carries no draft, but the cache
+    // may already hold the one written for the same part earlier.
+    if (!(part.suggested_narration || '').trim()) {
+      const cached = arcNarrationDraftCache.get(arcNarrationDraftKey(part, documentaryMode));
+      if (cached) part.suggested_narration = cached;
+    }
     if ((part.suggested_narration || '').trim()) {
       arcNarrationPendingParts.delete(part);
     } else {
@@ -15705,6 +15734,20 @@ function actBoardVisualForKey(node, key) {
       source: 'Uploaded by user',
     };
   }
+  if (visualKey.startsWith('upload-')) {
+    const index = Number(visualKey.slice('upload-'.length));
+    const upload = Number.isInteger(index) ? node.uploadedVisuals?.[index] : null;
+    if (!upload || !(upload.url || upload.thumbnailUrl)) return null;
+    return {
+      key: visualKey,
+      kind: upload.kind || 'video',
+      url: upload.url || upload.thumbnailUrl || '',
+      thumbnailUrl: upload.thumbnailUrl || upload.url || '',
+      label: upload.label || (upload.kind === 'image' ? 'Uploaded image' : 'Uploaded footage'),
+      source: 'Uploaded by user',
+      uploadedIndex: index,
+    };
+  }
   if (visualKey.startsWith('generated-')) {
     const index = Number(visualKey.slice('generated-'.length));
     const option = Number.isInteger(index) ? node.generatedOptions?.[index] : null;
@@ -20808,6 +20851,28 @@ async function selectRandomActBoardFootageVisual(actKey, node) {
 // Keep the request token runtime-only: it prevents a late response from
 // restoring text to a segment that was deleted or replaced while the request
 // was in flight.
+// The accepted arc's draft for an act, compacted the way the arc view shows it.
+function actBoardAcceptedArcNarrationForAct(actKey) {
+  const part = (selectedNarrationArc?.sections || []).find(candidate =>
+    candidate && (candidate.name || candidate.key) === actKey);
+  return compactArcSuggestedNarration(part?.suggested_narration || '');
+}
+
+// The act's first narration segment: first visible scene, earliest start,
+// creation order as the tie-break. That segment shows the arc's narration; any
+// segment added after it gets a fresh draft of its own.
+function actBoardIsFirstNarrationOfAct(actKey, node) {
+  const scenes = actBoardScenesForAct(actKey).filter(scene => scene && scene.hidden !== true);
+  const sceneOrder = new Map(scenes.map((scene, index) => [scene.id, index]));
+  const ordered = actBoardNodesForAct(actKey)
+    .map((item, index) => ({ item, index }))
+    .filter(entry => entry.item.type === 'narration')
+    .sort((a, b) => (sceneOrder.get(a.item.sceneId) ?? 999) - (sceneOrder.get(b.item.sceneId) ?? 999)
+      || (Number(a.item.startSeconds) || 0) - (Number(b.item.startSeconds) || 0)
+      || a.index - b.index);
+  return ordered[0]?.item === node;
+}
+
 async function suggestInitialActBoardNarration(actKey, act, narrationNode) {
   if (!narrationNode || narrationNode.type !== 'narration') return false;
   if (narrationNode.initialNarrationSuggestionInFlight) return false;
@@ -20815,10 +20880,28 @@ async function suggestInitialActBoardNarration(actKey, act, narrationNode) {
   Object.defineProperty(narrationNode, 'initialNarrationSuggestionInFlight', {
     value: token, configurable: true, writable: true, enumerable: false,
   });
-  narrationNode.status = 'generating';
-  narrationNode.error = '';
   const scene = actBoardSceneForNode(actKey, narrationNode);
   const sceneId = scene?.id || narrationNode.sceneId || '';
+  // The act's first segment carries the narration the presenter already read
+  // and accepted in the arc view - the same text, not a new draft of it. Only
+  // segments added after that one are drafted here.
+  const arcDraft = actBoardIsFirstNarrationOfAct(actKey, narrationNode)
+    ? actBoardAcceptedArcNarrationForAct(actKey) : '';
+  if (arcDraft) {
+    narrationNode.text = arcDraft;
+    narrationNode.status = 'ready';
+    narrationNode.error = '';
+    narrationNode.narrationSpanHash = '';
+    narrationNode.narrationSpanStatus = 'stale';
+    narrationNode.narrationCandidateSpans = [];
+    narrationNode.narrationSpans = [];
+    narrationNode.initialNarrationSuggestionInFlight = '';
+    queueActBoardScenePatch(actKey, sceneId, { persist: true });
+    refreshActBoardNodeContentPanel(actKey, narrationNode);
+    return true;
+  }
+  narrationNode.status = 'generating';
+  narrationNode.error = '';
   const sceneStillPresent = () => !sceneId
     || actBoardScenesForAct(actKey).some(item => item && item.id === sceneId);
   queueActBoardScenePatch(actKey, sceneId, { persist: true });
@@ -22953,6 +23036,20 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
       redrawSourceWindow();
     }
     const visualOptions = [
+      // Uploads stay in the gallery as cards of their own. Before this, an
+      // upload lived only in mediaUrl and vanished from the gallery the moment
+      // another option was chosen, so there was no way back to it.
+      ...(Array.isArray(node.uploadedVisuals) ? node.uploadedVisuals.map((upload, index) => ({
+        key: `upload-${index}`,
+        kind: upload.kind || 'video',
+        url: upload.url || '',
+        thumbnailUrl: upload.thumbnailUrl || upload.url || '',
+        hasThumbnail: Boolean(upload.thumbnailUrl),
+        label: upload.label || (upload.kind === 'image' ? `Uploaded image ${index + 1}` : `Uploaded footage ${index + 1}`),
+        uploadedIndex: index,
+        source: 'Uploaded by user',
+        durationSeconds: Number(upload.sourceDurationSeconds) || 0,
+      })) : []),
       ...(Array.isArray(node.generatedOptions) ? node.generatedOptions.map((option, index) => ({
         key: `generated-${index}`,
         kind: option.kind || 'image',
@@ -23448,7 +23545,11 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
       thumbRail.appendChild(generatingPlaceholder);
     }
     const alternateVisualOptions = visualOptions.filter(option =>
-      !selectedVisual || option.key !== selectedVisual.key);
+      (!selectedVisual || option.key !== selectedVisual.key)
+      // The upload currently selected is featured under the 'upload' key; its
+      // gallery card would be a duplicate.
+      && !(option.uploadedIndex != null && selectedVisual?.key === 'upload'
+        && option.url && option.url === (node.mediaUrl || '')));
     // Keep a newly generated single-image result discoverable in the rail
     // even though it is automatically selected. This preserves the normal
     // thumbnail workflow (and lets presenters pick/review the generated
@@ -23487,6 +23588,33 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
       }
       optionButton.addEventListener('click', async event => {
         event.stopPropagation();
+        if (option.uploadedIndex != null) {
+          const upload = node.uploadedVisuals?.[option.uploadedIndex];
+          if (!upload) return;
+          // Becomes the current upload under the same 'upload' key the rest
+          // of the board already understands (export path, upload prompt,
+          // split panes), so nothing downstream needs a new case.
+          node.mediaUrl = upload.url || '';
+          node.mediaThumbnailUrl = upload.thumbnailUrl || upload.url || '';
+          node.mediaKind = upload.kind || 'video';
+          node.mediaOrigin = 'upload';
+          node.uploadedFilePath = upload.filePath || null;
+          node.selectedVisualKey = 'upload';
+          node.selectedGeneratedIndex = null;
+          node.selectedResultIndex = null;
+          node.sourceDurationSeconds = Number(upload.sourceDurationSeconds) || 0;
+          node.trimStartSeconds = 0;
+          if (node.mediaKind === 'video' && node.timingWasManuallyAdjusted !== true
+            && node.sourceDurationSeconds > 0) {
+            node.durationSeconds = node.sourceDurationSeconds;
+            node.durationWasSuggested = false;
+          }
+          // The rail changes shape here (the previous upload returns to it,
+          // this one leaves it), which the in-place refresh does not do.
+          saveDebugSession();
+          rerenderActBoard({ preservePlayback: true });
+          return;
+        }
         if (option.generatedIndex != null) {
           const generated = node.generatedOptions[option.generatedIndex];
           node.selectedVisualKey = option.key;
@@ -24497,6 +24625,17 @@ function buildActBoardBoardSceneCard(scene, nodes, nodeStack) {
 // Right-side overview for the Act Board. This deliberately uses the same
 // combined render plan as the MP4 export, so “Play all acts” includes every
 // saved act-board sequence (narration-driven and footage-only) in arc order.
+// The panel's two view switchers (Story outline / Media content, Scene play /
+// Full play) share the narration slides' Edit / Highlight pill treatment. The
+// pill wraps only the two choice buttons, so the collapse control that shares
+// the scene/full row stays outside the bordered group.
+function buildActBoardViewPill(...buttons) {
+  const pill = document.createElement('span');
+  pill.className = 'storyboard-act-board-view-pill';
+  pill.append(...buttons);
+  return pill;
+}
+
 function buildActBoardFullPlaybackPanel(board, exportActionGroup = null) {
   // Preserve the presenter's current panel view across lightweight board
   // rerenders. Recreating the panel used to silently jump back to Story
@@ -24529,7 +24668,7 @@ function buildActBoardFullPlaybackPanel(board, exportActionGroup = null) {
   nodeViewButton.setAttribute('aria-selected', 'false');
   nodeViewButton.setAttribute('aria-pressed', 'false');
   nodeViewButton.title = 'Show selected media content';
-  viewToggle.append(overviewViewButton, nodeViewButton);
+  viewToggle.append(buildActBoardViewPill(overviewViewButton, nodeViewButton));
   const collapseButton = document.createElement('button');
   collapseButton.type = 'button';
   collapseButton.className = 'premiere-timeline-collapse-btn sidebar-module-collapse-btn';
@@ -24671,7 +24810,7 @@ function buildActBoardFullPlaybackPanel(board, exportActionGroup = null) {
   fullPlaybackViewButton.setAttribute('aria-selected', 'false');
   fullPlaybackViewButton.setAttribute('aria-pressed', 'false');
   fullPlaybackViewButton.title = 'Play the complete documentary playback';
-  selectedPlaybackViewToggle.append(scenePlaybackViewButton, fullPlaybackViewButton);
+  selectedPlaybackViewToggle.append(buildActBoardViewPill(scenePlaybackViewButton, fullPlaybackViewButton));
   const selectedPlaybackCollapseButton = document.createElement('button');
   selectedPlaybackCollapseButton.type = 'button';
   selectedPlaybackCollapseButton.className = 'premiere-timeline-collapse-btn sidebar-module-collapse-btn storyboard-act-board-selected-playback-collapse-btn';
@@ -27523,6 +27662,25 @@ function readActBoardVideoDuration(previewUrl) {
   });
 }
 
+// Keep every upload the node has taken as a gallery card. Deduped by URL so a
+// re-upload of the same file does not stack.
+function rememberActBoardUploadedVisual(node) {
+  if (!node || !(node.mediaUrl || node.mediaThumbnailUrl)) return;
+  if (!Array.isArray(node.uploadedVisuals)) node.uploadedVisuals = [];
+  const url = node.mediaUrl || node.mediaThumbnailUrl;
+  if (node.uploadedVisuals.some(item => item && item.url === url)) return;
+  node.uploadedVisuals.push({
+    kind: node.mediaKind || 'video',
+    url,
+    thumbnailUrl: node.mediaThumbnailUrl || url,
+    filePath: node.uploadedFilePath || null,
+    label: node.mediaKind === 'image'
+      ? `Uploaded image ${node.uploadedVisuals.length + 1}`
+      : `Uploaded footage ${node.uploadedVisuals.length + 1}`,
+    sourceDurationSeconds: Number(node.sourceDurationSeconds) || 0,
+  });
+}
+
 async function uploadActBoardNodeMedia(actKey, node, section, file, statusEl, inputEl) {
   if (!node || !section || !file) return;
   inputEl.disabled = true;
@@ -27568,6 +27726,7 @@ async function uploadActBoardNodeMedia(actKey, node, section, file, statusEl, in
         node.timingWasManuallyAdjusted = true;
       }
     }
+    rememberActBoardUploadedVisual(node);
     node.status = 'ready';
     node.error = '';
     statusEl.textContent = '';
