@@ -328,6 +328,16 @@ def _narration_span_fallback(span):
     }
 
 
+def _clean_filmability_queries(raw, lead=None, limit=3):
+    """Distinct, trimmed stock queries, led by the primary one, at most `limit`."""
+    values = []
+    for value in [lead, *(raw if isinstance(raw, list) else [])]:
+        text = str(value or '').strip()[:160]
+        if text and text.lower() not in {item.lower() for item in values}:
+            values.append(text)
+    return values[:limit]
+
+
 def _normalise_filmability_results(raw_results, candidates):
     by_range = {(int(item.get('start', -1)), int(item.get('end', -1))): item
                 for item in candidates if isinstance(item, dict)}
@@ -357,6 +367,10 @@ def _normalise_filmability_results(raw_results, candidates):
             'query': str(item.get('query') or '').strip()[:160],
             'visual_proxy': str(item.get('visual_proxy') or '').strip()[:240],
             'salience': max(0.0, min(1.0, float(item.get('salience') or source.get('salience') or 0))),
+            # Several distinct visual queries for one beat (clauses). Always a
+            # list, always led by `query`, so the frontend can spawn one footage
+            # node per entry without special-casing the single-query shape.
+            'queries': _clean_filmability_queries(item.get('queries'), item.get('query')),
         })
     # Keep the UI focused: the strongest three visual beats are enough to seed
     # footage while the full local candidate set remains available for a later
@@ -369,7 +383,9 @@ def _normalise_filmability_results(raw_results, candidates):
         if any(item['start'] < other['end'] and other['start'] < item['end'] for other in chosen):
             continue
         chosen.append(item)
-        if len(chosen) >= 3:
+        # Phrases are capped at three beats so the UI stays focused; a clause is
+        # a beat by construction, so every clause candidate is kept.
+        if len(chosen) >= 3 and not any(c.get('kind') == 'clause' for c in candidates):
             break
     return sorted(chosen, key=lambda item: item['start'])
 
@@ -989,6 +1005,96 @@ def narration_spans():
             break
     deduped.sort(key=lambda item: item['start'])
     return jsonify({'spans': deduped, 'text': text})
+
+
+@app.route('/narration/clauses', methods=['POST'])
+def narration_clauses():
+    """Split narration into whole filmable clauses, with character offsets.
+
+    The phrase route above proposes words and noun phrases; this one proposes
+    the clause each of them lives in, so a highlight reads as a complete
+    thought ("the tidal wetlands shifted after every storm surge") rather than
+    a fragment ("tidal wetlands"). Sentences come from spaCy; a sentence is
+    further split at a clause boundary (";", or "," followed by a coordinating
+    or subordinating conjunction) only when both halves carry a verb, so a list
+    of nouns is never chopped into non-clauses. No LLM here - the classifier
+    route buckets these and proposes several distinct visual queries per clause.
+    """
+    data = request.get_json(silent=True) or {}
+    text = str(data.get('text') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS]
+    if not text:
+        return jsonify({'spans': [], 'text': ''})
+    conjunctions = {'and', 'but', 'while', 'so', 'which', 'whereas', 'yet', 'because', 'although', 'then'}
+    spans = []
+
+    def has_verb(tokens):
+        return any(token.pos_ in {'VERB', 'AUX'} for token in tokens)
+
+    def add(start, end):
+        raw = text[start:end]
+        match = re.match(r'^[\s,;:\-–—]*(.*?)[\s,;:\-–—.!?]*$', raw, re.S)
+        if not match or not match.group(1).strip():
+            return
+        s = start + match.start(1)
+        e = start + match.end(1)
+        value = text[s:e]
+        if len(value.split()) < 3 or all(not ch.isalnum() for ch in value):
+            return
+        spans.append({'text': value, 'start': s, 'end': e, 'kind': 'clause',
+                      'label': 'CLAUSE', 'salience': 0.7})
+
+    try:
+        doc = _get_narration_nlp()(text)
+        try:
+            sentences = list(doc.sents)
+        except ValueError:
+            sentences = [doc[:]]
+    except ImportError:
+        # spaCy is not installed in this environment (the phrase route has the
+        # same dependency). Fall back to a regex split: sentences on . ! ?,
+        # clauses on ";" and ", <conjunction>", requiring three words a side.
+        # No verb check is possible here, so a comma list may occasionally be
+        # split - a tolerable degradation for a first pass.
+        for sentence in re.finditer(r'[^.!?]+[.!?]*', text):
+            piece_start = sentence.start()
+            body = sentence.group(0)
+            pattern = r';|,\s+(?=(?:%s)\b)' % '|'.join(sorted(conjunctions))
+            for cut in re.finditer(pattern, body):
+                left_len = len(body[piece_start - sentence.start():cut.start()].split())
+                right_len = len(body[cut.end():].split())
+                if left_len >= 3 and right_len >= 3:
+                    add(piece_start, sentence.start() + cut.start())
+                    piece_start = sentence.start() + cut.end()
+            add(piece_start, sentence.end())
+            if len(spans) >= 24:
+                break
+        spans.sort(key=lambda item: item['start'])
+        return jsonify({'spans': spans[:24], 'text': text, 'source': 'regex'})
+
+    for sent in sentences:
+        tokens = list(sent)
+        piece_start = 0  # index into tokens
+        for index, token in enumerate(tokens):
+            boundary = False
+            if token.text == ';':
+                boundary = True
+            elif token.text == ',' and index + 1 < len(tokens) \
+                    and tokens[index + 1].lower_ in conjunctions:
+                boundary = True
+            if not boundary:
+                continue
+            left = tokens[piece_start:index]
+            right = tokens[index + 1:]
+            if has_verb(left) and has_verb(right):
+                add(left[0].idx, left[-1].idx + len(left[-1]))
+                piece_start = index + 1
+        rest = tokens[piece_start:]
+        if rest:
+            add(rest[0].idx, rest[-1].idx + len(rest[-1]))
+        if len(spans) >= 24:
+            break
+    spans.sort(key=lambda item: item['start'])
+    return jsonify({'spans': spans[:24], 'text': text})
 
 
 @app.route('/narration/classify', methods=['POST'])
@@ -2581,6 +2687,10 @@ def premiere_export():
                         section.get('_board_audio_source_start_seconds') or 0),
                     'duration_seconds': span,
                     'lane': 900 + i,
+                    # Fade over the part that crosses the picture cut: in over
+                    # a J lead, out over an L tail. Zero means no fade.
+                    'fade_in_seconds': lead,
+                    'fade_out_seconds': tail,
                 })
 
     sound_effects = []

@@ -569,10 +569,19 @@ def mix_global_sound_effects(input_path, sound_effects, output_path):
         duration = max(0.001, float(effect['duration_seconds']))
         label = f'sfx{i}'
         volume = max(0, float(effect.get('gain', _SFX_DUCKED_VOLUME)))
+        # Optional fades, used by J/L-cut audio so the sound that crosses a
+        # picture cut rises and falls instead of appearing at full level.
+        fade_in = max(0.0, min(duration, float(effect.get('fade_in_seconds') or 0)))
+        fade_out = max(0.0, min(duration, float(effect.get('fade_out_seconds') or 0)))
+        fades = ''
+        if fade_in > 0:
+            fades += f',afade=t=in:st=0:d={fade_in:.3f}'
+        if fade_out > 0:
+            fades += f',afade=t=out:st={max(0.0, duration - fade_out):.3f}:d={fade_out:.3f}'
         filters.append(
             f'[{i}:a]aresample={_SAMPLE_RATE},aformat=channel_layouts=stereo,'
             f'atrim={source_start:.6f}:{source_start + duration:.6f},'
-            f'asetpts=PTS-STARTPTS,volume={volume},'
+            f'asetpts=PTS-STARTPTS{fades},volume={volume},'
             f'adelay={delay_ms}|{delay_ms}[{label}]'
         )
         labels.append(f'[{label}]')

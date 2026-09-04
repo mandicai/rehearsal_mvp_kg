@@ -255,6 +255,14 @@ const ACT_BOARD_SUGGESTED_FOOTAGE_IMAGE_SAMPLE_COUNT = 2;
 // debugging so credits are not spent on every card that appears; a node's own
 // Generate button is unaffected. Set to true to restore the old behaviour.
 const ACT_BOARD_AUTO_GENERATE_FOOTAGE_IMAGES = false;
+// What a suggested highlight is: 'phrase' (words / noun phrases, the original
+// model) or 'clause' (a whole spoken clause, each spawning several footage
+// nodes with different footage illustrating it). Flip back to 'phrase' to
+// restore the old behaviour; both server routes stay available.
+const ACT_BOARD_HIGHLIGHT_UNIT = 'clause';
+// Footage nodes spawned per clause: the first goes on the rail, the rest are
+// parked off it as alternates (trackHidden) until the presenter drops one on.
+const ACT_BOARD_CLAUSE_ALTERNATES_MAX = 3;
 const ACT_BOARD_VIDEO_TECHNIQUE_CATEGORIES = new Set(['movement']);
 const ACT_BOARD_DEFAULT_VIDEO_TECHNIQUES = ['Pan'];
 // Linking is temporarily disabled in the Act Board UI while narration-driven
@@ -7796,7 +7804,9 @@ function requestActBoardNarrationAnalysis(narrationNode) {
   }
   narrationNode.narrationSpanHash = hash;
   narrationNode.narrationSpanStatus = 'extracting';
-  const promise = fetchNarrationSpans(text, controller?.signal)
+  const fetchCandidates = ACT_BOARD_HIGHLIGHT_UNIT === 'clause'
+    ? fetchNarrationClauses : fetchNarrationSpans;
+  const promise = fetchCandidates(text, controller?.signal)
     .then(local => {
       if (actBoardNarrationTextHash(actBoardNarrationSourceText(narrationNode)) !== hash) return null;
       const candidates = (Array.isArray(local.spans) ? local.spans : [])
@@ -9172,6 +9182,9 @@ function alignActBoardNarrationFragments(narrationNode, fragmentOverride = null,
     // contains an older footage phrase.  The sequence index is also what the
     // playback rail uses as its deterministic tie-breaker.
     node.sequenceIndex = index;
+    // An alternate parked off the rail has no timing to keep honest; leave it
+    // where it is until the presenter drops it on.
+    if (!actBoardTrackNodeVisible(node)) return;
     if (node.timingWasManuallyAdjusted && !resetPinned) {
       // Placed by the presenter or by Smart arrange. This aligner used to
       // overwrite it regardless and then clear the pin, so a narration audio
@@ -10178,8 +10191,11 @@ async function smartArrangeActBoardScene(scene, nodes, nodeStack, signal = null)
   // actually spoken rather than from its position in a list.
   const assignedFootage = new Set();
   const plans = narrations.map(narration => {
-    const associated = footage.filter(node => node.narrationNodeId === narration.id
-      || (narration.footageNodeIds || []).includes(node.id))
+    // Alternates parked off the rail (trackHidden) keep whatever timing they
+    // have; arranging them would stack several shots on one clause.
+    const associated = footage.filter(node => actBoardTrackNodeVisible(node)
+      && (node.narrationNodeId === narration.id
+        || (narration.footageNodeIds || []).includes(node.id)))
       .sort((a, b) => (Number(a.sequenceIndex) || 0) - (Number(b.sequenceIndex) || 0)
         || (Number(a.startSeconds) || 0) - (Number(b.startSeconds) || 0));
     associated.forEach(node => assignedFootage.add(node.id));
@@ -10224,7 +10240,7 @@ async function smartArrangeActBoardScene(scene, nodes, nodeStack, signal = null)
   // to a contiguous sequence in its current track order. This gives footage
   // added without a narration anchor a useful rail arrangement too.
   let independentFootageCursor = 0;
-  footage.filter(node => !assignedFootage.has(node.id))
+  footage.filter(node => !assignedFootage.has(node.id) && actBoardTrackNodeVisible(node))
     .slice().sort((a, b) => (Number(a.sequenceIndex) || 0) - (Number(b.sequenceIndex) || 0)
       || (Number(a.startSeconds) || 0) - (Number(b.startSeconds) || 0))
     .forEach((node, index) => {
@@ -10566,11 +10582,14 @@ const ACT_BOARD_SPAWN_HINT_MS = 5200;
 // Both are audio-only shifts - a clip's startSeconds/durationSeconds still
 // describe its VISUAL, so the rail, the ordering pass and manual timing all
 // keep their existing meaning.
-const ACT_BOARD_AUDIO_CUT_MIN_SECONDS = 0.3;
-const ACT_BOARD_AUDIO_CUT_MAX_SECONDS = 0.8;
+// Long enough to register as a transition (2-3s), not a blip. The audio that
+// crosses the cut fades in over a J lead and out over an L tail - see
+// syncFootageCutLayers (preview) and mix_global_sound_effects (export).
+const ACT_BOARD_AUDIO_CUT_MIN_SECONDS = 2.0;
+const ACT_BOARD_AUDIO_CUT_MAX_SECONDS = 3.0;
 // A cut may never eat more than this share of either neighbouring shot, so a
 // short shot cannot be swallowed by its own transition.
-const ACT_BOARD_AUDIO_CUT_MAX_SHOT_SHARE = 0.5;
+const ACT_BOARD_AUDIO_CUT_MAX_SHOT_SHARE = 0.6;
 // Sprinkle, don't smother: at most one shaped cut in this many boundaries.
 const ACT_BOARD_AUDIO_CUT_SPACING = 2;
 
@@ -10582,8 +10601,8 @@ const ACT_BOARD_AUDIO_CUT_SPACING = 2;
 //   linger     - the shot stays on screen after its entity is spoken
 // Each is a single boundary between two adjacent shots sliding earlier or
 // later, so the rail stays contiguous: no overlap, no gap.
-const ACT_BOARD_NARRATION_CUT_MIN_SECONDS = 0.3;
-const ACT_BOARD_NARRATION_CUT_MAX_SECONDS = 0.9;
+const ACT_BOARD_NARRATION_CUT_MIN_SECONDS = 2.0;
+const ACT_BOARD_NARRATION_CUT_MAX_SECONDS = 3.0;
 // Neither neighbour may be pushed below this, or a shot vanishes to make room
 // for the transition on top of it.
 const ACT_BOARD_NARRATION_CUT_MIN_SHOT_SECONDS = 0.6;
@@ -16458,18 +16477,27 @@ function buildActBoardNarrationPlayback(actKey, node, boardLayer, playbackNode =
       const tail = Math.max(0, Number(layer.node.audioTailSeconds) || 0);
       const sourceIn = Math.max(0, Number(layer.node.trimStartSeconds) || 0);
       let local = null;
+      // Fade the crossing audio: in over the lead (so the incoming sound rises
+      // under the outgoing picture), out over the tail (so the outgoing sound
+      // dies under the incoming picture). At the picture cut itself the level
+      // is the clip's own, which is where the stage video takes over.
+      let ramp = 1;
       if (lead > 0 && nowSeconds >= start - lead && nowSeconds < start) {
         // The shot is already running when it comes into view, which is what
         // makes a J-cut sound continuous rather than restarted.
         local = sourceIn + (nowSeconds - (start - lead));
+        ramp = (nowSeconds - (start - lead)) / lead;
       } else if (tail > 0 && nowSeconds >= start + duration
         && nowSeconds < start + duration + tail) {
         local = sourceIn + duration + (nowSeconds - (start + duration));
+        ramp = 1 - (nowSeconds - (start + duration)) / tail;
       }
       if (local === null) {
         layer.element.pause();
         return;
       }
+      layer.element.volume = Math.max(0, Math.min(1,
+        actBoardNodeVolume(layer.node, 1) * Math.max(0, Math.min(1, ramp))));
       if (forceSeek || Math.abs((Number(layer.element.currentTime) || 0) - local) > 0.35) {
         try { layer.element.currentTime = local; } catch (err) { /* metadata not ready */ }
       }
@@ -16496,11 +16524,21 @@ function buildActBoardNarrationPlayback(actKey, node, boardLayer, playbackNode =
       if (now < start || now >= start + length) continue;
       const text = String(segment.transcript || '').trim();
       if (!text) return null;
-      const words = Array.isArray(segment.transcriptWords) ? segment.transcriptWords : [];
-      const local = now - start + Math.max(0, Number(segment.trimStartSeconds) || 0);
+      // Whisper word timings when the segment has them; otherwise spread the
+      // words evenly over the segment so the caption can still move with the
+      // voice. Either way `words` is timed and `wordIndex` is the spoken one.
+      let words = Array.isArray(segment.transcriptWords) && segment.transcriptWords.length
+        ? segment.transcriptWords : null;
+      let local = now - start + Math.max(0, Number(segment.trimStartSeconds) || 0);
+      if (!words) {
+        const tokens = text.split(/\s+/).filter(Boolean);
+        const step = tokens.length ? length / tokens.length : 0;
+        words = tokens.map((token, index) => ({ word: token, start: index * step, end: (index + 1) * step }));
+        local = now - start;
+      }
       let wordIndex = -1;
       words.forEach((word, index) => { if (Number(word?.start) <= local) wordIndex = index; });
-      return { segment, text, words, wordIndex };
+      return { segment, text, words, wordIndex, segmentStart: start };
     }
     return null;
   };
@@ -16522,17 +16560,24 @@ function buildActBoardNarrationPlayback(actKey, node, boardLayer, playbackNode =
     captionState.segmentId = info.segment.id;
     captionState.wordIndex = info.wordIndex;
     caption.classList.add('is-narration');
-    if (!info.words.length) {
-      caption.textContent = info.text;
-      return;
-    }
+    // Only the words being said right now, not the whole segment: a short
+    // window around the current word, like a live caption. Without Whisper
+    // timings the words are spread evenly over the segment so the window can
+    // still move with the voice.
+    const windowBefore = 2;
+    const windowAfter = 3;
+    const timed = info.words;
+    const current = info.wordIndex;
+    const from = Math.max(0, current - windowBefore);
+    const to = Math.min(timed.length, Math.max(current, 0) + windowAfter + 1);
     caption.replaceChildren();
-    info.words.forEach((word, index) => {
+    timed.slice(from, to).forEach((word, offset) => {
+      const index = from + offset;
       const span = document.createElement('span');
       span.textContent = String(word?.word || '');
-      if (index === info.wordIndex) span.className = 'is-current';
+      if (index === current) span.className = 'is-current';
       caption.appendChild(span);
-      if (index < info.words.length - 1) caption.appendChild(document.createTextNode(' '));
+      if (index < to - 1) caption.appendChild(document.createTextNode(' '));
     });
   };
   const mountPlaybackCaption = (nowSeconds, fallback = '') => {
@@ -19847,13 +19892,24 @@ async function suggestActBoardSelectedFootage(
   const footageIds = Array.isArray(narrationNode.footageNodeIds)
     ? narrationNode.footageNodeIds.filter(id => nodes.some(node => node.id === id)) : [];
   selected.forEach(phrase => {
-    const query = normalizeActBoardFootagePhrase(
-      phrase.query || phrase.visual_proxy || phrase.text,
-    );
-    let footageNode = nodes.find(node => node.type === 'footage'
+    // Several distinct visual ideas can illustrate one beat (a clause carries
+    // 2-3 queries). Spawn one footage node per query: the first lands on the
+    // rail, the others are parked off it as alternates until one is chosen.
+    // A phrase-level beat has a single query and behaves exactly as before.
+    const queries = [];
+    [phrase.query || phrase.visual_proxy || phrase.text, ...(Array.isArray(phrase.queries) ? phrase.queries : [])]
+      .map(value => normalizeActBoardFootagePhrase(value))
+      .forEach(value => {
+        if (value && !queries.some(item => item.toLocaleLowerCase() === value.toLocaleLowerCase())) {
+          queries.push(value);
+        }
+      });
+    const sameBeatNodes = nodes.filter(node => node.type === 'footage'
       && node.narrationNodeId === narrationNode.id
       && actBoardNarrationSpanTextKey(node.fragment)
         === actBoardNarrationSpanTextKey(phrase.text));
+    queries.slice(0, ACT_BOARD_CLAUSE_ALTERNATES_MAX).forEach((query, alternateIndex) => {
+    let footageNode = sameBeatNodes[alternateIndex] || null;
     if (!footageNode) {
       footageNode = {
         id: createActBoardNodeId('footage'),
@@ -19877,6 +19933,11 @@ async function suggestActBoardSelectedFootage(
         durationWasSuggested: true,
         previousFootageNodeId: null,
         nextFootageNodeId: null,
+        // Alternates stay off the rail until the presenter drops one on. The
+        // segment hide is the existing non-destructive "removed from track"
+        // state, so restoring one is the gesture the rail already supports.
+        trackHidden: alternateIndex > 0,
+        footageAlternateIndex: alternateIndex,
       };
       bringNewActBoardNodeToFront(actKey, footageNode);
       nodes.push(footageNode);
@@ -19904,6 +19965,7 @@ async function suggestActBoardSelectedFootage(
       if (!footageIds.includes(footageNode.id)) footageIds.push(footageNode.id);
     }
     footageNodes.push(footageNode);
+    });
   });
   narrationNode.footageNodeIds = footageIds;
   // Do not reflow the existing narration-footage chain here. Visualize is an

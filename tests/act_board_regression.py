@@ -457,7 +457,7 @@ def run_visualize_after_rerecord(page, calls: list[dict[str, Any]]) -> None:
     )
     page.wait_for_timeout(900)
     state = state_from_page(page)
-    span_calls = [item for item in calls if item["path"].endswith("/narration/spans")]
+    span_calls = [item for item in calls if item["path"].endswith(("/narration/spans", "/narration/clauses"))]
     check(any("river flooding" in str(item.get("body", {}).get("text", "")) for item in span_calls),
           "Visualize did not analyze the current rerecorded transcript.")
     nodes = [node for node in state["actBoardNodes"]["Act 1"] if node["type"] == "footage"]
@@ -817,7 +817,7 @@ def install_backend_mocks(context, calls: list[dict[str, Any]]) -> None:
                     {"word": "here.", "start": 1.25, "end": 1.6},
                 ],
             }
-        elif path.endswith("/narration/spans"):
+        elif path.endswith("/narration/spans") or path.endswith("/narration/clauses"):
             text = str(body.get("text") or "")
             stress_phrases = [
                 "coastal change", "tidal wetlands", "research vessels",

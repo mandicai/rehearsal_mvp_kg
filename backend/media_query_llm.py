@@ -43,6 +43,7 @@ Rules:
 - Preserve the supplied character offsets exactly. Do not invent offsets or return candidates that were not supplied.
 - A candidate with kind "user_selection" is an explicit presenter request. Always return a classification for it (even if it is abstract or otherwise weak), preserve its offsets exactly, and provide the best literal query or visual_proxy available.
 - Prefer phrases that are specific, visually salient, and useful for a coherent documentary sequence. Avoid returning multiple overlapping or redundant beats.
+- A candidate with kind "clause" is a whole spoken clause, not a phrase. Return a classification for EVERY clause candidate (clauses do not compete with each other and are not limited to three), preserve its offsets exactly, and use bucket "ignore" only for pure filler. For each clause also return "queries": 2-3 DISTINCT literal stock-footage queries of 3-10 ordinary words that could each illustrate that clause with a different subject, setting, scale or angle (for example a wide establishing shot, a close detail, and people doing the activity). "query" must equal the first entry of "queries".
 """
 
 
