@@ -5642,12 +5642,12 @@ audio.storyboard-act-board-node-audio {
   text-decoration: none;
 }
 
-.storyboard-act-board-node-text .storyboard-act-board-narration-span-abstract {
+/* .storyboard-act-board-node-text .storyboard-act-board-narration-span-abstract {
   background: rgba(120, 92, 165, .12) !important;
   color: #63478e !important;
   border-color: rgba(120, 92, 165, .55) !important;
   text-decoration: underline dashed rgba(120, 92, 165, .85) !important;
-}
+} */
 
 .storyboard-act-board-node-text .storyboard-act-board-narration-span-pending {
   background: rgba(221, 174, 91, .1);
