@@ -9378,6 +9378,7 @@ async function recordActBoardNarration(node, blob, filename, statusEl) {
     node.audioDurationSeconds = Number(uploaded.duration_seconds) || 0;
     if (node.audioDurationSeconds > 0) node.sourceDurationSeconds = node.audioDurationSeconds;
     if (node.audioDurationSeconds > 0) node.narrationSegmentDurationSeconds = node.audioDurationSeconds;
+    packActBoardSceneNarrationStarts(node.actKey, node.sceneId);
     try {
       if (typeof node._nativePreviewUrl === 'string' && node._nativePreviewUrl.startsWith('blob:')) {
         URL.revokeObjectURL(node._nativePreviewUrl);
@@ -11772,7 +11773,9 @@ function refreshActBoardNodeContentPanel(actKey, node) {
 // the same click, which felt unresponsive and could leave a stale highlight
 // visible next to a new one. An explicit mode keeps each interaction simple and
 // makes the current one obvious.
-let actBoardNarrationSlideMode = 'highlight';   // 'highlight' | 'edit'
+// Edit is the default: correcting the transcript is the first thing a
+// presenter does after recording, and highlighting is the follow-up step.
+let actBoardNarrationSlideMode = 'edit';   // 'highlight' | 'edit'
 
 function actBoardNarrationSlideEditing() {
   return actBoardNarrationSlideMode === 'edit';
@@ -11936,6 +11939,44 @@ function spawnActBoardNodeAt(actKey, type, x, y) {
 // Create a narration shell for an additional independently recorded segment.
 // The caller starts an initial suggested-narration request after mounting it;
 // the recording itself remains the authoritative transcript once available.
+// Lay a scene's narration segments end to end in the data, exactly as the
+// rail already draws them.
+//
+// Every segment is created at the end of the narration that exists at that
+// moment - which is 0 when the earlier segments have not been recorded yet,
+// the normal order of work. The rail papered over that by drawing segments
+// back-to-back regardless of startSeconds, but playback and the scrubber read
+// the raw values, so two recorded segments at 0 played on top of each other.
+// Packing on every duration change keeps data and display the same thing.
+//
+// A segment the presenter dragged on the track (timingWasManuallyAdjusted)
+// keeps its place; the others flow around it.
+function packActBoardSceneNarrationStarts(actKey, sceneId = null) {
+  const segments = actBoardNodesForAct(actKey)
+    .filter(node => node.type === 'narration' && (!sceneId || node.sceneId === sceneId));
+  if (segments.length < 2) return false;
+  const ordered = segments.map((node, index) => ({ node, index }))
+    .sort((a, b) => (Number(a.node.startSeconds) || 0) - (Number(b.node.startSeconds) || 0)
+      || a.index - b.index);
+  let cursor = 0;
+  let changed = false;
+  ordered.forEach(({ node }) => {
+    const duration = Math.max(0.5, actBoardNarrationSegmentDuration(node)
+      || estimateActBoardNarrationSeconds(node.transcript || node.text) || 0.5);
+    const current = Math.max(0, Number(node.startSeconds) || 0);
+    if (node.timingWasManuallyAdjusted) {
+      cursor = Math.max(cursor, current + duration);
+      return;
+    }
+    if (Math.abs(current - cursor) > 0.01) {
+      node.startSeconds = Number(cursor.toFixed(2));
+      changed = true;
+    }
+    cursor += duration;
+  });
+  return changed;
+}
+
 function createActBoardNarrationSegmentNode(actKey, scene = null) {
   const nodes = actBoardNodesForAct(actKey);
   const sceneNodes = scene
@@ -11980,6 +12021,7 @@ function createActBoardNarrationSegmentNode(actKey, scene = null) {
   attachActBoardNodeToScene(actKey, node, scene || actBoardOpenSceneForAct(actKey));
   bringNewActBoardNodeToFront(actKey, node);
   nodes.push(node);
+  packActBoardSceneNarrationStarts(actKey, node.sceneId);
   return node;
 }
 
@@ -22323,6 +22365,7 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
         if (!(Number(audio.duration) > 0)
           || Math.abs(Number(node.audioDurationSeconds || 0) - audio.duration) < 0.05) return;
         node.audioDurationSeconds = audio.duration;
+        packActBoardSceneNarrationStarts(node.actKey, node.sceneId);
         alignActBoardNarrationFragments(node);
         saveDebugSession();
       });
@@ -25034,6 +25077,14 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
   };
   const sceneNarrationSelectionKey = scene?.id || `${actKey}:narration`;
   const selectedNarrationId = () => actBoardSelectedNarrationSegmentByScene.get(sceneNarrationSelectionKey) || '';
+  // A segment is always selected, so its control bar is always on screen and
+  // the record/upload/include controls are reachable without first clicking
+  // a segment. Fall back to the first segment whenever the remembered one is
+  // missing (fresh scene, or the selected segment was deleted).
+  if (narrationEntries.length
+    && !narrationEntries.some(node => node.id === selectedNarrationId())) {
+    actBoardSelectedNarrationSegmentByScene.set(sceneNarrationSelectionKey, narrationEntries[0].id);
+  }
   const selectedNarration = () => narrationEntries.find(node => node.id === selectedNarrationId()) || null;
   const recordingNarration = () => narrationEntries.find(node => {
     const recorderState = actBoardNarrationRecorderStates.get(String(node.id));
@@ -25451,9 +25502,14 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
     const viewportLeft = narrationViewport.getBoundingClientRect().left;
     const target = narrationViewport.scrollLeft + (slideLeft - viewportLeft)
       - ACT_BOARD_NARRATION_SCROLL_GUTTER_PX;
+    // A smooth scroll is an animation, and Chrome does not run animations in a
+    // hidden document - the request is simply dropped, and the slides never
+    // move. Nobody can see the glide in a hidden tab anyway, so jump instead;
+    // the smooth version is kept for the visible case where it matters.
+    const animate = smooth && document.visibilityState === 'visible';
     narrationViewport.scrollTo({
       left: Math.max(0, target),
-      behavior: smooth ? 'smooth' : 'auto',
+      behavior: animate ? 'smooth' : 'auto',
     });
   };
   // Selecting a narration segment is reachable two ways - a segment on the
@@ -25637,22 +25693,25 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
       }
       follow._actBoardMounted = true;
       const now = Math.max(0, Number(seconds) || 0);
-      // Match the narration track's own start/duration rule exactly, so the
-      // slide on screen is the segment the playhead is sitting on in the rail.
-      const startOf = entry => Math.max(0, Number(entry.startSeconds) || 0);
+      // Mirror the narration rail's layout rule, not the raw data. Every new
+      // segment is created at startSeconds 0 and stays there until Smart
+      // arrange packs it, so several segments at 0 is the normal state. The
+      // rail draws those back-to-back - a segment's visual start is
+      // max(startSeconds, end of the previous one) in entry order - and the
+      // slide on screen must be the segment the rail shows under the playhead.
       const lengthOf = entry => Math.max(0.5, actBoardNarrationSegmentDuration(entry)
         || estimateActBoardNarrationSeconds(entry.transcript || entry.text));
-      // First match wins, so overlapping segments resolve in the order they
-      // are drawn rather than by whichever happens to be scanned last. Past
-      // the end, hold on the last segment instead of snapping back to the top.
-      let target = entriesForDisplay.find(entry =>
-        now >= startOf(entry) && now < startOf(entry) + lengthOf(entry)) || null;
-      if (!target) {
-        target = entriesForDisplay.reduce((best, entry) => (
-          now >= startOf(entry) + lengthOf(entry)
-            && (!best || startOf(entry) >= startOf(best)) ? entry : best), null);
-      }
-      if (!target) target = entriesForDisplay[0];
+      let cursor = 0;
+      const packed = entriesForDisplay.map(entry => {
+        const start = Math.max(cursor, Math.max(0, Number(entry.startSeconds) || 0));
+        const length = lengthOf(entry);
+        cursor = start + length;
+        return { entry, start, end: start + length };
+      });
+      // Past the end, hold on the last segment instead of snapping to the top.
+      let target = (packed.find(item => now >= item.start && now < item.end)
+        || packed.filter(item => now >= item.end).pop()
+        || packed[0])?.entry || null;
       if (!target?.id || String(target.id) === lastFollowedId) return;
       // Only move when the segment actually changes. Scrolling on every tick
       // would fight the presenter's own scrolling and restart the smooth
