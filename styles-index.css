@@ -1064,8 +1064,8 @@ body.pub-to-doc-page .action-bar {
 .storyboard-act-board-full-playback-view-btn.selected,
 .storyboard-act-board-full-playback-view-btn.active,
 .storyboard-act-board-full-playback-view-btn[aria-pressed="true"] {
-  border-color: var(--cd-organic) !important;
-  background: var(--cd-organic) !important;
+  border-color: var(--cd-accent-special) !important;
+  background: var(--cd-accent-special) !important;
   color: #fff !important;
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .24), 0 1px 0 rgba(0, 0, 0, .16);
 }
@@ -2499,7 +2499,7 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 }
 
 .storyboard-act-board-linking-guide b {
-  color: var(--cd-organic);
+  color: var(--cd-accent-special);
 }
 
 .storyboard-act-board-linking-guide .output-key {
@@ -2912,7 +2912,7 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   align-items: center;
   min-width: 0;
   margin-left: auto;
-  color: var(--cd-organic);
+  color: var(--cd-accent-special);
   font: 10px/1.2 var(--cd-font-mono);
   white-space: nowrap;
 }
@@ -3021,7 +3021,7 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   border: 1px solid var(--cd-narration);
   border-radius: 4px;
   background: white;
-  color: var(--cd-organic);
+  color: var(--cd-accent-special);
   cursor: pointer;
 }
 
@@ -3466,11 +3466,11 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 }
 
 .storyboard-act-board-image-generation-inputs > summary::marker {
-  color: var(--cd-organic);
+  color: var(--cd-accent-special);
 }
 
 .storyboard-act-board-image-generation-inputs > summary::-webkit-details-marker {
-  color: var(--cd-organic);
+  color: var(--cd-accent-special);
 }
 
 .storyboard-act-board-image-generation-input-row {
@@ -3620,7 +3620,7 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 
 .storyboard-act-board-advanced-video-controls > summary::marker,
 .storyboard-act-board-advanced-video-controls > summary::-webkit-details-marker {
-  color: var(--cd-organic);
+  color: var(--cd-accent-special);
 }
 
 .storyboard-act-board-two-frame-video-panel {
@@ -3640,7 +3640,7 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 
 .storyboard-act-board-two-frame-video-panel > summary::marker,
 .storyboard-act-board-two-frame-video-panel > summary::-webkit-details-marker {
-  color: var(--cd-organic);
+  color: var(--cd-accent-special);
 }
 
 .storyboard-act-board-two-frame-video-enable,
@@ -4348,7 +4348,7 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 
 .storyboard-act-board-scene-narration-include input {
   margin: 0;
-  accent-color: var(--cd-organic);
+  accent-color: var(--cd-accent-special);
 }
 
 .storyboard-act-board-scene-narration-scroller {
@@ -4374,14 +4374,14 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   border: 1px solid rgba(135, 73, 0, .36);
   border-radius: 50%;
   background: rgba(255, 255, 255, .86);
-  color: var(--cd-organic);
+  color: var(--cd-accent-special);
   font: 21px/24px var(--cd-font-body);
   cursor: pointer;
 }
 
 .storyboard-act-board-scene-narration-scroll-btn:hover,
 .storyboard-act-board-scene-narration-scroll-btn:focus-visible {
-  border-color: var(--cd-organic);
+  border-color: var(--cd-accent-special);
   background: #fff4dc;
 }
 
@@ -4546,8 +4546,8 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 }
 
 .storyboard-act-board-scene-suggested-narration strong {
-  color: var(--cd-organic);
-  font: 600 10px var(--cd-font-mono);
+  color: var(--cd-accent-special);
+  font: 600 10px var(--cd-font-body);
   letter-spacing: .04em;
   text-transform: uppercase;
 }
@@ -5162,7 +5162,7 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 
 .storyboard-act-board-suggested-side-panel summary {
   cursor: pointer;
-  color: var(--cd-organic);
+  color: var(--cd-accent-special);
   font-weight: 700;
 }
 
@@ -5186,8 +5186,8 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   width: 5px;
   height: 5px;
   margin-left: -13px;
-  border-right: 2px solid var(--cd-organic);
-  border-bottom: 2px solid var(--cd-organic);
+  border-right: 2px solid var(--cd-accent-special);
+  border-bottom: 2px solid var(--cd-accent-special);
   transform: rotate(-45deg);
   transition: transform 120ms ease;
 }
@@ -5410,7 +5410,7 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   padding-left: 18px;
   position: relative;
   cursor: pointer;
-  color: var(--cd-organic);
+  color: var(--cd-accent-special);
   font-weight: 700;
   font-size: 12px;
 }
@@ -5421,8 +5421,8 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   width: 5px;
   height: 5px;
   margin-left: -13px;
-  border-right: 2px solid var(--cd-organic);
-  border-bottom: 2px solid var(--cd-organic);
+  border-right: 2px solid var(--cd-accent-special);
+  border-bottom: 2px solid var(--cd-accent-special);
   transform: rotate(-45deg);
   transition: transform 120ms ease;
 }
@@ -5656,13 +5656,13 @@ audio.storyboard-act-board-node-audio {
 
 .storyboard-act-board-node-text .storyboard-act-board-narration-span-pending {
   background: rgba(221, 174, 91, .1);
-  color: var(--cd-organic);
+  color: var(--cd-accent-special);
   text-decoration: underline dotted rgba(221, 174, 91, .7);
 }
 
 .storyboard-act-board-node-text .storyboard-act-board-narration-phrase-selected {
   background: rgba(221, 174, 91, .3);
-  color: var(--cd-organic);
+  color: var(--cd-accent-special);
   cursor: pointer;
 }
 
@@ -5676,7 +5676,7 @@ audio.storyboard-act-board-node-audio {
 
 .storyboard-act-board-node-text .storyboard-act-board-narration-timing-highlight {
   background: rgba(221, 174, 91, .3);
-  color: var(--cd-organic);
+  color: var(--cd-accent-special);
 }
 
 /* .storyboard-act-board-node-text .storyboard-act-board-narration-span-clickable:hover {
@@ -5706,7 +5706,7 @@ audio.storyboard-act-board-node-audio {
 }
 
 .storyboard-act-board-node-fragment-timing span:last-child {
-  color: var(--cd-organic);
+  color: var(--cd-accent-special);
   font-weight: 700;
 }
 
@@ -5735,7 +5735,7 @@ audio.storyboard-act-board-node-audio {
      marker, so provide our own consistent chevron instead. */
   position: relative;
   padding-left: 18px;
-  color: var(--cd-organic);
+  color: var(--cd-accent-special);
   cursor: pointer;
   font-size: 12px;
   font-weight: 700;
@@ -5748,8 +5748,8 @@ audio.storyboard-act-board-node-audio {
   width: 5px;
   height: 5px;
   margin-left: -13px;
-  border-right: 2px solid var(--cd-organic);
-  border-bottom: 2px solid var(--cd-organic);
+  border-right: 2px solid var(--cd-accent-special);
+  border-bottom: 2px solid var(--cd-accent-special);
   transform: rotate(-45deg);
   transform-origin: center;
   transition: transform 120ms ease;
@@ -5831,7 +5831,7 @@ audio.storyboard-act-board-node-audio {
 
 .storyboard-act-board-node-umbrella {
   margin-top: 13px;
-  /* color: var(--cd-organic); */
+  /* color: var(--cd-accent-special); */
   font: 12px var(--cd-font-mono);
   opacity: .6;
   /* font-weight: 700; */
@@ -6397,7 +6397,7 @@ audio.storyboard-act-board-node-audio {
   width: 12px;
   height: 12px;
   margin: 0;
-  accent-color: var(--cd-organic);
+  accent-color: var(--cd-accent-special);
 }
 
 .storyboard-act-board-scene-mode-hint {
