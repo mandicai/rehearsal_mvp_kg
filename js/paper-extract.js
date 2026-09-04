@@ -2364,15 +2364,56 @@ function audioBufferToWavBlob(audioBuffer) {
   writeString(36, 'data');
   view.setUint32(40, dataSize, true);
   const channelData = Array.from({ length: channels }, (_, index) => audioBuffer.getChannelData(index));
-  let offset = 44;
-  for (let frame = 0; frame < frames; frame += 1) {
-    for (let channel = 0; channel < channels; channel += 1) {
-      const sample = Math.max(-1, Math.min(1, channelData[channel][frame] || 0));
-      view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
-      offset += 2;
+  // One typed-array write per sample instead of a DataView call: a minute of
+  // narration is a few million samples, and this runs on the main thread
+  // while the board is being rebuilt. WAV is little-endian; so is every
+  // platform this runs on, which the guard below confirms before relying on it.
+  const littleEndian = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
+  if (littleEndian) {
+    const samples = new Int16Array(output, 44, frames * channels);
+    let offset = 0;
+    for (let frame = 0; frame < frames; frame += 1) {
+      for (let channel = 0; channel < channels; channel += 1) {
+        const sample = Math.max(-1, Math.min(1, channelData[channel][frame] || 0));
+        samples[offset] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+        offset += 1;
+      }
+    }
+  } else {
+    let offset = 44;
+    for (let frame = 0; frame < frames; frame += 1) {
+      for (let channel = 0; channel < channels; channel += 1) {
+        const sample = Math.max(-1, Math.min(1, channelData[channel][frame] || 0));
+        view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+        offset += 2;
+      }
     }
   }
   return new Blob([output], { type: 'audio/wav' });
+}
+
+// The PCM/WAV copy of a narration clip, produced once. Every rail, slide and
+// card that shows the clip builds its own <audio>, and each of those used to
+// decode and re-encode the whole recording on the main thread - the single
+// largest hitch in the board (~150ms per rebuild for a short clip). Object
+// URLs stay per element (they are revoked per element); the blob is shared.
+function narrationClipWavBlob(clip) {
+  if (!clip) return Promise.reject(new Error('Narration fallback is unavailable.'));
+  if (clip._nativeWavBlobPromise) return clip._nativeWavBlobPromise;
+  const promise = ensureNarrationClipDecoded(clip).then(audioBufferToWavBlob);
+  try {
+    Object.defineProperty(clip, '_nativeWavBlobPromise', {
+      value: promise, configurable: true, enumerable: false, writable: true,
+    });
+  } catch (err) { /* the conversion still works, just uncached */ }
+  promise.catch(() => {
+    // A failed decode must not poison later attempts (the source may be
+    // reachable next time).
+    if (clip._nativeWavBlobPromise === promise) {
+      try { delete clip._nativeWavBlobPromise; } catch (err) { clip._nativeWavBlobPromise = null; }
+    }
+  });
+  return promise;
 }
 
 // Keep the visible narration player on a native <audio> element. If the
@@ -2391,8 +2432,7 @@ function attachNativeAudioSource(audio, url, narrationClip) {
       return Promise.reject(new Error('Narration fallback is unavailable.'));
     }
     fallbackStarted = true;
-    fallbackPromise = ensureNarrationClipDecoded(narrationClip)
-      .then(audioBufferToWavBlob)
+    fallbackPromise = narrationClipWavBlob(narrationClip)
       .then(blob => {
         const previousObjectUrl = objectUrl;
         const nextObjectUrl = URL.createObjectURL(blob);
@@ -2435,8 +2475,7 @@ function attachNativeAudioSource(audio, url, narrationClip) {
     && !narrationClip._nativePreviewUrl
     && !String(url).startsWith('blob:');
   if (restoredSource) {
-    sourceReady = ensureNarrationClipDecoded(narrationClip)
-      .then(audioBufferToWavBlob)
+    sourceReady = narrationClipWavBlob(narrationClip)
       .then(blob => {
         if (!audio.paused) return false;
         const previousObjectUrl = objectUrl;
@@ -15943,6 +15982,29 @@ function actBoardTrackNodeVisible(node) {
   return Boolean(node && node.trackHidden !== true);
 }
 
+// A segment removed from one rail is hidden in the data (trackHidden), but
+// the playback panel's rail and the scene/full playback are separate DOM
+// built from that data. Rebuild the scene so every view drops it at once.
+function syncActBoardTrackRemoval(actKey, node) {
+  if (!node?.id) return;
+  // The content panel was showing the removed segment's editor. Leave it on
+  // that segment and the panel keeps describing something no longer on the
+  // rails; return to the outline instead.
+  if (String(actBoardSelectedNodeId || '') === String(node.id)) {
+    actBoardSelectedNodeId = '';
+    actBoardFullPlaybackView = 'overview';
+    document.querySelector('.storyboard-act-board-full-playback-panel')
+      ?._actBoardFullPlayback?.showOverview?.();
+  }
+  const scene = actBoardSceneForNode(actKey, node);
+  if (scene) {
+    syncActBoardLiveSceneSnapshots(scene);
+    queueActBoardScenePatch(actKey, scene.id, { persist: true });
+  } else {
+    rerenderActBoard({ preservePlayback: true });
+  }
+}
+
 function persistActBoardTrackNode(node) {
   if (!node?.id) return;
   const scene = actBoardSceneForNode(node.actKey, node);
@@ -18000,6 +18062,10 @@ function buildActBoardFootageTrack(actKey, narrationNode, boardLayer, linkedOver
     updateTrackLayout();
     refreshActBoardPlaybackDurations();
     saveDebugSession();
+    // This rail is one of several views of the same data: the playback panel
+    // mirrors it and the scene/full playback read the nodes. Editing this DOM
+    // alone left the segment on every other view until an unrelated rebuild.
+    syncActBoardTrackRemoval(actKey, footage);
     return true;
   };
   track.tabIndex = 0;
@@ -18794,6 +18860,8 @@ function buildActBoardPlaybackAudioTrack({
     updateTrackLayout();
     refreshActBoardPlaybackDurations();
     saveDebugSession();
+    // See the footage rail: the other views of this segment must go too.
+    syncActBoardTrackRemoval(actKey, node);
     return true;
   };
   const toggleNarrationTrackPlayback = () => {
@@ -25341,6 +25409,7 @@ function buildActBoardFullPlaybackPanel(board, exportActionGroup = null) {
     collapseButton.setAttribute('aria-label', `${expanded ? 'Collapse' : 'Expand'} all acts playback`);
   };
   panel._actBoardFullPlayback = {
+    showOverview: () => setPanelView('overview'),
     setRendering,
     setReady,
     setError,
