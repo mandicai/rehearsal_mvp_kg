@@ -10846,8 +10846,6 @@ const ACT_BOARD_NARRATION_SCROLL_GUTTER_PX = 24;
 
 // How long the "double-click to add a node" hint stays on the canvas. It is a
 // first-run affordance, not a persistent label, so it shows once per board
-// session and leaves the moment the presenter double-clicks.
-const ACT_BOARD_SPAWN_HINT_MS = 5200;
 
 // J-cut: the incoming clip's audio starts before its picture does.
 // L-cut: the outgoing clip's audio keeps running after its picture is gone.
@@ -10901,7 +10899,8 @@ const ACT_BOARD_MIN_SHOT_SECONDS = 1.0;
 // forward and silently erases a deliberate anticipate cut. Well under a frame
 // at 30fps (0.033s), so nothing visible survives inside it.
 const ACT_BOARD_TRACK_SEAM_TOLERANCE_SECONDS = 0.02;
-let actBoardSpawnHintShown = false;
+// The hint stays until the gesture it teaches has been used once.
+let actBoardSpawnHintDismissed = false;
 
 // How long the final shot stays on screen after its own duration ends, so a
 // sequence landing exactly on that boundary does not flash the placeholder
@@ -14360,11 +14359,12 @@ function wireActBoardNodeSpawn(nodeStack, actKey) {
     menu.remove();
   });
   // Double-click-to-spawn is the board's main creation gesture and nothing on
-  // screen says so. Show a transient, non-interactive hint the first time a
-  // board mounts; it retires itself on a timer or as soon as the gesture is
-  // used, so it never becomes chrome the presenter has to dismiss.
+  // screen says so. Show a non-interactive hint whenever a board mounts and
+  // let it linger; it goes away only once the gesture is used, so a presenter
+  // who has not tried it yet still sees it after the board rebuilds.
   showActBoardSpawnHint(nodeStack);
   nodeStack.addEventListener('dblclick', event => {
+    actBoardSpawnHintDismissed = true;
     dismissActBoardSpawnHint(nodeStack);
     const nodeTarget = event.target.closest('.storyboard-act-board-node');
     const onPlaybackSurface = nodeTarget?.classList.contains('storyboard-act-board-node-playback');
@@ -14404,8 +14404,8 @@ function dismissActBoardSpawnHint(nodeStack) {
 }
 
 function showActBoardSpawnHint(nodeStack) {
-  if (!nodeStack || actBoardSpawnHintShown) return;
-  actBoardSpawnHintShown = true;
+  if (!nodeStack || actBoardSpawnHintDismissed) return;
+  if (nodeStack.querySelector('.storyboard-act-board-spawn-hint')) return;
   const hint = document.createElement('div');
   hint.className = 'storyboard-act-board-spawn-hint';
   // Decorative and never focusable: the gesture it describes stays available
@@ -14418,9 +14418,6 @@ function showActBoardSpawnHint(nodeStack) {
   label.textContent = 'Double-click anywhere to add a node';
   hint.append(cursor, label);
   nodeStack.appendChild(hint);
-  window.setTimeout(() => {
-    if (hint.isConnected) dismissActBoardSpawnHint(nodeStack);
-  }, ACT_BOARD_SPAWN_HINT_MS);
 }
 
 function actBoardRectsIntersect(a, b) {
