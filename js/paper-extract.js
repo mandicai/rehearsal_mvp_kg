@@ -9946,6 +9946,7 @@ function applyActBoardFootageAlignment(plan, llmMatches) {
   const narrationStart = Number(narration.startSeconds) || 0;
   let previousStart = 0;
   let cursor = 0;
+  let previousFloorExtended = 0;
   placed.forEach((item, index) => {
     const key = rangeKey(item);
     const rowIndex = distinct.findIndex(row => rangeKey(row) === key);
@@ -9971,19 +9972,33 @@ function applyActBoardFootageAlignment(plan, llmMatches) {
     // it illustrated. The gap that follows is deliberate.
     const endsWithSpokenSpan = members > 1 || item.node.footageBeatKind === 'clause';
     const windowEnd = endsWithSpokenSpan
-      ? Math.min(window.endSeconds, Math.max(window.startSeconds + ACT_BOARD_MIN_SHOT_SECONDS * members, item.endSeconds))
+      ? Math.min(window.endSeconds, Math.max(window.startSeconds, item.endSeconds))
       : window.endSeconds;
-    const share = Math.max(ACT_BOARD_MIN_SHOT_SECONDS,
-      (windowEnd - window.startSeconds) / members);
-    const start = Math.max(cursor, window.startSeconds + position * share);
+    // Where the words put this shot: its share of the spoken span, however
+    // short. The floor is applied to the LENGTH only, so a shot that must hold
+    // longer than its phrase runs on past it and bumps the next shot later
+    // through `cursor` - the phrase-true start is what the next shot wants,
+    // the cursor is what the previous shot's floor lets it have.
+    const share = Math.max(0, (windowEnd - window.startSeconds) / members);
+    const naturalStart = window.startSeconds + position * share;
+    const start = Math.max(cursor, naturalStart);
+    const naturalLength = Math.max(0, Math.min(share, windowEnd - naturalStart));
     // The phrase window says how long this shot COULD hold; the clip says how
     // long it actually has. Taking the shorter leaves a gap before the next
     // shot rather than looping the clip to fill it - a visible gap reads as an
     // editing decision, a repeating clip reads as a broken player.
     const length = Math.min(
-      Math.max(ACT_BOARD_MIN_SHOT_SECONDS, Math.min(share, windowEnd - start)),
+      Math.max(ACT_BOARD_MIN_SHOT_SECONDS, naturalLength),
       actBoardFootageMaxDurationSeconds(item.node),
     );
+    // Record the two sides of a floor collision so the cut planner can shape
+    // it: how far this shot holds past its phrase, and how far it was pushed
+    // off its phrase by the previous shot doing the same.
+    item.node.floorExtendedSeconds = Number(Math.max(0, length - naturalLength).toFixed(2));
+    item.node.pushedByFloorSeconds = previousFloorExtended > 0
+      && start - naturalStart > ACT_BOARD_TRACK_SEAM_TOLERANCE_SECONDS
+      ? Number(Math.min(start - naturalStart, previousFloorExtended).toFixed(2)) : 0;
+    previousFloorExtended = item.node.floorExtendedSeconds;
     item.node.sequenceIndex = index;
     item.node.startSeconds = Number((narrationStart + start).toFixed(2));
     item.node.durationSeconds = Number(length.toFixed(2));
@@ -10010,6 +10025,8 @@ function applyActBoardFootageAlignment(plan, llmMatches) {
     node.durationSeconds = Number(length.toFixed(2));
     node.durationWasSuggested = false;
     node.alignedToNarration = false;
+    node.floorExtendedSeconds = 0;
+    node.pushedByFloorSeconds = 0;
     node.timingWasManuallyAdjusted = true;
     cursor += length;
   });
@@ -10174,6 +10191,7 @@ function planActBoardAudioCuts(placedNodes, mediaFor) {
     shot.node.audioTailSeconds = 0;
     shot.node.transitionWasSuggested = false;
     shot.node.transitionKind = '';
+    shot.node.transitionReason = '';
   });
 
   // Find every boundary that COULD carry a cut first, then choose among them.
@@ -10208,7 +10226,35 @@ function planActBoardAudioCuts(placedNodes, mediaFor) {
   const cuts = [];
   let lastIndex = -Infinity;
   let lastKind = '';
+  // A boundary where the outgoing shot held its floor and pushed the incoming
+  // picture off its phrase is not a place to sprinkle: the delay wants
+  // covering. Carry the outgoing sound across it as an L-cut whenever that
+  // shot has sound to carry; these are chosen before the spacing rules and
+  // count towards them. A silent outgoing shot (a still) has nothing to
+  // bleed, so its boundary is left to the ordinary selection below.
+  const forced = new Set();
+  for (let index = 0; index < shots.length - 1; index += 1) {
+    const outgoing = shots[index];
+    const incoming = shots[index + 1];
+    if (!(Number(incoming.node.pushedByFloorSeconds) > 0) || !outgoing.hasAudio) continue;
+    const room = Math.min(outgoing.duration, incoming.duration)
+      * ACT_BOARD_AUDIO_CUT_MAX_SHOT_SHARE;
+    // Cover at least the delay, within the usual bounds.
+    const seconds = Number(Math.max(ACT_BOARD_AUDIO_CUT_MIN_SECONDS,
+      Math.min(ACT_BOARD_AUDIO_CUT_MAX_SECONDS, room,
+        Math.max(ACT_BOARD_AUDIO_CUT_MIN_SECONDS, Number(incoming.node.pushedByFloorSeconds)))).toFixed(2));
+    outgoing.node.audioTailSeconds = seconds;
+    outgoing.node.transitionWasSuggested = true;
+    outgoing.node.transitionKind = 'l-cut';
+    outgoing.node.transitionReason = 'floor';
+    cuts.push({ kind: 'l-cut', nodeId: outgoing.node.id, seconds, reason: 'floor' });
+    forced.add(index);
+  }
   eligible.forEach((candidate, position) => {
+    if (forced.has(candidate.index)) return;
+    const nearestForced = [...forced].reduce((best, index) =>
+      Math.min(best, Math.abs(index - candidate.index)), Infinity);
+    if (nearestForced < ACT_BOARD_AUDIO_CUT_SPACING) return;
     if (candidate.index - lastIndex < ACT_BOARD_AUDIO_CUT_SPACING) return;
     // Two of the same cut in a row reads as a tic rather than a choice. When
     // the very next candidate offers the other kind at no real cost, let it
@@ -10834,15 +10880,21 @@ const ACT_BOARD_NARRATION_CUT_MIN_SECONDS = 0.5;
 const ACT_BOARD_NARRATION_CUT_MAX_SECONDS = 3.0;
 // Neither neighbour may be pushed below this, or a shot vanishes to make room
 // for the transition on top of it.
-const ACT_BOARD_NARRATION_CUT_MIN_SHOT_SECONDS = 0.6;
+// Same value as the shot floor (declared below; a const cannot be read before
+// its line): a picture edit may not push a shot under the floor either.
+const ACT_BOARD_NARRATION_CUT_MIN_SHOT_SECONDS = 1.0;
 const ACT_BOARD_NARRATION_CUT_SPACING = 2;
 
 // Generated video is capped by the model. When a clip's real duration is not
 // known yet, this is the assumption to plan against - stretching past it makes
 // the clip repeat rather than hold.
 const ACT_BOARD_GENERATED_VIDEO_MAX_SECONDS = 8;
-// A shot shorter than this is a flash, not a shot.
-const ACT_BOARD_MIN_SHOT_SECONDS = 0.5;
+// A shot shorter than this is a flash, not a shot. Every footage shot holds at
+// least this long even when the phrase that suggested it is spoken faster: the
+// shot then runs past its phrase and bumps the next shot later (see
+// applyActBoardFootageAlignment), where an L-cut is suggested to carry the
+// outgoing sound across the delayed picture.
+const ACT_BOARD_MIN_SHOT_SECONDS = 1.0;
 // Two shots meeting exactly are not overlapping. Timings are rounded to 2dp
 // independently on each side of a seam, so an exact join can land a hair below
 // the running cursor; without a tolerance the overlap repair below snaps it
@@ -16157,7 +16209,11 @@ function orderedActBoardSceneFootage(actKey, scene, nodes = actBoardNodesForAct(
     // dropping the node back onto a rail, but they should not consume time or
     // shift the visible shots while the track is laid out.
     if (!actBoardTrackNodeVisible(node)) return;
-    const duration = Math.max(0.5, Number(node.durationSeconds) || 1);
+    // The floor is a property of every footage shot, not only arranged ones.
+    if ((Number(node.durationSeconds) || 0) < ACT_BOARD_MIN_SHOT_SECONDS) {
+      node.durationSeconds = ACT_BOARD_MIN_SHOT_SECONDS;
+    }
+    const duration = Math.max(ACT_BOARD_MIN_SHOT_SECONDS, Number(node.durationSeconds) || 1);
     if (!node.timingWasManuallyAdjusted) {
       node.startSeconds = Number(cursorSeconds.toFixed(2));
     } else if ((Number(node.startSeconds) || 0)
@@ -18242,7 +18298,10 @@ function buildActBoardFootageTrack(actKey, narrationNode, boardLayer, linkedOver
       marker.textContent = isLead ? 'J' : 'L';
       marker.title = isLead
         ? `J-cut · this clip's audio starts ${seconds.toFixed(2)}s before its picture · click to remove`
-        : `L-cut · this clip's audio runs ${seconds.toFixed(2)}s past its picture · click to remove`;
+        : `L-cut · this clip's audio runs ${seconds.toFixed(2)}s past its picture${
+          footage.transitionReason === 'floor'
+            ? ' · covers the next shot arriving after its phrase because this one holds its 1s minimum'
+            : ''} · click to remove`;
       marker.setAttribute('aria-label', marker.title);
       // The segment itself is draggable and Delete-able; neither belongs to
       // the marker.
@@ -18255,6 +18314,7 @@ function buildActBoardFootageTrack(actKey, narrationNode, boardLayer, linkedOver
         if (!(Number(footage.audioLeadSeconds) || 0) && !(Number(footage.audioTailSeconds) || 0)) {
           footage.transitionWasSuggested = false;
           footage.transitionKind = '';
+          footage.transitionReason = '';
         }
         saveDebugSession();
         marker.remove();
@@ -18446,7 +18506,7 @@ function buildActBoardFootageTrack(actKey, narrationNode, boardLayer, linkedOver
         // compounding rounding error while still preserving their gaps.
         const followingStarts = linked.slice(index + 1).map(item =>
           Math.max(0, Number(item.startSeconds) || 0));
-        const minimumDuration = 0.5;
+        const minimumDuration = ACT_BOARD_MIN_SHOT_SECONDS;
         try { handle.setPointerCapture(event.pointerId); } catch (err) { /* optional */ }
         segment.classList.add('resizing');
         let frameId = 0;
