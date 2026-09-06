@@ -1907,7 +1907,7 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 
 .storyboard-act-board-column-header span {
   flex: 0 0 auto;
-  font: 10px var(--cd-font-mono);
+  font: 10px var(--cd-font-body);
   opacity: .6;
 }
 
@@ -13054,7 +13054,7 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
 .storyboard-act-board-find-footage-btn:hover, .find-footage-btn:hover, .generate-shot-examples-btn:hover,
 .generate-shot-video-btn:hover, .storyboard-act-board-generate-images-btn:hover,
 .storyboard-act-board-generate-video-btn:hover, .storyboard-act-board-image-generation-edit-techniques:hover {
-  filter: brightness(.92);
+  background-color: var(--cd-accent-hover) !important;
   color: #fff !important;
 }
 #moodboard-add-name-btn:disabled, #moodboard-add-url-btn:disabled, .suggest-arc-btn:disabled,
