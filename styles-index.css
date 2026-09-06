@@ -12658,6 +12658,15 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
   margin-bottom: 0;
   transition: grid-template-rows .2s ease, opacity .16s ease, margin-bottom .2s ease;
   pointer-events: none;
+  /* A long transcript makes a slide wider than the viewport, and the bar's
+     buttons sit at the slide's left edge - scrolling into the later words
+     scrolled them out of view, leaving no way to switch mode or edit. Stick
+     the bar to the viewport's left edge for as long as its slide is in view. */
+  position: sticky;
+  left: 10px;
+  width: max-content;
+  max-width: 100%;
+  z-index: 2;
 }
 .storyboard-act-board-scene-narration-slide.selected
   > .storyboard-act-board-narration-slide-bar {
