@@ -97,7 +97,10 @@ class PexelsClient:
             response = requests.get(
                 _PEXELS_SEARCH_URL,
                 headers={'Authorization': self.api_key},
-                params={'query': query, 'per_page': per_page},
+                # Landscape only: the board's stage is 16:9 and a portrait clip
+                # arrived as a tall pillar between wide ones. The frontend also
+                # drops anything that still measures taller than wide.
+                params={'query': query, 'per_page': per_page, 'orientation': 'landscape'},
                 timeout=15,
             )
             response.raise_for_status()
@@ -120,6 +123,8 @@ class PexelsClient:
                 'id': video.get('id'),
                 'thumbnail_url': pictures[0]['picture'] if pictures else None,
                 'video_url': smallest['link'],
+                'width': video.get('width') or smallest.get('width'),
+                'height': video.get('height') or smallest.get('height'),
                 'duration': _duration_seconds(video.get('duration')),
                 'creator': (video.get('user') or {}).get('name'),
                 'source_url': video.get('url'),

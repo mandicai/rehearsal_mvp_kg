@@ -13740,6 +13740,15 @@ function patchActBoardSceneDom(actKey, sceneId, options = {}) {
     releaseActBoardMediaElements(oldSceneCard);
     oldSceneCard.remove();
   }
+  // Stretch the sections rail to the card's bottom NOW, not on the next
+  // frame. The footage placement below measures the footage lane, and before
+  // the rail is positioned that lane is only its 380px minimum: with more
+  // cards than fit, the rest stayed hidden until some later pass happened to
+  // place them (the "cards pop in much later" report). This must run after
+  // the old card is gone: the positioner finds its scene card by id, and
+  // while both cards exist it matches the old one and treats the rail as
+  // unmounted.
+  tracks?._actBoardPosition?.();
   refineActBoardRenderedGeometry(nodeStack, ordered, {
     ...options,
     preserveFootageNodeIds,
@@ -15966,6 +15975,7 @@ function actBoardVisualForKey(node, key) {
       label: result.source || 'Found footage',
       source: result.source || '',
       resultIndex: index,
+      portrait: actBoardResultIsPortrait(result),
     };
   }
   return null;
@@ -16923,6 +16933,64 @@ function buildActBoardNarrationPlayback(actKey, node, boardLayer, playbackNode =
     stage.appendChild(caption);
     renderPlaybackCaption(nowSeconds, true);
   };
+  // Upcoming shots are decoded ahead of the cut. Creating the <video> at the
+  // moment of the switch meant every cut waited on the network - with the
+  // one-second shots Smart arrange lays down, playback was a run of stalls.
+  // The pool keeps the next shots (and the previous one, for a scrub back)
+  // ready; a shot's element is reused across switches and released when it
+  // falls out of that window.
+  const ACT_BOARD_PLAYBACK_PRELOAD_AHEAD = 2;
+  const videoPool = new Map();
+  const releasePooledVideo = entry => {
+    try {
+      entry.video.pause();
+      entry.video.removeAttribute('src');
+      entry.video.load();
+    } catch (err) { /* already released */ }
+    entry.video.remove();
+    videoPool.delete(entry.footage.id);
+  };
+  const pooledFootageVideo = footage => {
+    const media = actBoardSelectedFootageMedia(footage, playbackNodes);
+    if (!media.url || media.kind !== 'video') return null;
+    const existing = videoPool.get(footage.id);
+    if (existing && existing.url === media.url) return existing.video;
+    if (existing) releasePooledVideo(existing);
+    const video = document.createElement('video');
+    video.src = media.url;
+    video.poster = media.thumbnailUrl || '';
+    video.playsInline = true;
+    // Never loop a shot. A clip that ends before its slot holds its last
+    // frame; restarting reads as a broken player rather than an edit.
+    video.loop = false;
+    video.preload = 'auto';
+    // Use the shared playback clock rather than the audio time so a late
+    // metadata event cannot seek a new shot back to the narration's last frame.
+    ['loadedmetadata', 'loadeddata'].forEach(eventName => video.addEventListener(eventName, () => {
+      if (state.video === video) syncVideoToNarration(footage, state.clockTime, true);
+    }));
+    video.addEventListener('error', () => {
+      if (state.video === video && state.status) {
+        state.status.textContent = 'This footage could not be loaded from its source.';
+      }
+    });
+    videoPool.set(footage.id, { video, url: media.url, footage });
+    return video;
+  };
+  const preloadUpcomingFootage = current => {
+    const currentId = current?.id || null;
+    if (state.lastPreloadedFor === currentId) return;
+    state.lastPreloadedFor = currentId;
+    const order = linked.slice().sort((a, b) =>
+      (Number(a.startSeconds) || 0) - (Number(b.startSeconds) || 0));
+    const index = currentId ? order.findIndex(item => item.id === currentId) : -1;
+    const keep = new Set(currentId ? [currentId] : []);
+    order.slice(index + 1, index + 1 + ACT_BOARD_PLAYBACK_PRELOAD_AHEAD).forEach(item => {
+      if (pooledFootageVideo(item)) keep.add(item.id);
+    });
+    if (index > 0) keep.add(order[index - 1].id);
+    videoPool.forEach(entry => { if (!keep.has(entry.footage.id)) releasePooledVideo(entry); });
+  };
   const setStage = (footage, nowSeconds = readAudioTime(), forceSeek = false) => {
     if (!footage || (!hasNarrationMedia && !hasFootageMedia && !hasAudioMedia)) {
       stage.replaceChildren();
@@ -16955,8 +17023,10 @@ function buildActBoardNarrationPlayback(actKey, node, boardLayer, playbackNode =
       syncVideoToNarration(footage, nowSeconds, forceSeek);
       return;
     }
+    // The stage keeps its 16:9 box whatever the clip's own shape (the CSS
+    // letterboxes with object-fit: contain). Following each clip's aspect
+    // reflowed the whole panel at every cut, which read as jumpy playback.
     stage.replaceChildren();
-    stage.style.aspectRatio = '16 / 9';
     state.video?.pause();
     pauseActBoardSplitVideos(state);
     state.splitVideos = [];
@@ -16997,48 +17067,17 @@ function buildActBoardNarrationPlayback(actKey, node, boardLayer, playbackNode =
       stage.appendChild(splitStage);
       state.video = null;
     } else if (url && kind === 'video') {
-      const video = document.createElement('video');
-      video.src = url;
-      video.poster = thumbnailUrl;
+      const video = pooledFootageVideo(footage);
       // Keep generated model audio out of the linked playback mix. Uploaded
       // and stock footage retain their native audio, subject to node volume.
       video.muted = muteAudio === true;
       video.volume = video.muted ? 0 : actBoardNodeVolume(footage, 1);
-      video.playsInline = true;
-      // Never loop a shot. A clip that ends before its slot holds its last
-      // frame; restarting reads as a broken player rather than an edit.
-      video.loop = false;
-      video.preload = 'auto';
-      // The narration can finish before the last footage shot. Use the
-      // shared playback clock here instead of the now-stale audio time so a
-      // late metadata event cannot seek the new shot back to the narration's
-      // final frame.
-      video.addEventListener('loadedmetadata', () => {
-        if (video.videoWidth > 0 && video.videoHeight > 0) {
-          stage.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
-        }
-        if (state.video === video) syncVideoToNarration(footage, state.clockTime, true);
-      });
-      video.addEventListener('loadeddata', () => {
-        if (video.videoWidth > 0 && video.videoHeight > 0) {
-          stage.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
-        }
-        if (state.video === video) syncVideoToNarration(footage, state.clockTime, true);
-      });
-      video.addEventListener('error', () => {
-        if (state.status) state.status.textContent = 'This footage could not be loaded from its source.';
-      });
       stage.appendChild(video);
       state.video = video;
     } else if (url || thumbnailUrl) {
       const image = document.createElement('img');
       image.src = thumbnailUrl || footage.mediaThumbnailUrl || url;
       image.alt = footage.fragment || 'Linked footage';
-      image.addEventListener('load', () => {
-        if (image.naturalWidth > 0 && image.naturalHeight > 0) {
-          stage.style.aspectRatio = `${image.naturalWidth} / ${image.naturalHeight}`;
-        }
-      }, { once: true });
       stage.appendChild(image);
       state.video = null;
     } else {
@@ -17059,6 +17098,8 @@ function buildActBoardNarrationPlayback(actKey, node, boardLayer, playbackNode =
     totalPlaybackDuration: initialPlaybackDuration,
     progressInput: null, progressLabel: null, updatePlaybackProgress: null,
     error: false, node, boardLayer, setStage, playbackTimelineOwner,
+    lastPreloadedFor: undefined,
+    releaseVideoPool: () => videoPool.forEach(releasePooledVideo),
     actKey: String(actKey),
     sceneId: String(playbackNode?.sceneId || node?.sceneId || ''),
   };
@@ -17253,6 +17294,7 @@ function buildActBoardNarrationPlayback(actKey, node, boardLayer, playbackNode =
       state.activeCards.push(card);
     }
     setStage(current, now);
+    preloadUpcomingFootage(current);
   };
   const startPlaybackClock = () => {
     if (state.clockTimer) return;
@@ -19789,6 +19831,19 @@ function mergePinnedActBoardVisuals(existing, fresh) {
 // at ten thumbnails, so taking the first ten would often hide the later
 // providers entirely. Round-robin the batches here to keep the same provider
 // variety in the smaller act-board result set.
+// Suggested stock footage keeps one shape. A clip counts as portrait when its
+// known dimensions (from the provider, or measured from its thumbnail once
+// drawn) are not clearly wider than tall; it is then dropped from the results
+// and skipped by the automatic pick.
+const ACT_BOARD_STOCK_MIN_ASPECT = 1.2;
+function actBoardResultIsPortrait(result) {
+  if (!result) return false;
+  if (result.portrait === true) return true;
+  const width = Number(result.width) || 0;
+  const height = Number(result.height) || 0;
+  return width > 0 && height > 0 && width < height * ACT_BOARD_STOCK_MIN_ASPECT;
+}
+
 function diversifyActBoardVideoResults(videos, limit = 10) {
   const groups = new Map();
   (Array.isArray(videos) ? videos : []).forEach(video => {
@@ -19958,12 +20013,20 @@ async function findActBoardFootageNode(
         writeActBoardPersistentCache('footage', cacheKey, options);
       }
       if (!requestIsCurrent()) return;
-      const freshResults = diversifyActBoardVideoResults(options.videos, 10).map(video => ({
+      // Only landscape clips: the stage is 16:9 and a tall clip sat as a
+      // pillar between wide ones. Providers that report dimensions are
+      // filtered here; the rest are measured from their thumbnail as the
+      // gallery draws them (see actBoardResultIsPortrait).
+      const freshResults = diversifyActBoardVideoResults(
+        (Array.isArray(options.videos) ? options.videos : []).filter(video => !actBoardResultIsPortrait(video)), 10,
+      ).map(video => ({
         id: video.id || '',
         video_url: video.video_url,
         thumbnail_url: video.thumbnail_url || '',
         source_url: video.source_url || '',
         source: video.source || '',
+        width: Number(video.width) || 0,
+        height: Number(video.height) || 0,
         duration_seconds: Number(video.duration_seconds || video.duration) || 0,
       }));
       footageNode.results = mergePinnedActBoardVisuals(footageNode.results, freshResults);
@@ -21002,7 +21065,7 @@ async function selectRandomActBoardFootageVisual(actKey, node) {
     .filter(item => item.option?.url && item.option.kind !== 'video');
   const stock = (Array.isArray(node.results) ? node.results : [])
     .map((result, index) => ({ result, index }))
-    .filter(item => item.result?.video_url);
+    .filter(item => item.result?.video_url && !actBoardResultIsPortrait(item.result));
   if (!generated.length && !stock.length) return false;
 
   const chooseStock = stock.length && generated.length
@@ -23842,6 +23905,8 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
       alternateVisualOptions.push(selectedVisual);
     }
     alternateVisualOptions.forEach(option => {
+      // A stock clip already known to be portrait never gets a card.
+      if (option.portrait) return;
       const thumbWrap = document.createElement('div');
       thumbWrap.className = 'storyboard-act-board-footage-thumb-wrap';
       const optionButton = document.createElement('button');
@@ -23862,6 +23927,18 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
         image.alt = option.label;
         image.loading = 'lazy';
         image.decoding = 'async';
+        // Providers without dimensions are measured here, from the poster:
+        // a tall one is hidden and its result flagged so the automatic pick
+        // and later gallery builds skip it too.
+        if (option.resultIndex != null) {
+          image.addEventListener('load', () => {
+            if (!(image.naturalWidth > 0 && image.naturalHeight > 0)) return;
+            if (image.naturalWidth >= image.naturalHeight * ACT_BOARD_STOCK_MIN_ASPECT) return;
+            const result = node.results?.[option.resultIndex];
+            if (result) result.portrait = true;
+            thumbWrap.hidden = true;
+          }, { once: true });
+        }
         optionButton.appendChild(image);
       } else if (option.url) {
         const placeholder = document.createElement('span');
@@ -25327,6 +25404,10 @@ function buildActBoardFullPlaybackPanel(board, exportActionGroup = null) {
       return;
     }
     stopActBoardPlayback();
+    // The outgoing transport's preloaded shots are detached elements; drop
+    // their decoders now rather than waiting on garbage collection.
+    selectedScenePlaybackMount.querySelector('.storyboard-act-board-playback')
+      ?._actBoardPlaybackState?.releaseVideoPool?.();
     activeScenePlaybackId = sceneId;
     selectedScenePlayback._actBoardSceneActKey = String(actKey || '');
     selectedScenePlayback._actBoardSceneId = String(sceneId || '');
@@ -26065,8 +26146,10 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
     sceneArrangeButton.textContent = 'Smart arrange';
     sceneArrangeButton.title = 'Arrange narration, footage, and sound segments on their tracks using narration timing';
     sceneArrangeButton.setAttribute('aria-label', 'Smart arrange scene nodes to narration');
+    // Arranging lays footage against the narration; with no footage on the
+    // rail there is nothing to lay, so the button is not offered.
     sceneArrangeButton.disabled = !actBoardSceneNodes(scene, nodes)
-      .some(node => ['narration', 'footage', 'audio'].includes(node.type));
+      .some(node => node.type === 'footage' && actBoardTrackNodeVisible(node));
     sceneArrangeButton.addEventListener('click', event => {
       event.preventDefault();
       event.stopPropagation();

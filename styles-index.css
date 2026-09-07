@@ -4946,6 +4946,9 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   width: 100%;
   min-width: 0;
 }
+/* A stock result measured as portrait is hidden by the gallery; the author
+   display above would otherwise beat the hidden attribute. */
+.storyboard-act-board-footage-thumb-wrap[hidden] { display: none !important; }
 
 .storyboard-act-board-footage-source {
   position: absolute;
