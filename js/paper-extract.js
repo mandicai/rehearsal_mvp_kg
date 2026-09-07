@@ -12693,27 +12693,29 @@ function positionActBoardFootageNodesInSceneSection(nodeStack, scene, nodes) {
   // Each candidate row is scanned left-to-right before moving down, so a
   // batch cannot devolve into the old bottom-right-to-top-left diagonal.
   const placementCandidates = (size, laneBottom, occupiedRects) => {
-    // Only create a new row after the current row has been exhausted. A
-    // bottom edge from a card that sits lower in the lane should not become a
-    // preferred row ahead of an open slot beside the cards at the top.
-    const yValues = [placementOrigin.contentTop];
-    const rowBottoms = occupiedRects
-      .filter(rect => rect.y <= placementOrigin.contentTop + size.height + gap)
-      .map(rect => rect.y + rect.height + gap)
-      .filter(value => Number.isFinite(value));
-    if (rowBottoms.length) yValues.push(Math.max(...rowBottoms));
-    // Continue with additional rows only as needed. Grouping bottoms by their
-    // maximum keeps a set of cards in one compact row instead of producing a
-    // staircase from slightly different card heights.
-    const remainingBottoms = occupiedRects
-      .filter(rect => rect.y > placementOrigin.contentTop + size.height + gap)
-      .map(rect => rect.y + rect.height + gap)
-      .filter(value => Number.isFinite(value))
-      .sort((a, b) => a - b);
-    remainingBottoms.forEach(value => {
-      if (yValues.every(existing => Math.abs(existing - value) > 1)) yValues.push(value);
+    // Candidate rows: the lane top, the top of every row a card has already
+    // started, and the row below every card - so a half-filled row is filled
+    // before a new one opens. The previous first-row / later-rows split
+    // classified a card sitting exactly one row down as first-row, offered
+    // only its BOTTOM as the next candidate, and skipped the free space
+    // beside it: the cards that followed opened a new row under a lone one
+    // until Organize recomputed the layout. Values within a few pixels are
+    // merged to their maximum so slightly different card heights still form
+    // one compact row rather than a staircase.
+    const rawYs = [placementOrigin.contentTop];
+    occupiedRects.forEach(rect => {
+      [rect.y, rect.y + rect.height + gap].forEach(value => {
+        if (Number.isFinite(value) && value >= placementOrigin.contentTop - 0.5) rawYs.push(value);
+      });
     });
-    const ys = yValues.sort((a, b) => a - b);
+    rawYs.sort((a, b) => a - b);
+    const yValues = [];
+    rawYs.forEach(value => {
+      const last = yValues.length - 1;
+      if (last >= 0 && value - yValues[last] <= 12) yValues[last] = Math.max(yValues[last], value);
+      else yValues.push(value);
+    });
+    const ys = yValues;
     for (const y of ys) {
       if (y + size.height > laneBottom - padding + 0.5) continue;
       let x = placementOrigin.left;
