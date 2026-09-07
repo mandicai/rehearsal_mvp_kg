@@ -14749,7 +14749,6 @@ function actBoardImageShotPlanDisplayText(node, visual = null) {
     ? plan.techniques.filter(Boolean).join(' · ') : '';
   const fields = [
     ['Shot size', plan.shot_size || plan.shotSize],
-    ['Movement', plan.movement || plan.cameraMovement],
     ['Narrative operation', plan.narrative_operation || plan.narrativeOperation],
     ['Purpose', plan.purpose],
     ['Visual description', plan.visual_description || plan.visualDescription || plan.visual],
@@ -15206,7 +15205,6 @@ async function generateActBoardNodeExamples(
       techniques: (example.techniques || techniqueVariants[index] || context.techniques || []).slice(0, 1),
       shotPlan: {
         shot_size: example.shot_size || '',
-        movement: example.movement || '',
         narrative_operation: example.narrative_operation || '',
         purpose: example.purpose || '',
         visual_description: example.visual_description || '',
@@ -15375,10 +15373,6 @@ async function generateActBoardNodeVideo(actKey, act, node) {
     ? String(startVisual.specificPhrase || '').trim()
     : context.specificPhrase;
   const videoTechniques = ensureActBoardVideoGenerationTechniques(node);
-  // The operation-derived direction supersedes the structured camera movement
-  // hint. The planner can still return a movement for reference, but it must
-  // not be sent as a competing authoritative direction.
-  const cameraMovement = '';
   const jobKey = `${actKey}:${node.id}:video`;
   const jobToken = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const previousController = actBoardGenerationAbortControllers.get(jobKey);
@@ -15408,7 +15402,6 @@ async function generateActBoardNodeVideo(actKey, act, node) {
       linkedFootagePhrases: context.linkedFootagePhrases,
       documentaryMode: context.documentaryMode,
       techniques: videoTechniques,
-      cameraMovement,
       animationDirection,
       visualDescription,
       projectId: premiereProjectId,
@@ -15438,7 +15431,6 @@ async function generateActBoardNodeVideo(actKey, act, node) {
       linkedFootagePhrases: context.linkedFootagePhrases,
       documentaryMode: context.documentaryMode,
       techniques: videoTechniques,
-      cameraMovement,
       animationDirection: plannedAnimationDirection,
       subjectAction: visualDescription,
       projectId: premiereProjectId,

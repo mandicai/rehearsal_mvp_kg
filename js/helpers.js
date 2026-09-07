@@ -1998,7 +1998,7 @@ function fetchGenerateCutaways({ sectionIndex, narration, title, sceneNotes, act
 // moodboard reference profiles; the CONTENT is anchored in the scene's
 // narration, title, act title, and scene notes (the paper abstract is not
 // used). Same projectId in/out convention as fetchGenerateSketch.
-function fetchGenerateShot({ sectionIndex, title, sceneNotes, specificPhrase, parentNarration, linkedFootagePhrases, narration, actTitle, documentaryMode, techniques, moodboard, shotIndex, projectId, abstract, role, referenceSubject, referenceSketchUrl, referenceFigureDataUrl, referenceVideoUrl, referenceVideoThumbnailUrl, signal }) {
+function fetchGenerateShot({ sectionIndex, title, specificPhrase, parentNarration, linkedFootagePhrases, narration, actTitle, documentaryMode, techniques, moodboard, shotIndex, projectId, abstract, referenceSubject, referenceSketchUrl, referenceFigureDataUrl, referenceVideoUrl, referenceVideoThumbnailUrl, signal }) {
   return fetch(GENERATE_SHOT_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2007,13 +2007,11 @@ function fetchGenerateShot({ sectionIndex, title, sceneNotes, specificPhrase, pa
       section_index: sectionIndex,
       title: title || '',
       act_title: actTitle || '',
-      scene_notes: sceneNotes || '',
       ...(specificPhrase ? { specific_phrase: specificPhrase } : {}),
       ...(parentNarration ? { parent_narration: parentNarration } : {}),
       ...(linkedFootagePhrases && linkedFootagePhrases.length ? { linked_footage_phrases: linkedFootagePhrases } : {}),
       narration: narration || '',
       ...(abstract ? { abstract } : {}),
-      ...(role ? { role } : {}),
       ...(referenceSubject ? { reference_subject: referenceSubject } : {}),
       ...(referenceSketchUrl ? { reference_sketch_url: referenceSketchUrl } : {}),
       ...(referenceFigureDataUrl ? { reference_figure_data_url: referenceFigureDataUrl } : {}),
@@ -2041,7 +2039,7 @@ function fetchGenerateShot({ sectionIndex, title, sceneNotes, specificPhrase, pa
 // Optional startImageUrl/endImageUrl enable the Act Board's two-frame mode.
 const GENERATE_SHOT_VIDEO_API_URL = `${API_BASE_URL}/paper/generate_shot_video`;
 const GENERATE_SHOT_PLAN_API_URL = `${API_BASE_URL}/paper/generate_shot_plan`;
-function fetchGenerateShotPlan({ sectionIndex, title, sceneNotes, specificPhrase, parentNarration, linkedFootagePhrases, documentaryMode, techniques, projectId, cameraMovement, animationDirection, visualDescription, signal }) {
+function fetchGenerateShotPlan({ sectionIndex, title, specificPhrase, parentNarration, linkedFootagePhrases, documentaryMode, techniques, projectId, animationDirection, visualDescription, signal }) {
   return fetch(GENERATE_SHOT_PLAN_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2049,13 +2047,11 @@ function fetchGenerateShotPlan({ sectionIndex, title, sceneNotes, specificPhrase
     body: JSON.stringify({
       section_index: sectionIndex,
       title: title || '',
-      scene_notes: sceneNotes || '',
       ...(specificPhrase ? { specific_phrase: specificPhrase } : {}),
       ...(parentNarration ? { parent_narration: parentNarration } : {}),
       ...(linkedFootagePhrases && linkedFootagePhrases.length ? { linked_footage_phrases: linkedFootagePhrases } : {}),
       ...(documentaryMode ? { documentary_mode: documentaryMode } : {}),
       ...(techniques && techniques.length ? { techniques } : {}),
-      ...(cameraMovement ? { camera_movement: cameraMovement } : {}),
       ...(animationDirection ? { animation_direction: animationDirection } : {}),
       ...(visualDescription !== undefined ? { visual_description: visualDescription } : {}),
       ...(projectId ? { project_id: projectId } : {}),
@@ -2121,7 +2117,7 @@ function fetchGenerateShotVideo({ sectionIndex, chosenImageUrl, startImageUrl, e
 // ~count cheap still frames + one Veo clip, all from the same shot plan/framing,
 // for the presenter to pick from. Same inputs as fetchGenerateShot.
 const GENERATE_SHOT_EXAMPLES_API_URL = `${API_BASE_URL}/paper/generate_shot_examples`;
-function fetchGenerateShotExamples({ sectionIndex, title, sceneNotes, specificPhrase, parentNarration, linkedFootagePhrases, narration, actTitle, documentaryMode, techniques, techniqueVariants, moodboard, count, video, projectId, abstract, role, referenceSubject, referenceSketchUrl, referenceFigureDataUrl, referenceVideoUrl, referenceVideoThumbnailUrl, signal }) {
+function fetchGenerateShotExamples({ sectionIndex, title, specificPhrase, parentNarration, linkedFootagePhrases, narration, actTitle, documentaryMode, techniques, techniqueVariants, moodboard, count, video, projectId, abstract, referenceSubject, referenceSketchUrl, referenceFigureDataUrl, referenceVideoUrl, referenceVideoThumbnailUrl, signal }) {
   return fetch(GENERATE_SHOT_EXAMPLES_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2130,13 +2126,11 @@ function fetchGenerateShotExamples({ sectionIndex, title, sceneNotes, specificPh
       section_index: sectionIndex,
       title: title || '',
       act_title: actTitle || '',
-      scene_notes: sceneNotes || '',
       ...(specificPhrase ? { specific_phrase: specificPhrase } : {}),
       ...(parentNarration ? { parent_narration: parentNarration } : {}),
       ...(linkedFootagePhrases && linkedFootagePhrases.length ? { linked_footage_phrases: linkedFootagePhrases } : {}),
       narration: narration || '',
       ...(abstract ? { abstract } : {}),
-      ...(role ? { role } : {}),
       ...(referenceSubject ? { reference_subject: referenceSubject } : {}),
       ...(referenceSketchUrl ? { reference_sketch_url: referenceSketchUrl } : {}),
       ...(referenceFigureDataUrl ? { reference_figure_data_url: referenceFigureDataUrl } : {}),

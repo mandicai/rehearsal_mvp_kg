@@ -1529,10 +1529,7 @@ def paper_generate_shot_plan():
         return jsonify({'error': _STORYBOARD_NOT_CONFIGURED_ERROR}), 503
 
     title = (data.get('title') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
-    scene_notes = (data.get('scene_notes') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
     specific_phrase, parent_narration, linked_phrases = _parse_generation_context(data)
-    scene_notes = _generation_context_notes(
-        scene_notes, specific_phrase, '', linked_phrases)
     documentary_mode, err = _parse_documentary_mode(data)
     if err:
         return err
@@ -1540,33 +1537,16 @@ def paper_generate_shot_plan():
                         if technique in ACT_BOARD_CAMERA_MOVEMENT_TO_PLAN]
     animation_direction = (data.get('animation_direction') or '').strip()[:500]
     user_visual_description = (data.get('visual_description') or '').strip()[:MAX_SKETCH_VISUAL_CHARS]
-    camera_movement = str(data.get('camera_movement') or '').strip()
-    requested_movement = ACT_BOARD_CAMERA_MOVEMENT_TO_PLAN.get(camera_movement)
-    if camera_movement and not requested_movement:
-        return jsonify({'error': 'camera_movement must be a valid Camera movement technique'}), 400
-    if camera_movement:
-        camera_direction_label = (
-            'Supporting camera movement hint'
-            if animation_direction else 'Requested camera movement (AUTHORITATIVE)'
-        )
-        scene_notes = (
-            f'{scene_notes}\n{camera_direction_label}: {camera_movement}'
-        ).strip()[:MAX_STORYBOARD_SECTION_CHARS]
-    if animation_direction:
-        scene_notes = (
-            f'Derived animation direction (AUTHORITATIVE): {animation_direction}\n{scene_notes}'
-        ).strip()[:MAX_STORYBOARD_SECTION_CHARS]
-    if user_visual_description:
-        scene_notes = (
-            'User-edited visual field (AUTHORITATIVE; integrate this with the requested camera motion): '
-            f'{user_visual_description}\n{scene_notes}'
-        ).strip()[:MAX_STORYBOARD_SECTION_CHARS]
-
     project_id = (data.get('project_id') or '').strip() or next_premiere_project_id()
+    # No scene notes and no camera movement: the phrase, sibling phrases, the
+    # user's visual field and the operation-derived camera direction go to the
+    # planner as their own fields, and the plan carries no movement of its own.
     try:
         shot_plan = shot_plan_client.generate_shot_plan(
-            title, scene_notes, parent_narration, '', documentary_mode,
-            techniques=scene_techniques, count=1, return_all=False)
+            title, parent_narration, '', documentary_mode,
+            techniques=scene_techniques, count=1, return_all=False,
+            subject_focus=specific_phrase, linked_phrases=linked_phrases,
+            user_visual=user_visual_description, animation_direction=animation_direction)
     except ShotPlanLLMCallError as exc:
         return jsonify({'error': str(exc)}), 500
     shot_plan['visual_description'] = _unified_shot_visual_field(
@@ -1580,11 +1560,6 @@ def paper_generate_shot_plan():
         # the planner's rewritten visual description.
         shot_plan['user_visual_field'] = user_visual_description
         shot_plan['subject_action'] = user_visual_description
-    if requested_movement:
-        if animation_direction:
-            shot_plan['supporting_movement'] = requested_movement
-        else:
-            shot_plan['movement'] = requested_movement
     if animation_direction:
         # Keep the derived motion direction in the returned shot plan so it
         # remains the canonical instruction when the plan is saved and used
@@ -1611,10 +1586,10 @@ def paper_generate_shot():
     # all, generate_shot_plan invents a plausible generic shot). abstract is
     # the whole paper's abstract, so it gets the larger transcript-style cap.
     title = (data.get('title') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
-    scene_notes = (data.get('scene_notes') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
     specific_phrase, parent_narration, linked_footage_phrases = _parse_generation_context(data)
-    scene_notes = _generation_context_notes(
-        scene_notes, specific_phrase, '', linked_footage_phrases)
+    # The image prompt still names the phrase and sibling phrases; the planner
+    # receives them as fields of its own rather than as scene notes.
+    context_notes = _generation_context_notes('', specific_phrase, '', linked_footage_phrases)
     reference_subject = (data.get('reference_subject') or '').strip()[:MAX_SKETCH_VISUAL_CHARS]
     narration = (data.get('narration') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS]
     if parent_narration:
@@ -1631,21 +1606,21 @@ def paper_generate_shot():
         return jsonify({'error': _SKETCH_NOT_CONFIGURED_ERROR}), 503
 
     abstract = (data.get('abstract') or '').strip()[:MAX_ABSTRACT_CHARS]
-    role = (data.get('role') or '').strip()
     reference_subject = (data.get('reference_subject') or '').strip()[:MAX_SKETCH_VISUAL_CHARS]
     scene_techniques = _parse_techniques(data)
 
     try:
         shot_plan = shot_plan_client.generate_shot_plan(
-            title, scene_notes, narration, act_title, documentary_mode,
+            title, narration, act_title, documentary_mode,
             techniques=scene_techniques, moodboard=_parse_moodboard_profiles(data),
-            abstract=abstract, role=role, reference_subject=reference_subject)
+            abstract=abstract, reference_subject=reference_subject,
+            subject_focus=specific_phrase, linked_phrases=linked_footage_phrases)
     except ShotPlanLLMCallError as exc:
         return jsonify({'error': str(exc)}), 500
 
     visual_description = (shot_plan.get('visual_description') or '').strip()
     frame_prompt = _subject_locked_visual(
-        reference_subject, visual_description, scene_notes, scene_techniques)
+        reference_subject, visual_description, context_notes, scene_techniques)
     reference_sketch_path = resolve_static_preview_path(data.get('reference_sketch_url'))
     # Open-slot footage/video references take precedence; paper figures arrive
     # as embedded data URLs rather than premiere_exports paths and are the
@@ -1855,11 +1830,8 @@ def paper_generate_shot_examples():
     title = (data.get('title') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
     act_title = (data.get('act_title') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
 
-    scene_notes = (data.get('scene_notes') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
     specific_phrase, parent_narration, linked_footage_phrases = _parse_generation_context(data)
-    scene_notes = _generation_context_notes(
-        scene_notes, specific_phrase, '', linked_footage_phrases)
-    role = (data.get('role') or '').strip()
+    context_notes = _generation_context_notes('', specific_phrase, '', linked_footage_phrases)
     documentary_mode, err = _parse_documentary_mode(data)
     if err:
         return err
@@ -1869,9 +1841,8 @@ def paper_generate_shot_examples():
     narration = (data.get('narration') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS]
     if parent_narration:
         narration = parent_narration
-    # Content/subject anchors: the paper abstract, the track role (Primary vs
-    # Cutaway), the uploaded-footage subject, and a visual frame/thumbnail when
-    # the open slot contains video.
+    # Content/subject anchors: the paper abstract, the uploaded-footage
+    # subject, and a visual frame/thumbnail when the open slot contains video.
     abstract = (data.get('abstract') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
     reference_subject = (data.get('reference_subject') or '').strip()[:MAX_SKETCH_VISUAL_CHARS]
     project_id = (data.get('project_id') or '').strip() or next_premiere_project_id()
@@ -1898,8 +1869,7 @@ def paper_generate_shot_examples():
     # deliberately samples a varied set of possibilities. Per-option technique
     # assignments keep the larger image batch varied without requiring one LLM
     # request per image.
-    image_scene_notes = scene_notes
-    planner_scene_notes = scene_notes
+    option_assignments = ''
     planner_techniques = list(scene_techniques)
     if technique_variants:
         for technique in (item for variant in technique_variants for item in variant):
@@ -1909,17 +1879,19 @@ def paper_generate_shot_examples():
             f'Option {index + 1}: {", ".join(variant) if variant else "no additional technique"}'
             for index, variant in enumerate(technique_variants[:MAX_SHOT_EXAMPLES])
         ]
-        planner_scene_notes = (
-            f'{scene_notes}\n\nPER-OPTION TECHNIQUE ASSIGNMENTS (apply only the listed subset to each option):\n'
+        option_assignments = (
+            'PER-OPTION TECHNIQUE ASSIGNMENTS (apply only the listed subset to each option):\n'
             + '\n'.join(assignments)
         ).strip()
     example_wildness = 0.7
     try:
         shot_plans = shot_plan_client.generate_shot_plan(
-            title, planner_scene_notes, narration, act_title, documentary_mode,
+            title, narration, act_title, documentary_mode,
             techniques=planner_techniques, moodboard=_parse_moodboard_profiles(data),
-            abstract=abstract, role=role, reference_subject=reference_subject,
-            wildness=example_wildness, count=count, return_all=True)
+            abstract=abstract, reference_subject=reference_subject,
+            wildness=example_wildness, count=count, return_all=True,
+            subject_focus=specific_phrase, linked_phrases=linked_footage_phrases,
+            option_assignments=option_assignments)
     except ShotPlanLLMCallError as exc:
         return jsonify({'error': str(exc)}), 500
 
@@ -1931,7 +1903,7 @@ def paper_generate_shot_examples():
         if boldness:
             visual = f'{visual}\n\n{boldness}'
         visual = _subject_locked_visual(
-            reference_subject, visual, image_scene_notes, plan_techniques)
+            reference_subject, visual, context_notes, plan_techniques)
         specs.append({
             'visual': visual,
             'framing': framing_directive(plan['shot_size'], plan_techniques),
@@ -3725,9 +3697,9 @@ def _eval_worker(project_id, run_id, scene, moodboard, cells, want_video, wildne
                     variant_notes = scene_notes
                     operation = movement = animation_direction = ''
                 shot_plan = shot_plan_client.generate_shot_plan(
-                    title, variant_notes, narration, act_title, mode,
-                    techniques=selected_techniques, moodboard=moodboard, abstract=abstract, role=role,
-                    wildness=wildness)
+                    title, narration, act_title, mode,
+                    techniques=selected_techniques, moodboard=moodboard, abstract=abstract,
+                    wildness=wildness, subject_focus=variant_notes)
                 if act_sweep:
                     # Enforce distinct operation/movement pairings even if the
                     # planner returns a duplicate after a transient retry.
@@ -3873,9 +3845,9 @@ def _eval_entity_worker(project_id, run_id, scene, moodboard, cells, want_video,
                         focus += (' Compose this alternative differently from the obvious reading:'
                                   ' change the shot size, vantage, or moment within the action.')
                     shot_plan = shot_plan_client.generate_shot_plan(
-                        title, focus, narration, act_title, mode,
+                        title, narration, act_title, mode,
                         techniques=[technique] if technique else [], moodboard=moodboard,
-                        abstract=abstract, role='Primary', wildness=wildness)
+                        abstract=abstract, wildness=wildness, subject_focus=focus)
                     visual = (shot_plan.get('visual_description') or '').strip()[:MAX_SKETCH_VISUAL_CHARS]
                     framing = framing_directive(shot_plan.get('shot_size'), [technique] if technique else [])
                     image['prompt'] = _build_image_prompt(visual, mode, 'shot_frame', framing)

@@ -1,14 +1,14 @@
 """LLM-inferred shot design for a single documentary scene (see server.py's
 /paper/generate_shot route and js/paper-extract.js's "Generate shot" flow).
 
-Given a scene's title, its scene notes (the paper text it's grounded in), and
-the presenter's recorded narration about what information the scene should
-present and where/how the viewer should be positioned, this infers ONE shot
-using documentary cinematography grammar: a shot size, a camera movement, the
-narrative operation it performs, and - the meaningful unit - the CHANGE from a
-start frame to an end frame. The two frames are concrete visual descriptions
-that get handed to the image model (sketch_llm) to draw the start/end frames,
-and later hard-cut together in the rendered MP4 (movie_render.render_shot).
+Given a scene's title, the presenter's recorded narration, the phrase a footage
+node illustrates, and the selected techniques, this infers ONE shot (or a
+distinct set) using documentary cinematography grammar: a shot size and the
+narrative operation it performs, plus one generation-ready visual description
+handed to the image model (sketch_llm). Camera movement is deliberately NOT
+part of the plan: for generated video the Act Board derives the camera
+direction from the narrative operation (ACT_BOARD_OPERATION_CAMERA_DIRECTIONS
+in js/paper-extract.js), so a planned movement would only compete with it.
 
 Same env vars as storyboard_llm.py:
     OPENAI_API_KEY    or OPENROUTER_API_KEY   (checked in that order)
@@ -30,18 +30,15 @@ try:
 except ImportError:  # openai isn't installed - client stays unconfigured
     OpenAI = None
 
-# Georgetown's shot-size continuum (world -> detail), the camera movements it
-# names (plus push_in/pull_out, the dolly/zoom pair the artboard uses), and
-# the narrative operations a shot can perform. Invalid model values fall back
-# to the neutral middle of each (see parsing below).
+# Georgetown's shot-size continuum (world -> detail) and the narrative
+# operations a shot can perform. Invalid model values reject the option (see
+# parsing below).
 _SHOT_SIZES = ('ELS', 'LS', 'MLS', 'MS', 'MCU', 'CU', 'ECU')
-_MOVEMENTS = ('static', 'pan', 'tilt', 'push_in', 'pull_out', 'tracking', 'handheld')
 _NARRATIVE_OPERATIONS = (
     'orient', 'contextualize', 'introduce', 'observe', 'accompany', 'connect',
     'reveal', 'direct_attention', 'inspect', 'humanize', 'react', 'expand', 'narrow',
 )
 _DEFAULT_SHOT_SIZE = 'MS'
-_DEFAULT_MOVEMENT = 'static'
 _DEFAULT_OPERATION = 'observe'
 _DEFAULT_DURATION = 5
 
@@ -49,24 +46,22 @@ _DEFAULT_DURATION = 5
 # match DOCUMENTARY_MODE_KEYS, checked at import.
 _MODE_GUIDANCE = {
     'expository': (
-        'Favor clear, stable, informative framing that supports a confident voice-over - static or gentle '
-        'push_in on the subject being explained, purposeful reveals (pan/tilt) that connect a claim to its '
-        'evidence. Shot sizes lean MS/MCU for explanation, tightening to CU/ECU on the specific evidence.'
+        'Favor clear, stable, informative framing that supports a confident voice-over, connecting a '
+        'claim to its evidence. Shot sizes lean MS/MCU for explanation, tightening to CU/ECU on the '
+        'specific evidence.'
     ),
     'observational': (
-        'Favor patient, naturalistic framing that lets action play out - longer static or tracking shots, '
-        'wider sizes (LS/MLS/MS) that keep behavior in its context, minimal dramatic push-ins. Movement '
-        'should feel motivated by the subject, not the narrator.'
+        'Favor patient, naturalistic framing that lets action play out - wider sizes (LS/MLS/MS) that '
+        'keep behavior in its context, nothing dramatised.'
     ),
     'participatory': (
-        'Favor framing that foregrounds a person speaking/engaging - MS/MCU interview framings, handheld or '
-        'tracking to convey the filmmaker being present with them, cutaways that connect what they say to '
-        'what they reference.'
+        'Favor framing that foregrounds a person speaking/engaging - MS/MCU interview framings that '
+        'convey the filmmaker being present with them, cutaways that connect what they say to what '
+        'they reference.'
     ),
     'poetic': (
-        'Favor evocative, associative framing over literal explanation - unusual scales, slow reveals '
-        '(pan/tilt/pull_out), atmospheric wides and abstract details (ELS or ECU), movement that creates '
-        'mood rather than delivering information.'
+        'Favor evocative, associative framing over literal explanation - unusual scales, atmospheric '
+        'wides and abstract details (ELS or ECU), mood rather than information.'
     ),
 }
 assert set(_MODE_GUIDANCE) == set(DOCUMENTARY_MODE_KEYS), 'shot_plan_llm._MODE_GUIDANCE keys must match documentary_modes.DOCUMENTARY_MODE_KEYS'
@@ -76,31 +71,32 @@ _SYSTEM_PROMPT = """You are a documentary cinematographer designing one or more 
 Decide in this order:
 1. What should change in the viewer's understanding? Choose one narrative operation.
 2. What should the viewer see? Choose a concrete, filmable subject and setting.
-3. How should the camera express the idea? Choose the shot size, composition, staging, lighting, and movement.
+3. How should the camera express the idea? Choose the shot size, composition, staging, and lighting. Do not choose a camera movement: any video made from this shot takes its camera motion from the narrative operation.
 
-Shot size controls informational distance: ELS/LS establish world and context; MLS/MS show action and relationships; MCU/CU emphasize a person or object; ECU isolates one critical detail. Movement must have a purpose: static observes; pan connects or reveals across space; tilt reveals vertical scale; push_in concentrates attention; pull_out adds context; tracking accompanies action; handheld adds immediacy or uncertainty.
+Shot size controls informational distance: ELS/LS establish world and context; MLS/MS show action and relationships; MCU/CU emphasize a person or object; ECU isolates one critical detail.
 
-Useful pairings: orient -> ELS/LS + static; contextualize -> LS/MS + static/pan; introduce -> MS/MCU + static; observe -> MLS/MS + static; accompany -> MLS/MS + tracking; connect -> LS/MS + pan; reveal -> LS/MS + pan/tilt/pull_out; direct_attention -> CU + push_in; inspect -> CU/ECU + static/push_in; humanize/react -> MCU/CU + static/handheld; expand -> LS + pull_out; narrow -> CU + push_in.
+Useful pairings: orient -> ELS/LS; contextualize -> LS/MS; introduce -> MS/MCU; observe -> MLS/MS; accompany -> MLS/MS; connect -> LS/MS; reveal -> LS/MS; direct_attention -> CU; inspect -> CU/ECU; humanize/react -> MCU/CU; expand -> LS; narrow -> CU.
 
-When narration is present, infer several plausible narrative operations from what the narration needs the viewer to understand, notice, feel, or connect. Give each operation a useful composition and movement that visually performs it.
+When narration is present, infer several plausible narrative operations from what the narration needs the viewer to understand, notice, feel, or connect. Give each operation a composition that visually performs it.
 
-When narration is absent, choose narrative operations randomly from the allowed vocabulary and assign random valid shot-size/movement pairings to demonstrate different possibilities.
+When narration is absent, choose narrative operations randomly from the allowed vocabulary and vary the shot sizes to demonstrate different possibilities.
 
-For a multi-option request, every narrative operation must be different and every (shot_size, movement) pair must be different. Make the visual ideas meaningfully distinct, not cosmetic variations.
+For a multi-option request, every narrative operation must be different. Make the visual ideas meaningfully distinct, not cosmetic variations.
 
 Keep CONTENT separate from DIRECTION:
 - Uploaded-footage subject, when provided, controls who/what/where appears. Do not borrow its framing or style.
-- Scene notes and selected techniques are authoritative for composition, staging, camera, and lighting. Make them visibly apparent.
-- Documentary mode guide unspecified tone and style.
+- The subject focus phrase, when provided, is what this shot must illustrate.
+- Selected techniques are authoritative for composition, staging, camera, and lighting. Make them visibly apparent.
+- Documentary mode guides unspecified tone and style.
 - Narration and abstract provide subject matter when uploaded footage does not.
 - Do not invent specific facts, people, or places unsupported by the inputs. If the inputs are sparse, make a plausible generic academic-documentary shot.
 
-For every option, write one `visual_description` that an image generator can use directly. Describe the visible subject, setting, action, staging, lighting, camera angle, and composition. It must clearly embody that option's narrative operation, shot size, movement, and selected techniques. Do not describe a second frame or a cut.
+For every option, write one `visual_description` that an image generator can use directly. Describe the visible subject, setting, action, staging, lighting, camera angle, and composition. It must clearly embody that option's narrative operation, shot size, and selected techniques. Do not describe a second frame or a cut.
 
-If the scene notes include a USER-EDITED VISUAL FIELD or a DERIVED ANIMATION DIRECTION, preserve the user's visual intent and integrate the derived camera motion into that same single `visual_description`. Treat imperative/action wording in the visual field (for example, "make the bananas jump") as required on-screen subject motion, not merely a static description. Do not leave the visual and motion as competing alternatives or silently replace the edited visual with a generic one.
+If a USER-EDITED VISUAL FIELD or a DERIVED CAMERA DIRECTION is given, preserve the user's visual intent and integrate the derived camera motion into that same single `visual_description`. Treat imperative/action wording in the visual field (for example, "make the bananas jump") as required on-screen subject motion, not merely a static description. Do not leave the visual and motion as competing alternatives or silently replace the edited visual with a generic one.
 
 Return exactly the requested number of options in this JSON shape:
-{"shots": [{"shot_size": "<ELS|LS|MLS|MS|MCU|CU|ECU>", "movement": "<static|pan|tilt|push_in|pull_out|tracking|handheld>", "narrative_operation": "<orient|contextualize|introduce|observe|accompany|connect|reveal|direct_attention|inspect|humanize|react|expand|narrow>", "purpose": "<one short sentence explaining what this shot does for the viewer>", "visual_description": "<one concrete, generation-ready description of this option>", "duration_seconds": <number, typically 4-10>}]}
+{"shots": [{"shot_size": "<ELS|LS|MLS|MS|MCU|CU|ECU>", "narrative_operation": "<orient|contextualize|introduce|observe|accompany|connect|reveal|direct_attention|inspect|humanize|react|expand|narrow>", "purpose": "<one short sentence explaining what this shot does for the viewer>", "visual_description": "<one concrete, generation-ready description of this option>", "duration_seconds": <number, typically 4-10>}]}
 Respond with only the JSON object."""
 
 
@@ -273,24 +269,27 @@ class ShotPlanLLMClient:
             self._client = OpenAI(**kwargs)
         return self._client
 
-    def generate_shot_plan(self, title, scene_notes='', narration='', act_title='', documentary_mode=None, techniques=None, moodboard=None, abstract='', role='', reference_subject='', wildness=0.0, count=1, return_all=False):
+    def generate_shot_plan(self, title, narration='', act_title='', documentary_mode=None, techniques=None, moodboard=None, abstract='', reference_subject='', wildness=0.0, count=1, return_all=False, subject_focus='', linked_phrases=None, user_visual='', animation_direction='', option_assignments=''):
         """Infers one shot, or a distinct list when return_all=True.
 
         Two distinct kinds of input steer it:
-        - WHAT the shot is ABOUT (subject/content): the paper abstract, the
-          scene narration, the track role (Primary vs Cutaway), title/act, and
-          - if the presenter uploaded their own footage - a description of that
-          footage's subject (reference_subject), which takes precedence so the
-          generated shot matches what they filmed.
-        - HOW the shot looks (composition/camera/lighting): the documentary mode,
-          the moodboard reference style, the chosen techniques, and the scene
-          notes (treated as the director's staging guidance for this shot).
+        - WHAT the shot is ABOUT (subject/content): the subject focus phrase
+          (the words a footage node illustrates), the paper abstract, the
+          scene narration, title/act, and - if the presenter uploaded their
+          own footage - a description of that footage's subject
+          (reference_subject), which takes precedence so the generated shot
+          matches what they filmed. linked_phrases are sibling shots' phrases,
+          to avoid duplicating their visuals.
+        - HOW the shot looks (composition/lighting): the documentary mode, the
+          moodboard reference style, the chosen techniques, and - for a
+          re-plan before video - the user-edited visual field and the camera
+          direction derived from the previous plan's narrative operation.
         NONE are required; with little to go on the model invents a plausible
         generic shot rather than refuse.
 
-        Returns {'shot_size', 'movement', 'narrative_operation', 'purpose',
-        'visual_description', 'duration_seconds'}. Tolerant of invalid enum
-        values and legacy frame-shaped responses."""
+        Returns {'shot_size', 'narrative_operation', 'purpose',
+        'visual_description', 'duration_seconds'}. No camera movement: the
+        Act Board derives video motion from the narrative operation."""
         if not self.is_configured():
             raise ShotPlanLLMCallError('LLM client is not configured (missing API key or openai package)')
 
@@ -316,16 +315,29 @@ class ShotPlanLLMClient:
                 'the uploaded subject very differently from how it originally appeared. CONTENT REFERENCE:\n'
                 f'{reference_subject}'
             )
-        # --- HOW it looks: composition / camera movement / lighting drivers ---
-        if (scene_notes or '').strip():
+        # --- WHAT this shot must illustrate ---
+        if (subject_focus or '').strip():
             parts.append(
-                "Scene notes (AUTHORITATIVE direction for THIS shot's composition, camera, staging, and "
-                f"lighting — visibly follow these instructions):\n{scene_notes.strip()}")
+                'Subject focus (AUTHORITATIVE - the phrase this shot illustrates): '
+                + subject_focus.strip())
+        linked = [str(item).strip() for item in (linked_phrases or []) if str(item).strip()]
+        if linked:
+            parts.append('Linked footage phrases (sibling shots - avoid duplicating their visuals): '
+                         + ' -> '.join(linked))
+        # --- HOW it looks: composition / lighting drivers ---
+        if (user_visual or '').strip():
+            parts.append(
+                'USER-EDITED VISUAL FIELD (AUTHORITATIVE; integrate it with the derived camera '
+                f'direction): {user_visual.strip()}')
+        if (animation_direction or '').strip():
+            parts.append(f'DERIVED CAMERA DIRECTION (AUTHORITATIVE): {animation_direction.strip()}')
         tech = [t.strip() for t in (techniques or []) if isinstance(t, str) and t.strip()]
         if tech:
             parts.append(
                 "Selected techniques (AUTHORITATIVE — make each applicable technique unmistakable in the "
-                "shot's composition, camera movement, staging, or lighting): " + ', '.join(tech) + '.')
+                "shot's composition, staging, or lighting): " + ', '.join(tech) + '.')
+        if (option_assignments or '').strip():
+            parts.append(option_assignments.strip())
         if documentary_mode in _MODE_GUIDANCE:
             parts.append(f'Documentary mode (supporting look/style where direction is unspecified): {_MODE_GUIDANCE[documentary_mode]}')
         # moodboard_block = _format_moodboard(moodboard)
@@ -336,11 +348,6 @@ class ShotPlanLLMClient:
         #     )
 
         # --- WHAT it's about: subject / content drivers ---
-        role_norm = (role or '').strip().lower()
-        if role_norm in ('primary', 'aroll', 'a-roll'):
-            parts.append('Track role: PRIMARY - the main on-screen subject that carries the narration; show that subject directly.')
-        elif role_norm in ('cutaway', 'broll', 'b-roll'):
-            parts.append('Track role: CUTAWAY - a supporting shot of a related object, detail, process, or environment (NOT the main speaker); illustrate the idea obliquely.')
         if (narration or '').strip():
             parts.append(f"Scene narration (the voiceover - a strong anchor for this scene's content):\n{narration.strip()}")
         if (abstract or '').strip():
@@ -367,7 +374,7 @@ class ShotPlanLLMClient:
         parts.append(
             f'OUTPUT REQUEST: Return exactly {count} shot option(s). '
             + ('Narration is present: derive distinct operations from it.' if (narration or '').strip()
-               else 'Narration is absent: choose distinct operations and pairings randomly.'))
+               else 'Narration is absent: choose distinct operations randomly.'))
 
         user_content = '\n\n'.join(parts).strip() or (
             'No specific material was provided for this scene - invent a plausible, generic documentary '
@@ -409,9 +416,9 @@ class ShotPlanLLMClient:
                     if not isinstance(shot, dict):
                         raise ValueError(f'invalid shot entry: {shot!r}')
                     shot_size = (shot.get('shot_size') or '').strip().upper()
-                    movement = (shot.get('movement') or '').strip().lower()
                     operation = (shot.get('narrative_operation') or '').strip().lower()
-                    if shot_size not in _SHOT_SIZES or movement not in _MOVEMENTS or operation not in _NARRATIVE_OPERATIONS:
+                    # A `movement` the model volunteers anyway is ignored, not rejected.
+                    if shot_size not in _SHOT_SIZES or operation not in _NARRATIVE_OPERATIONS:
                         raise ValueError(f'invalid shot vocabulary: {shot!r}')
                     visual_description = (shot.get('visual_description') or '').strip()
                     if not visual_description:
@@ -419,7 +426,6 @@ class ShotPlanLLMClient:
                     duration = shot.get('duration_seconds')
                     plans.append({
                         'shot_size': shot_size,
-                        'movement': movement,
                         'narrative_operation': operation,
                         'purpose': (shot.get('purpose') or '').strip() or 'Establish this scene.',
                         'visual_description': visual_description,
@@ -433,8 +439,7 @@ class ShotPlanLLMClient:
                 # batch would make the gallery unusable.
                 if 1 < count <= 8:
                     operations = [p['narrative_operation'] for p in plans]
-                    pairings = [(p['shot_size'], p['movement']) for p in plans]
-                    if len(set(operations)) != count or len(set(pairings)) != count:
+                    if len(set(operations)) != count:
                         raise ValueError(f'shot options were not distinct: {plans!r}')
                 return plans if return_all else plans[0]
             except Exception as exc:  # network errors, malformed JSON, API errors
