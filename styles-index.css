@@ -2380,7 +2380,7 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   padding: 5px;
   border: 1px solid var(--cd-border-strong);
   border-radius: 4px;
-  background: #fffdf6;
+  background: #fff;
   box-shadow: 3px 4px 0 rgba(17, 17, 17, .16);
   transform: translate(-4px, -4px);
   white-space: nowrap;
@@ -2389,9 +2389,9 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 .storyboard-act-board-node-spawn-menu span {
   padding: 0 3px;
   color: var(--cd-text);
-  font: 11px var(--cd-font-mono);
-  font-weight: 700;
+  font: 600 11px/1 var(--cd-font-mono);
   text-transform: uppercase;
+  opacity: 0.6;
 }
 
 .storyboard-act-board-node-spawn-menu button {
@@ -2401,8 +2401,8 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   background: #fff;
   color: var(--cd-text);
   cursor: pointer;
-  font: 12px var(--cd-font-body);
-  font-weight: 700;
+  font: 10px var(--cd-font-body);
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }

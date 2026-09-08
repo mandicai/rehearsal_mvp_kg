@@ -14893,7 +14893,7 @@ function openActBoardTechniquePopup(actKey, node, options = {}) {
   dialog.className = 'storyboard-act-board-technique-popup narrative-arc-techniques';
   dialog.setAttribute('role', 'dialog');
   dialog.setAttribute('aria-modal', 'true');
-  const popupTitle = options.title || 'Image generation techniques';
+  const popupTitle = options.title || 'Scene techniques';
   dialog.setAttribute('aria-label', popupTitle);
   const header = document.createElement('div');
   header.className = 'storyboard-act-board-technique-popup-header';
@@ -24269,7 +24269,7 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
       openActBoardTechniquePopup(actKey, node, {
         allowedCategories: ACT_BOARD_IMAGE_TECHNIQUE_CATEGORIES,
         targetField: 'imageGenerationTechniques',
-        title: 'Image generation techniques',
+        title: 'Scene techniques',
         hint: 'Choose only shot composition, lighting, or visual metaphor/data-vis techniques for this image.',
       });
     });
