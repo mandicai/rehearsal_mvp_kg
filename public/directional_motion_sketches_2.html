@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Documentary Directorial Motion Sketches</title>
+<style>
+  :root {
+    --bg: #f6f4ef;
+    --card: #ffffff;
+    --ink: #1c1c1c;
+    --muted: #707070;
+    --line: #c9c6bf;
+    --soft: #ece9e2;
+    --accent: #222;
+    --dur: 6s;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+  }
+  .page { max-width: 1280px; margin: 0 auto; padding: 28px; }
+  header { display:flex; align-items:flex-end; justify-content:space-between; gap:20px; margin-bottom:20px; }
+  h1 { margin:0; font-size:28px; line-height:1.1; letter-spacing:-0.03em; }
+  .sub { margin-top:8px; color:var(--muted); font-size:14px; max-width:760px; }
+  .controls { display:flex; gap:8px; }
+  button {
+    border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:999px;
+    padding:9px 14px; font:inherit; font-size:13px; cursor:pointer;
+  }
+  button:hover { background:#f0eee8; }
+  .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; overflow:hidden; }
+  .meta { padding:16px 18px 12px; border-bottom:1px solid var(--soft); }
+  .title { font-weight:700; font-size:15px; }
+  .op { color:var(--muted); font-size:12px; margin-top:4px; }
+  .stage { position:relative; height:260px; overflow:hidden; background:
+    linear-gradient(to right, rgba(0,0,0,.025) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0,0,0,.025) 1px, transparent 1px),
+    #fbfaf7;
+    background-size:32px 32px;
+  }
+  .legend { padding:10px 18px 14px; color:var(--muted); font-size:12px; line-height:1.4; }
+
+  /* shared symbols */
+  .camera { position:absolute; border:2px solid var(--ink); border-radius:10px; }
+  .camera::before { content:"CAMERA"; position:absolute; top:-18px; left:4px; font-size:10px; letter-spacing:.08em; color:var(--muted); }
+  .person { width:18px; height:18px; border:2px solid var(--ink); border-radius:50%; position:absolute; }
+  .person::after { content:""; position:absolute; width:2px; height:34px; background:var(--ink); top:17px; left:6px; box-shadow:-8px 20px 0 -0.2px var(--ink), 8px 20px 0 -0.2px var(--ink); transform-origin:top center; }
+  .tree { position:absolute; width:26px; height:52px; }
+  .tree::before { content:""; position:absolute; left:5px; top:0; width:16px; height:30px; border:2px solid var(--ink); border-radius:50% 50% 42% 42%; background:#fff; }
+  .tree::after { content:""; position:absolute; left:12px; top:28px; width:2px; height:23px; background:var(--ink); }
+  .sensor { position:absolute; width:32px; height:22px; border:2px solid var(--ink); border-radius:4px; background:#fff; }
+  .dot { position:absolute; width:8px; height:8px; border-radius:50%; background:var(--ink); }
+  .arrow { position:absolute; height:2px; background:var(--ink); transform-origin:left center; }
+  .arrow::after { content:""; position:absolute; right:-1px; top:-4px; width:8px; height:8px; border-top:2px solid var(--ink); border-right:2px solid var(--ink); transform:rotate(45deg); }
+  .label { position:absolute; font-size:11px; color:var(--muted); letter-spacing:.02em; }
+
+  /* follow shot */
+  .follow .ground { position:absolute; bottom:58px; left:0; right:0; height:2px; background:var(--line); }
+  .follow .trees { position:absolute; inset:0; animation:followBg var(--dur) linear infinite; }
+  .follow .tree.t1 { left:60px; bottom:60px; } .follow .tree.t2 { left:230px; bottom:60px; } .follow .tree.t3 { left:440px; bottom:60px; }
+  .follow .person { left:250px; bottom:84px; animation:walkBob .8s ease-in-out infinite alternate; }
+  .follow .camera { width:150px; height:130px; left:182px; top:58px; }
+  .follow .arrow { width:80px; left:210px; top:215px; }
+  @keyframes followBg { from { transform:translateX(0); } to { transform:translateX(-170px); } }
+  @keyframes walkBob { from { transform:translateY(0); } to { transform:translateY(-5px); } }
+
+  /* POV */
+  .pov .person { left:58px; top:120px; transform:scale(.8); }
+  .pov .eye { position:absolute; left:86px; top:123px; width:12px; height:8px; border:1.5px solid var(--ink); border-radius:50%; }
+  .pov .cone { position:absolute; left:100px; top:102px; width:0; height:0; border-top:35px solid transparent; border-bottom:35px solid transparent; border-left:160px solid rgba(0,0,0,.07); animation:coneSweep var(--dur) ease-in-out infinite; transform-origin:left center; }
+  .pov .tree.a { left:285px; top:72px; } .pov .tree.b { left:405px; top:142px; }
+  .pov .sensor { left:500px; top:82px; }
+  .pov .focusBox { position:absolute; border:2px solid var(--ink); width:70px; height:80px; left:260px; top:58px; border-radius:10px; animation:povFocus var(--dur) ease-in-out infinite; }
+  @keyframes coneSweep { 0%,25%{transform:rotate(-8deg)} 45%,65%{transform:rotate(13deg)} 80%,100%{transform:rotate(-2deg)} }
+  @keyframes povFocus { 0%,25%{left:260px;top:58px;width:70px;height:80px} 45%,65%{left:382px;top:128px;width:70px;height:80px} 80%,100%{left:480px;top:66px;width:75px;height:56px} }
+
+  /* wide to detail */
+  .wide .tree.w1{left:100px;top:110px}.wide .tree.w2{left:210px;top:72px}.wide .tree.w3{left:380px;top:120px}.wide .person{left:300px;top:118px;transform:scale(.75)}
+  .wide .sensor{left:405px;top:145px;transform:scale(.7)}
+  .wide .camera{left:48px;top:36px;width:510px;height:180px;animation:wideZoom var(--dur) ease-in-out infinite;transform-origin:center center}
+  .wide .caption{position:absolute;left:18px;bottom:14px;font-size:11px;color:var(--muted)}
+  @keyframes wideZoom { 0%,20%{left:48px;top:36px;width:510px;height:180px} 40%,60%{left:180px;top:62px;width:250px;height:135px} 80%,100%{left:376px;top:126px;width:92px;height:62px} }
+
+  /* observation */
+  .obs .camera{left:52px;top:38px;width:510px;height:180px}
+  .obs .tree{left:360px;top:102px}
+  .obs .person{left:95px;top:130px;animation:observeMove var(--dur) ease-in-out infinite}
+  .obs .sensor{left:400px;top:154px}
+  .obs .note{position:absolute;width:34px;height:26px;border:2px solid var(--ink);left:455px;top:150px;background:white}
+  @keyframes observeMove { 0%{left:95px;top:130px} 30%{left:250px;top:130px} 55%{left:335px;top:130px} 75%{left:420px;top:132px} 100%{left:500px;top:130px} }
+
+  /* voice over */
+  .vo .wave { position:absolute; left:30px; right:30px; top:36px; height:40px; display:flex; align-items:center; gap:4px; }
+  .vo .wave i { display:block; width:3px; background:var(--ink); border-radius:2px; animation:wave 1.2s ease-in-out infinite; }
+  .vo .wave i:nth-child(2n){animation-delay:.12s}.vo .wave i:nth-child(3n){animation-delay:.22s}.vo .wave i:nth-child(4n){animation-delay:.32s}
+  @keyframes wave { 0%,100%{height:6px} 50%{height:30px} }
+  .vo .visual{position:absolute;left:110px;top:98px;width:390px;height:110px;border:1px solid var(--line);border-radius:12px;background:#fff;display:grid;place-items:center;font-size:32px;animation:voScenes var(--dur) steps(1,end) infinite}
+  @keyframes voScenes { 0%,24%{content:""} 25%,49%{background:#fff} 50%,74%{background:#fff} 75%,100%{background:#fff} }
+  .vo .scene1,.vo .scene2,.vo .scene3,.vo .scene4{position:absolute;inset:0;display:grid;place-items:center;opacity:0;font-size:44px}
+  .vo .scene1{animation:s1 var(--dur) steps(1,end) infinite}.vo .scene2{animation:s2 var(--dur) steps(1,end) infinite}.vo .scene3{animation:s3 var(--dur) steps(1,end) infinite}.vo .scene4{animation:s4 var(--dur) steps(1,end) infinite}
+  @keyframes s1{0%,24%{opacity:1}25%,100%{opacity:0}} @keyframes s2{0%,24%{opacity:0}25%,49%{opacity:1}50%,100%{opacity:0}} @keyframes s3{0%,49%{opacity:0}50%,74%{opacity:1}75%,100%{opacity:0}} @keyframes s4{0%,74%{opacity:0}75%,100%{opacity:1}}
+
+  /* ambient sound */
+  .amb .tree.a{left:110px;top:118px}.amb .tree.b{left:390px;top:98px}.amb .bird{position:absolute;left:300px;top:70px;font-size:26px}.amb .steps{position:absolute;left:445px;top:160px;font-size:26px}
+  .ring{position:absolute;border:2px solid var(--ink);border-radius:50%;opacity:0;animation:ring 2.2s ease-out infinite}
+  .amb .r1{left:102px;top:112px}.amb .r2{left:292px;top:64px;animation-delay:.7s}.amb .r3{left:438px;top:154px;animation-delay:1.25s}
+  @keyframes ring{0%{width:16px;height:16px;opacity:.65;transform:translate(0,0)}100%{width:90px;height:90px;opacity:0;transform:translate(-37px,-37px)}}
+
+  /* data vis */
+  .data .tree.d1{left:60px;top:116px}.data .tree.d2{left:125px;top:104px}.data .tree.d3{left:190px;top:125px}.data .tree.d4{left:255px;top:98px}.data .tree.d5{left:320px;top:115px}
+  .data .chart{position:absolute;right:50px;top:60px;width:180px;height:140px;border-left:2px solid var(--ink);border-bottom:2px solid var(--ink)}
+  .data .pt{position:absolute;width:9px;height:9px;background:var(--ink);border-radius:50%;opacity:0;animation:pts var(--dur) steps(1,end) infinite}
+  .data .p1{right:192px;top:170px}.data .p2{right:157px;top:145px}.data .p3{right:125px;top:122px}.data .p4{right:90px;top:98px}.data .p5{right:60px;top:82px}
+  .data .p1{animation-delay:0s}.data .p2{animation-delay:.5s}.data .p3{animation-delay:1s}.data .p4{animation-delay:1.5s}.data .p5{animation-delay:2s}
+  @keyframes pts { 0%,14%{opacity:0} 15%,100%{opacity:1} }
+  .data .measure{position:absolute;left:78px;top:82px;font-size:10px;color:var(--muted);animation:measure var(--dur) ease-in-out infinite}
+  @keyframes measure { 0%{left:78px;opacity:1} 18%{left:143px} 36%{left:208px} 54%{left:273px} 72%{left:338px} 88%,100%{left:455px;opacity:.2} }
+
+  /* object closeup */
+  .close .person{left:160px;top:126px}.close .tree{left:420px;top:100px}.close .sensor{left:300px;top:145px}
+  .close .camera{left:66px;top:54px;width:470px;height:150px;animation:closePush var(--dur) ease-in-out infinite}
+  .close .sensorCopy{position:absolute;left:300px;top:145px;width:32px;height:22px;border:2px solid var(--ink);border-radius:4px;background:#fff;animation:sensorScale var(--dur) ease-in-out infinite}
+  @keyframes closePush { 0%,25%{left:66px;top:54px;width:470px;height:150px} 55%,100%{left:228px;top:94px;width:180px;height:115px} }
+  @keyframes sensorScale { 0%,25%{transform:scale(1)} 55%,100%{transform:scale(3.2);left:292px;top:138px} }
+
+  .paused *, .paused *::before, .paused *::after { animation-play-state: paused !important; }
+
+  @media (max-width: 900px) {
+    .grid { grid-template-columns:1fr; }
+    header { align-items:flex-start; flex-direction:column; }
+  }
+</style>
+</head>
+<body>
+<div class="page" id="page">
+  <header>
+    <div>
+      <h1>Documentary directorial motion sketches</h1>
+      <div class="sub">Minimal animated diagrams showing the intended movement of camera, subject, attention, sound, and evidence. Each loop illustrates the directorial operation rather than a finished cinematic shot.</div>
+    </div>
+    <div class="controls"><button id="toggle">Pause all</button><button id="restart">Restart loops</button></div>
+  </header>
+
+  <div class="grid">
+    <section class="card follow">
+      <div class="meta"><div class="title">Follow shot</div><div class="op">Accompany a subject · trace movement through space</div></div>
+      <div class="stage">
+        <div class="ground"></div><div class="trees"><div class="tree t1"></div><div class="tree t2"></div><div class="tree t3"></div></div>
+        <div class="person"></div><div class="camera"></div><div class="arrow"></div><div class="label" style="left:208px;top:228px">camera travels with subject</div>
+      </div>
+      <div class="legend">Subject remains framed while the environment slides by, signaling that the viewer should stay with this person through the space.</div>
+    </section>
+
+    <section class="card pov">
+      <div class="meta"><div class="title">Point-of-view shot</div><div class="op">Adopt perspective · direct attention through a subject's gaze</div></div>
+      <div class="stage"><div class="person"></div><div class="eye"></div><div class="cone"></div><div class="tree a"></div><div class="tree b"></div><div class="sensor"></div><div class="focusBox"></div><div class="label" style="left:45px;top:185px">researcher</div></div>
+      <div class="legend">The gaze sweeps from one object to another while the focus box follows, making the subject's situated attention visible.</div>
+    </section>
+
+    <section class="card wide">
+      <div class="meta"><div class="title">Wide-to-detail sequence</div><div class="op">Orient → narrow attention → inspect evidence</div></div>
+      <div class="stage"><div class="tree w1"></div><div class="tree w2"></div><div class="tree w3"></div><div class="person"></div><div class="sensor"></div><div class="camera"></div><div class="caption">forest → researcher → sensor</div></div>
+      <div class="legend">The frame progressively contracts from the whole environment to the specific detail that matters.</div>
+    </section>
+
+    <section class="card obs">
+      <div class="meta"><div class="title">Observational sequence</div><div class="op">Observe process · minimize directorial intervention</div></div>
+      <div class="stage"><div class="camera"></div><div class="tree"></div><div class="sensor"></div><div class="note"></div><div class="person"></div><div class="label" style="left:76px;top:222px">camera stays fixed; action unfolds inside frame</div></div>
+      <div class="legend">The camera does not chase the action. The researcher moves through an ordinary sequence while the viewer observes.</div>
+    </section>
+
+    <section class="card vo">
+      <div class="meta"><div class="title">Voice-over narration</div><div class="op">Connect scenes · interpret evidence across changing visuals</div></div>
+      <div class="stage"><div class="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="label" style="left:30px;top:18px">continuous narration</div><div class="visual"><div class="scene1">🌲</div><div class="scene2">🌳🌳🌳</div><div class="scene3">▧ archival image</div><div class="scene4">↗ diagram</div></div></div>
+      <div class="legend">The audio layer persists while the visual evidence changes beneath it, showing narration as connective tissue rather than a visible speaker.</div>
+    </section>
+
+    <section class="card amb">
+      <div class="meta"><div class="title">Ambient sound</div><div class="op">Establish place · create immersion · foreground environment</div></div>
+      <div class="stage"><div class="tree a"></div><div class="tree b"></div><div class="bird">⌁</div><div class="steps">⋮</div><div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div><div class="label" style="left:70px;top:214px">sound originates from multiple points in the scene</div></div>
+      <div class="legend">Independent sound pulses emanate from environmental sources, making place itself part of the documentary information.</div>
+    </section>
+
+    <section class="card data">
+      <div class="meta"><div class="title">Data visualization</div><div class="op">Translate observations into evidence · reveal pattern</div></div>
+      <div class="stage"><div class="tree d1"></div><div class="tree d2"></div><div class="tree d3"></div><div class="tree d4"></div><div class="tree d5"></div><div class="measure">measurement ↓</div><div class="chart"></div><div class="pt p1"></div><div class="pt p2"></div><div class="pt p3"></div><div class="pt p4"></div><div class="pt p5"></div><div class="label" style="right:70px;top:214px">observations accumulate into a pattern</div></div>
+      <div class="legend">Measurement moves across real-world entities; corresponding marks appear in the chart, explicitly connecting phenomenon to representation.</div>
+    </section>
+
+    <section class="card close">
+      <div class="meta"><div class="title">Object close-up</div><div class="op">Isolate evidence · inspect detail · signal importance</div></div>
+      <div class="stage"><div class="person"></div><div class="tree"></div><div class="sensor"></div><div class="sensorCopy"></div><div class="camera"></div><div class="label" style="left:226px;top:222px">context → inspection</div></div>
+      <div class="legend">The frame pushes into one object while that object grows to dominate the view, visually marking it as evidence to scrutinize.</div>
+    </section>
+  </div>
+</div>
+<script>
+  const page = document.getElementById('page');
+  const toggle = document.getElementById('toggle');
+  const restart = document.getElementById('restart');
+  let paused = false;
+  toggle.addEventListener('click', () => {
+    paused = !paused;
+    page.classList.toggle('paused', paused);
+    toggle.textContent = paused ? 'Play all' : 'Pause all';
+  });
+  restart.addEventListener('click', () => {
+    const stages = [...document.querySelectorAll('.stage')];
+    stages.forEach(s => { const clone = s.cloneNode(true); s.replaceWith(clone); });
+  });
+</script>
+</body>
+</html>
