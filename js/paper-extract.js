@@ -9937,20 +9937,35 @@ async function requestActBoardFootageMatches(narrationNode, clips, signal) {
     .map(match => [String(match.id), { start: Number(match.start), end: Number(match.end) }]));
   if (cached?.matches) return toMap(cached.matches);
 
+  // The LLM behind this call can be slow or unreachable, and the server
+  // waits out a 30s timeout and a retry before answering. An arrange must
+  // not hang on that: after ACT_BOARD_FOOTAGE_MATCH_TIMEOUT_MS the clips the
+  // local matcher could not place are parked and the arrange goes ahead
+  // (measured: 40s per Smart arrange with the proxy down, ~1s with this).
+  const localController = typeof AbortController === 'function' ? new AbortController() : null;
+  const onOuterAbort = () => localController?.abort();
+  signal?.addEventListener?.('abort', onOuterAbort, { once: true });
+  const timer = setTimeout(() => localController?.abort(), ACT_BOARD_FOOTAGE_MATCH_TIMEOUT_MS);
   try {
     const result = await fetchFootageMatches({
       transcript,
       clips: clipPayload,
       documentaryMode: actBoardDocumentaryModeForNode(narrationNode.actKey, narrationNode),
-    }, signal);
+    }, localController?.signal || signal);
     const matches = Array.isArray(result?.matches) ? result.matches : [];
     writeActBoardPersistentCache('narration', cacheKey, { matches, source: result?.source || '' });
     return toMap(matches);
   } catch (error) {
-    if (error?.name === 'AbortError') throw error;
+    // Only the presenter's own abort (a superseding arrange) propagates; the
+    // timeout is a degraded result, not a cancelled one.
+    if (error?.name === 'AbortError' && signal?.aborted) throw error;
     return empty;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener?.('abort', onOuterAbort);
   }
 }
+const ACT_BOARD_FOOTAGE_MATCH_TIMEOUT_MS = 8000;
 
 // Resolve every clip attached to one narration to a word range in its
 // transcript, without touching the timeline yet. Tier 1 is an exact
@@ -10153,9 +10168,12 @@ function applyActBoardFootageAlignment(plan, llmMatches) {
     // it: how far this shot holds past its phrase, and how far it was pushed
     // off its phrase by the previous shot doing the same.
     item.node.floorExtendedSeconds = Number(Math.max(0, length - naturalLength).toFixed(2));
+    // The whole delay from the phrase-true start: pushes accumulate down a
+    // run of floored shots, so capping this at the previous shot's own
+    // extension under-reported it from the third shot on.
     item.node.pushedByFloorSeconds = previousFloorExtended > 0
       && start - naturalStart > ACT_BOARD_TRACK_SEAM_TOLERANCE_SECONDS
-      ? Number(Math.min(start - naturalStart, previousFloorExtended).toFixed(2)) : 0;
+      ? Number((start - naturalStart).toFixed(2)) : 0;
     previousFloorExtended = item.node.floorExtendedSeconds;
     item.node.sequenceIndex = index;
     item.node.startSeconds = Number((narrationStart + start).toFixed(2));
@@ -19399,7 +19417,19 @@ function buildActBoardPlaybackAudioTrack({
       selectNarrationAtTime(next);
     });
   }
+  // Selecting a segment here notifies the scene (onSelect), and the scene's
+  // own selection path highlights this rail back through
+  // _actBoardHighlightNarrationNode. Without a re-entry guard the two called
+  // each other until the call stack overflowed - every click on a narration
+  // segment threw "Maximum call stack size exceeded" (swallowed) after some
+  // 2,300 nested rounds, and took half a second to a second to do so.
+  let highlightingNode = false;
   const highlightPlaybackTrackNode = node => {
+    if (highlightingNode) return;
+    highlightingNode = true;
+    try { highlightPlaybackTrackNodeOnce(node); } finally { highlightingNode = false; }
+  };
+  const highlightPlaybackTrackNodeOnce = node => {
     segmentEntries.forEach(entry => {
       entry.segment.classList.toggle('selected', entry.node === node);
     });
@@ -26187,9 +26217,13 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
     section.appendChild(headingRow);
     return section;
   };
+  // Called by every slide's proxy buttons on every selection change, so it
+  // must be a single selector lookup - it used to build an array of every
+  // card on the board per call, which made selecting a narration segment a
+  // half-second stall on a full board.
   const findNodeCard = node => node?.id
-    ? Array.from(boardLayer.querySelectorAll('.storyboard-act-board-node[data-node-id]'))
-      .find(card => card.dataset.nodeId === String(node.id))
+    ? boardLayer.querySelector(
+      `.storyboard-act-board-node[data-node-id="${String(node.id).replace(/"/g, '\\"')}"]`)
       || detachedNarrationActionCards.get(String(node.id)) || null : null;
   narrationEntries.forEach((node, nodeIndex) => {
     if (!node?.id || findNodeCard(node)) return;
@@ -26715,8 +26749,15 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
   // place rather than being duplicated per entry point. Selection is applied
   // in place (classes plus each bar's own refresh); rerendering the board here
   // would throw away the transcript caret and cost ~35x as much.
+  // See highlightPlaybackTrackNode in the rail builder: the two selection
+  // paths notify each other, so each runs at most once per gesture.
+  let selectingNarration = false;
   const selectNarrationSegment = (node, { scroll = true } = {}) => {
-    if (!node?.id) return;
+    if (!node?.id || selectingNarration) return;
+    selectingNarration = true;
+    try { selectNarrationSegmentOnce(node, { scroll }); } finally { selectingNarration = false; }
+  };
+  const selectNarrationSegmentOnce = (node, { scroll = true } = {}) => {
     actBoardSelectedNarrationSegmentByScene.set(sceneNarrationSelectionKey, node.id);
     sceneRecordButton._actBoardRefresh?.();
     sceneUploadButton._actBoardRefresh?.();

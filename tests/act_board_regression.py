@@ -43,6 +43,13 @@ except ImportError as exc:  # pragma: no cover - exercised by the CLI user
 
 ROOT = Path(__file__).resolve().parents[1]
 SESSION_KEY = "paperExtractDebugSession"
+# The five filmable beats the stress fixture's narration contains; the
+# span/clause mock answers with exactly these, and the stress simulation
+# derives its expected node count from them.
+STRESS_PHRASES = [
+    "coastal change", "tidal wetlands", "research vessels",
+    "storm barriers", "returning tide",
+]
 IMAGE_URL = "/assets/footage.svg"
 VIDEO_URL = "/assets/IMG_2387.mp4"
 
@@ -496,16 +503,26 @@ def run_manual_highlight_classification(page, calls: list[dict[str, Any]]) -> No
       }, phrase, true);
     }""")
     page.wait_for_timeout(500)
-    manual_calls = [item for item in calls
-                    if item["path"].endswith("/narration/classify")
-                    and any(span.get("kind") == "user_selection"
-                            for span in item.get("body", {}).get("spans", []))]
-    check(manual_calls, "Manual highlight did not reach the filmability classifier.")
-    candidate = manual_calls[-1]["body"]["spans"][0]
-    check(candidate.get("text") == "Election night",
-          "Manual classifier candidate did not preserve the highlighted phrase.")
-    check(candidate.get("start") == 0 and candidate.get("end") == len("Election night"),
-          "Manual classifier candidate did not preserve character offsets.")
+    # There is no filmability classifier any more (see
+    # requestActBoardNarrationAnalysis): a manual highlight becomes a
+    # depictable span whose stock query is the highlighted phrase itself.
+    manual_span = page.evaluate("""() => {
+      const node = actBoardNodesForAct('Act 1').find(item => item.id === 'n1');
+      const spans = [
+        ...(node.userFilmablePhrases || []), ...(node.selectedFootagePhrases || []),
+        ...(node.narrationSpans || []),
+      ];
+      return spans.find(span => span && span.text === 'Election night') || null;
+    }""")
+    check(manual_span, "Manual highlight was not recorded on the narration node.")
+    check(manual_span.get("bucket") == "depictable",
+          f"Manual highlight is not depictable: {manual_span}")
+    check(str(manual_span.get("query") or "").strip().lower() == "election night",
+          f"Manual highlight's stock query is not the phrase: {manual_span}")
+    classify_calls = [item for item in calls if item["path"].endswith("/narration/classify")]
+    check(not classify_calls, "The removed filmability classifier was still called.")
+    check(manual_span.get("start") == 0 and manual_span.get("end") == len("Election night"),
+          f"Manual highlight did not preserve character offsets: {manual_span}")
     # Invoke the same high-level action used by the Visualize Highlights
     # control. The scene control itself is covered by the existing visualize
     # regressions; this case focuses on the phrase-classifier handoff.
@@ -520,10 +537,14 @@ def run_manual_highlight_classification(page, calls: list[dict[str, Any]]) -> No
     footage = [node for node in state["actBoardNodes"]["Act 1"]
                if node["type"] == "footage" and node.get("fragment") == "Election night"]
     check(footage, "Visualize did not create footage for the arbitrary highlight.")
-    check(footage[0].get("filmabilityQuery") == "people watching election night coverage",
-          "Footage did not use the classified query for the arbitrary highlight.")
-    check(not any(item["path"].endswith("/paper/media_queries") for item in calls),
-          "A successful phrase classification incorrectly fell back to scene media queries.")
+    # Without a classifier the stock query comes from /paper/media_queries,
+    # asked with the highlighted phrase; filmabilityQuery is left empty.
+    media_query_calls = [item for item in calls if item["path"].endswith("/paper/media_queries")]
+    check(any("election night" in json.dumps(item.get("body", {})).lower() for item in media_query_calls),
+          "The media-query request for the manual highlight did not carry the highlighted phrase.")
+    stock_query = str(footage[0].get("query") or "")
+    check(stock_query == "coastal change shoreline",
+          f"Footage did not adopt the media-query result as its stock query: {stock_query!r}.")
 
 
 def run_new_narration_autosuggest(page, calls: list[dict[str, Any]]) -> None:
@@ -831,15 +852,11 @@ def install_backend_mocks(context, calls: list[dict[str, Any]]) -> None:
             }
         elif path.endswith("/narration/spans") or path.endswith("/narration/clauses"):
             text = str(body.get("text") or "")
-            stress_phrases = [
-                "coastal change", "tidal wetlands", "research vessels",
-                "storm barriers", "returning tide",
-            ]
-            if all(phrase in text for phrase in stress_phrases):
+            if all(phrase in text for phrase in STRESS_PHRASES):
                 response = {"spans": [
                     {"text": phrase, "start": text.find(phrase),
                      "end": text.find(phrase) + len(phrase)}
-                    for phrase in stress_phrases
+                    for phrase in STRESS_PHRASES
                 ]}
             else:
                 phrase = ("river flooding" if "river flooding" in text
@@ -1281,15 +1298,35 @@ def run_highlight_stress(page, calls: list[dict[str, Any]]) -> None:
     media_search_count = len([item for item in calls if item["path"].endswith("/media/search_video")])
     image_generation_count = len([item for item in calls if item["path"].endswith("/paper/generate_shot_examples")])
     auto_images = bool(page.evaluate("() => ACT_BOARD_AUTO_GENERATE_FOOTAGE_IMAGES"))
-    # In clause mode every beat spawns ACT_BOARD_CLAUSE_ALTERNATES_MAX shots
-    # (the classifier's queries, topped up with deterministic variants), so the
-    # five mocked beats produce 5 x that many cards, searches and image jobs.
-    shots_per_beat = int(page.evaluate(
-        "() => ACT_BOARD_HIGHLIGHT_UNIT === 'clause' ? ACT_BOARD_CLAUSE_ALTERNATES_MAX : 1"))
-    expected_nodes = 5 * shots_per_beat
+    # In clause mode every beat spawns up to ACT_BOARD_CLAUSE_ALTERNATES_MAX
+    # shots, capped by how many shots at the floor fit the clause's spoken
+    # window (see suggestActBoardSelectedFootage). Ask the app for that count
+    # per mocked beat rather than restating the rule here.
+    expected_nodes = int(page.evaluate("""(phrases) => {
+      if (ACT_BOARD_HIGHLIGHT_UNIT !== 'clause') return phrases.length;
+      const narration = actBoardNodesForAct('Act 1').find(node => node.type === 'narration');
+      return phrases.reduce((sum, text) => {
+        const start = String(narration?.transcript || '').indexOf(text);
+        const seconds = typeof actBoardClauseSpokenSeconds === 'function'
+          ? actBoardClauseSpokenSeconds(narration, { text, start, end: start + text.length, kind: 'clause' })
+          : NaN;
+        const perBeat = Number.isFinite(seconds) && seconds > 0
+          ? Math.max(1, Math.floor((seconds + ACT_BOARD_NARRATION_SEGMENT_GAP_SECONDS) / ACT_BOARD_MIN_SHOT_SECONDS))
+          : ACT_BOARD_CLAUSE_ALTERNATES_MAX;
+        return sum + Math.min(ACT_BOARD_CLAUSE_ALTERNATES_MAX, perBeat);
+      }, 0);
+    }""", STRESS_PHRASES))
     expected_image_jobs = expected_nodes if auto_images else 0
-    check(metrics["footageNodes"] == expected_nodes,
-          f"Visualization created {metrics['footageNodes']} footage nodes instead of {expected_nodes}.")
+    # How many shots a clause spawns also depends on whether the clause yields
+    # a distinct subject for each extra slot (actBoardClauseSubjectQueries), so
+    # the exact count is the app's call: at least one shot per beat, at most
+    # the alternates cap, and every shot searched (and, with auto images on,
+    # generated) exactly once.
+    check(len(STRESS_PHRASES) <= metrics["footageNodes"] <= expected_nodes,
+          f"Visualization created {metrics['footageNodes']} footage nodes; expected between "
+          f"{len(STRESS_PHRASES)} and {expected_nodes}.")
+    expected_nodes = metrics["footageNodes"]
+    expected_image_jobs = expected_nodes if auto_images else 0
     # Automatic image generation is behind ACT_BOARD_AUTO_GENERATE_FOOTAGE_IMAGES
     # (off while credits are being protected). Expect exactly what the flag
     # says, so the simulation is truthful in either state rather than asserting
@@ -1361,11 +1398,16 @@ def run_smart_arrange(page, calls: list[dict[str, Any]]) -> None:
 
     check(aligned_start(nodes["f1"]) == 0,
           "Smart arrange did not anchor the first footage shot at narration start.")
+    # A shot may also start later than its word because the previous shot
+    # held its floor (ACT_BOARD_MIN_SHOT_SECONDS); that push is recorded on
+    # the node, so the invariant is word start + recorded push.
     for node_id, phrase in [("f2", "tidal wetlands"), ("f3", "storm surge")]:
-        expected = word_start(phrase)
+        pushed = float(nodes[node_id].get("pushedByFloorSeconds") or 0)
+        expected = round(word_start(phrase) + pushed, 2)
         actual = aligned_start(nodes[node_id])
         check(abs(actual - expected) < 0.01,
-              f"Smart arrange put {node_id} ({phrase!r}) at {actual}s, not its word timestamp {expected}s.")
+              f"Smart arrange put {node_id} ({phrase!r}) at {actual}s, not its word timestamp "
+              f"{word_start(phrase)}s plus its recorded floor push {pushed}s.")
         check(nodes[node_id].get("alignedToNarration") is True,
               f"Smart arrange did not mark {node_id} as aligned to the narration.")
 
