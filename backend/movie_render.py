@@ -74,7 +74,8 @@ _DIP_TO_BLACK_SECONDS = 0.5
 # still path (which would freeze on frame one) is what preserves them.
 _STILL_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.bmp'}
 
-_MIN_SHOT_SECONDS = 1.0
+# Mirrors js/paper-extract.js's ACT_BOARD_MIN_SHOT_SECONDS.
+_MIN_SHOT_SECONDS = 5.0
 
 
 class MovieRenderError(Exception):

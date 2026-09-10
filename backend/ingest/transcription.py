@@ -12,6 +12,8 @@ Environment variables:
 import os
 import io
 import re
+import subprocess
+import tempfile
 from pathlib import Path
 
 import httpx
@@ -21,8 +23,49 @@ try:
 except ImportError:  # openai isn't installed - client stays unconfigured
     OpenAI = None
 
+FFMPEG_BIN = os.environ.get('FFMPEG_BIN', 'ffmpeg')
+# Kept in sync with js/paper-extract.js's ACT_BOARD_PAUSE_MIN_SECONDS - a
+# presenter's own recorded pause of at least this long is treated as a
+# deliberate beat marker for splitting narration into clauses.
+_SILENCE_MIN_SECONDS = 1.0
+_SILENCE_NOISE_FLOOR = '-30dB'
+_SILENCE_DETECT_TIMEOUT = 30
+
+
 class TranscriptionCallError(Exception):
     pass
+
+
+def detect_silences(audio_bytes, filename=''):
+    """Detects silence intervals directly from the recorded audio's waveform
+    via ffmpeg's silencedetect filter - independent of Whisper's word-level
+    timestamps, which are an approximate internal alignment, not true
+    forced-alignment, and were confirmed (live, on a real recording with a
+    genuine 1-2s pause) to sometimes report a flat 0.0s gap between every
+    word despite the pause being clearly audible in the recording itself.
+    Returns a list of {'start', 'end', 'duration'} (seconds), or [] if ffmpeg
+    is unavailable or the audio has no silence at least _SILENCE_MIN_SECONDS
+    long."""
+    suffix = Path(filename or '').suffix or '.webm'
+    try:
+        with tempfile.NamedTemporaryFile(suffix=suffix) as tmp:
+            tmp.write(audio_bytes)
+            tmp.flush()
+            cmd = [
+                FFMPEG_BIN, '-i', tmp.name,
+                '-af', f'silencedetect=noise={_SILENCE_NOISE_FLOOR}:d={_SILENCE_MIN_SECONDS}',
+                '-f', 'null', '-',
+            ]
+            result = subprocess.run(
+                cmd, capture_output=True, timeout=_SILENCE_DETECT_TIMEOUT, text=True)
+    except (FileNotFoundError, subprocess.SubprocessError, OSError):
+        return []
+    starts = [float(m) for m in re.findall(r'silence_start:\s*(-?\d+(?:\.\d+)?)', result.stderr)]
+    ends = [float(m) for m in re.findall(r'silence_end:\s*(-?\d+(?:\.\d+)?)', result.stderr)]
+    return [
+        {'start': start, 'end': end, 'duration': round(end - start, 3)}
+        for start, end in zip(starts, ends) if end > start
+    ]
 
 
 class TranscriptionClient:
@@ -127,5 +170,6 @@ class TranscriptionClient:
             'text': text,
             'words': words,
             'segments': segments,
+            'silences': detect_silences(audio_bytes, filename),
             'duration': float(duration) if duration is not None else None,
         }

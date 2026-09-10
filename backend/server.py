@@ -134,7 +134,10 @@ from animate_llm import (
 from documentary_modes import DOCUMENTARY_MODE_KEYS, DOCUMENTARY_MODES
 from documentary_techniques import DOCUMENTARY_TECHNIQUES, DOCUMENTARY_TECHNIQUE_KEYS
 import movie_render
-from stock_media import PexelsClient, InternetArchiveClient, LibraryOfCongressClient, FreesoundClient, StockMediaCallError
+from stock_media import (
+    PexelsClient, InternetArchiveClient, LibraryOfCongressClient, WikimediaCommonsClient,
+    FreesoundClient, StockMediaCallError,
+)
 from premiere_bridge import (
     next_premiere_project_id, premiere_project_dir, premiere_footage_dir, premiere_sketch_dir,
     premiere_animated_sketch_dir, premiere_narration_dir, premiere_media_bank_dir, premiere_stock_media_dir,
@@ -258,8 +261,6 @@ app.config['MAX_CONTENT_LENGTH'] = max(MAX_PPTX_SIZE_MB, MAX_AUDIO_SIZE_MB, MAX_
 _pipeline = None
 _carta_pipeline = None
 _narration_nlp = None
-_filmability_cache = {}
-_filmability_cache_lock = threading.Lock()
 _footage_match_cache = {}
 _footage_match_cache_lock = threading.Lock()
 
@@ -300,96 +301,6 @@ def _get_narration_nlp():
     return _narration_nlp
 
 
-def _narration_span_fallback(span):
-    """Best-effort local label when no classifier key is available."""
-    text = str(span.get('text') or '').strip()
-    label = str(span.get('label') or '').upper()
-    lower = text.lower()
-    filler_words = {
-        'also', 'because', 'everything', 'it', 'many', 'more', 'nothing',
-        'something', 'that', 'the', 'this', 'things', 'what', 'which', 'you',
-    }
-    if not text or (len(text.split()) <= 1 and lower in filler_words):
-        return {'bucket': 'ignore', 'query': '', 'visual_proxy': '', 'salience': 0.0}
-    abstract_terms = (
-        'algorithm', 'analysis', 'accuracy', 'concept', 'dataset', 'equation',
-        'framework', 'hypothesis', 'method', 'model', 'network', 'parameter',
-        'probability', 'process', 'research', 'system', 'theory', 'variable',
-    )
-    lower_tokens = set(re.findall(r'[a-z]+', lower))
-    if any(term in lower_tokens for term in abstract_terms) or label in {'CARDINAL', 'PERCENT', 'MONEY', 'QUANTITY'}:
-        proxy = 'researchers comparing charts and data'
-        return {'bucket': 'abstract', 'query': proxy, 'visual_proxy': proxy, 'salience': 0.55}
-    return {
-        'bucket': 'depictable',
-        'query': ' '.join(text.split()[:8]),
-        'visual_proxy': '',
-        'salience': float(span.get('salience') or 0.5),
-    }
-
-
-def _clean_filmability_queries(raw, lead=None, limit=3):
-    """Distinct, trimmed stock queries, led by the primary one, at most `limit`."""
-    values = []
-    for value in [lead, *(raw if isinstance(raw, list) else [])]:
-        text = str(value or '').strip()[:160]
-        if text and text.lower() not in {item.lower() for item in values}:
-            values.append(text)
-    return values[:limit]
-
-
-def _normalise_filmability_results(raw_results, candidates):
-    by_range = {(int(item.get('start', -1)), int(item.get('end', -1))): item
-                for item in candidates if isinstance(item, dict)}
-    normalised = []
-    seen = set()
-    for item in raw_results if isinstance(raw_results, list) else []:
-        if not isinstance(item, dict):
-            continue
-        try:
-            start, end = int(item.get('start')), int(item.get('end'))
-        except (TypeError, ValueError):
-            continue
-        source = by_range.get((start, end))
-        if not source or (start, end) in seen:
-            continue
-        bucket = str(item.get('bucket') or '').strip().lower()
-        if bucket not in {'depictable', 'abstract', 'ignore'}:
-            continue
-        seen.add((start, end))
-        normalised.append({
-            'text': source.get('text', ''),
-            'start': start,
-            'end': end,
-            'kind': source.get('kind', ''),
-            'label': source.get('label', ''),
-            'bucket': bucket,
-            'query': str(item.get('query') or '').strip()[:160],
-            'visual_proxy': str(item.get('visual_proxy') or '').strip()[:240],
-            'salience': max(0.0, min(1.0, float(item.get('salience') or source.get('salience') or 0))),
-            # Several distinct visual queries for one beat (clauses). Always a
-            # list, always led by `query`, so the frontend can spawn one footage
-            # node per entry without special-casing the single-query shape.
-            'queries': _clean_filmability_queries(item.get('queries'), item.get('query')),
-        })
-    # Keep the UI focused: the strongest three visual beats are enough to seed
-    # footage while the full local candidate set remains available for a later
-    # reclassification if the narration changes.
-    normalised.sort(key=lambda item: (-item['salience'], item['start']))
-    chosen = []
-    for item in normalised:
-        if item['bucket'] == 'ignore':
-            continue
-        if any(item['start'] < other['end'] and other['start'] < item['end'] for other in chosen):
-            continue
-        chosen.append(item)
-        # Phrases are capped at three beats so the UI stays focused; a clause is
-        # a beat by construction, so every clause candidate is kept.
-        if len(chosen) >= 3 and not any(c.get('kind') == 'clause' for c in candidates):
-            break
-    return sorted(chosen, key=lambda item: item['start'])
-
-
 feedback_client = FeedbackLLMClient()
 ingest_config = IngestConfig()
 transcription_client = TranscriptionClient(model=ingest_config.transcription_model)
@@ -408,6 +319,7 @@ carta_entity_client = CartaLLMClient()
 pexels_client = PexelsClient()
 internet_archive_client = InternetArchiveClient()
 library_of_congress_client = LibraryOfCongressClient()
+wikimedia_commons_client = WikimediaCommonsClient()
 freesound_client = FreesoundClient()
 
 
@@ -1077,8 +989,9 @@ def narration_clauses():
     thought rather than a fragment - but a SHORT one: sentences are cut at
     semicolons, dashes, conjunctions and commas, and anything still over
     _CLAUSE_MAX_WORDS words is cut again at its most central boundary. No LLM
-    here - the classifier route buckets these and proposes several distinct
-    visual queries per clause.
+    here, and every clause this returns becomes a highlight directly (see
+    js/paper-extract.js's requestActBoardNarrationAnalysis) - there is no
+    separate classifier route filtering or re-querying these anymore.
     """
     data = request.get_json(silent=True) or {}
     text = str(data.get('text') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS]
@@ -1118,82 +1031,6 @@ def narration_clauses():
             break
     spans.sort(key=lambda item: item['start'])
     return jsonify({'spans': spans[:24], 'text': text, 'source': source})
-
-
-@app.route('/narration/classify', methods=['POST'])
-def narration_classify():
-    """Bucket local narration candidates by documentary filmability."""
-    data = request.get_json(silent=True) or {}
-    narration = str(data.get('narration') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS]
-    raw_spans = data.get('spans') or []
-    if not narration or not isinstance(raw_spans, list):
-        return jsonify({'spans': [], 'source': 'empty'})
-    spans = [
-        {
-            'text': str(item.get('text') or '').strip()[:240],
-            'start': int(item.get('start')),
-            'end': int(item.get('end')),
-            'kind': str(item.get('kind') or ''),
-            'label': str(item.get('label') or ''),
-            'salience': float(item.get('salience') or 0),
-        }
-        for item in raw_spans[:24]
-        if isinstance(item, dict)
-        and str(item.get('text') or '').strip()
-        and str(item.get('start', '')).lstrip('-').isdigit()
-        and str(item.get('end', '')).lstrip('-').isdigit()
-    ]
-    mode = str(data.get('documentary_mode') or '').strip()[:80]
-    cache_key = hashlib.sha256(json.dumps(
-        {'narration': narration, 'spans': spans, 'mode': mode},
-        sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()
-    with _filmability_cache_lock:
-        cached = _filmability_cache.get(cache_key)
-    if cached is not None:
-        return jsonify({'spans': cached, 'source': 'cache'})
-
-    source = 'fallback'
-    raw_results = []
-    if media_query_client.is_configured():
-        try:
-            raw_results = media_query_client.classify_filmability(narration, spans, mode)
-            source = 'llm'
-        except MediaQueryLLMCallError:
-            raw_results = []
-    if not raw_results:
-        raw_results = [
-            {
-                **span,
-                **_narration_span_fallback(span),
-            }
-            for span in spans
-        ]
-    results = _normalise_filmability_results(raw_results, spans)
-    # A presenter-authored selection is an explicit request, so never let a
-    # malformed or incomplete model response silently drop it. Preserve any
-    # valid model results and fill only the missing user-selection ranges with
-    # the deterministic fallback query.
-    result_ranges = {(int(item.get('start', -1)), int(item.get('end', -1)))
-                     for item in results}
-    for span in spans:
-        if span.get('kind') != 'user_selection':
-            continue
-        key = (int(span.get('start', -1)), int(span.get('end', -1)))
-        if key in result_ranges:
-            continue
-        results.append({
-            **span,
-            **_narration_span_fallback(span),
-        })
-        result_ranges.add(key)
-    results.sort(key=lambda item: int(item.get('start', 0)))
-    with _filmability_cache_lock:
-        # Bound this process-local cache so long-running browser sessions do
-        # not retain every prior narration forever.
-        if len(_filmability_cache) >= 256:
-            _filmability_cache.pop(next(iter(_filmability_cache)))
-        _filmability_cache[cache_key] = results
-    return jsonify({'spans': results, 'source': source})
 
 
 # One scene's Footage lane is the practical ceiling here. Smart arrange only
@@ -1260,29 +1097,20 @@ def narration_match_footage():
 def paper_media_queries():
     """Dedicated query planner used by Find Footage and Find Sound."""
     data = request.get_json(silent=True) or {}
-    title = (data.get('title') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
-    if not title:
-        return jsonify({'error': 'title is required'}), 400
+    highlight = (data.get('highlight') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS]
+    if not highlight:
+        return jsonify({'error': 'highlight is required'}), 400
     documentary_mode, err = _parse_documentary_mode(data)
     if err:
         return err
-    scene = {
-        'title': title,
-        'act': (data.get('act') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS],
-        'scene_notes': (data.get('scene_notes') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS],
-        'footage_fragment': (data.get('footage_fragment') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS],
-        'scene_techniques': _parse_techniques(data),
-        'narration': (data.get('narration') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS],
-        'narration_entities': data.get('narration_entities') or [],
-        'reference_footage_description': (data.get('reference_footage_description') or '').strip()[:MAX_SKETCH_VISUAL_CHARS],
-        'reference_footage_entities': data.get('reference_footage_entities') or [],
-        'abstract': (data.get('abstract') or '').strip()[:MAX_ABSTRACT_CHARS],
-        'documentary_mode': documentary_mode or '',
-    }
     if not media_query_client.is_configured():
         return jsonify({'error': _STORYBOARD_NOT_CONFIGURED_ERROR}), 503
     try:
-        return jsonify(media_query_client.generate_queries(scene))
+        return jsonify(media_query_client.generate_queries(
+            highlight,
+            narration=(data.get('narration') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS],
+            documentary_mode=documentary_mode or '',
+        ))
     except MediaQueryLLMCallError as exc:
         return jsonify({'error': str(exc)}), 500
 
@@ -1936,7 +1764,7 @@ def paper_generate_shot_examples():
             'kind': 'image',
             'label': plan['narrative_operation'].replace('_', ' ').title(),
             'shot_size': plan['shot_size'],
-            'movement': plan['movement'],
+            'movement': plan.get('movement', ''),
             'narrative_operation': plan['narrative_operation'],
             'purpose': plan['purpose'],
             'visual_description': plan['visual_description'],
@@ -2190,16 +2018,18 @@ _FREESOUND_NOT_CONFIGURED_ERROR = (
 
 @app.route('/media/search_video', methods=['POST'])
 def media_search_video():
-    # 3 providers, each independently optional/best-effort - Pexels (modern
-    # stock footage, needs PEXELS_API_KEY) alongside Internet Archive and
-    # Library of Congress (real archival/historical footage, no key needed
-    # at all - see stock_media.py's own module docstring for why these two
-    # need no configuration check the way Pexels does below). Run
-    # concurrently (same ThreadPoolExecutor fan-out convention as
-    # /paper/storyboard's per-section entity extraction above) since
-    # Archive/LOC each make several sequential follow-up requests per
-    # search on top of Pexels' own single one - sequentially, this route
-    # would be as slow as its slowest provider times three.
+    # Pexels and Internet Archive - fast, and every clip is already a short,
+    # purpose-cut stock/archival shot. Wikimedia Commons was tried instead for
+    # its synced-audio footage, but its clips run much longer (full scenes/
+    # reels rather than pre-cut shots), which made the whole Act Board
+    # pipeline (search, download, remux, playback) noticeably slower - not
+    # worth it against Pexels/IA's silent-but-fast clips for most of this
+    # workflow. Library of Congress is left out: its own site started
+    # rate-limiting this route's searches (its /film-and-videos/ search
+    # endpoint has no published API/key, so there's no documented,
+    # less-disruptive way to query it less aggressively). All three of
+    # Wikimedia/Library of Congress/Pexels/IA clients remain fully working in
+    # stock_media.py if the sound-vs-speed tradeoff changes again.
     data = request.get_json(silent=True) or {}
     query = (data.get('query') or '').strip()
     try:
@@ -2210,9 +2040,7 @@ def media_search_video():
     if not query:
         return jsonify({'error': 'query is required'}), 400
 
-    providers = [('Internet Archive', internet_archive_client), ('Library of Congress', library_of_congress_client)]
-    if pexels_client.is_configured():
-        providers.append(('Pexels', pexels_client))
+    providers = [('Pexels', pexels_client), ('Internet Archive', internet_archive_client)]
 
     videos = []
     errors = []

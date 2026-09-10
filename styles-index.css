@@ -1284,7 +1284,6 @@ body.pub-to-doc-page .action-bar {
   max-width: none;
   min-height: 0;
   margin: 0;
-  padding: 9px;
   box-sizing: border-box;
   overflow: visible !important;
   cursor: default;
@@ -1375,8 +1374,8 @@ body.pub-to-doc-page .action-bar {
 .storyboard-act-board-full-playback-node-detail-empty {
   margin: 0;
   color: var(--cd-text);
-  font: 12px var(--cd-font-mono);
-  opacity: 0.55;
+  font: 10px var(--cd-font-body);
+  opacity: 0.6;
   /* position: absolute;
   inset: 0;
   display: grid;
@@ -2549,7 +2548,6 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 
 .storyboard-act-board-node {
   position: relative;
-  padding: 0 9px 9px 9px;
   border-radius: 4px;
 }
 
@@ -3219,7 +3217,11 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   border: 0;
   background: transparent;
   box-shadow: none;
-  overflow: hidden;
+  /* A fixed-size card can hold more than fits (the thumb rail's generating
+     placeholders stack under the clip-volume/source-editor rows) - scroll
+     that overflow instead of silently clipping it off the bottom. */
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .storyboard-act-board-node-footage
@@ -3538,7 +3540,14 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   max-height: 120px;
   min-height: 64px;
   line-height: 1.35;
-  white-space: pre-wrap;
+}
+
+.storyboard-act-board-image-generation-shot-plan-row {
+  margin: 0 0 3px;
+}
+
+.storyboard-act-board-image-generation-shot-plan-row:last-child {
+  margin-bottom: 0;
 }
 
 .storyboard-act-board-image-generation-input-editable {
@@ -4441,9 +4450,13 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   min-height: 0;
   flex-direction: column;
   /* Keep every slide's narration content anchored to the same bottom edge;
-     varying suggested-narration lengths should not make the transcript jump
-     vertically as the presenter scrolls between segments. */
-  /* justify-content: flex-end; */
+     varying suggested-narration lengths, and the per-slide bar opening/
+     closing above it as scrolling changes which segment is selected, should
+     not make the transcript jump vertically. The bar is the first child
+     (see the slide-building code), so anchoring the group to the bottom
+     means it grows/shrinks upward into its own space instead of displacing
+     the recorded/suggested text below it. */
+  justify-content: flex-end;
   gap: 8px;
   /* Highlight labels sit just above the phrase span. Let them extend into
      the slide's breathing room instead of clipping them at the slide box. */
@@ -4555,7 +4568,7 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   /* Keep the empty and recorded states on the exact same type scale. The
      text is still prominent, but recorded transcript spans no longer appear
      larger than the "No recorded narration yet" placeholder. */
-  font: 600 clamp(40px, 1.6vw, 48px)/1.12 'Playfair Display', Georgia, serif;
+  font: 600 clamp(30px, 1.6vw, 48px)/1.12 'Playfair Display', Georgia, serif;
   white-space: pre;
 }
 
@@ -5609,7 +5622,7 @@ audio.storyboard-act-board-node-audio {
   width: 14px;
   height: 14px;
   margin-left: 3px;
-  margin-top: -40px;
+  margin-top: -25px;
   padding: 0;
   border: 0;
   border-radius: 50%;
@@ -5658,6 +5671,30 @@ audio.storyboard-act-board-node-audio {
 .storyboard-act-board-narration-primary {
   user-select: text;
   -webkit-user-select: text;
+}
+
+/* A suggested-narration draft's breath cue (see
+   refreshActBoardNarrationDraftPauseCues) - purely visual, no textContent, so
+   it never leaks into the draft text if that surface is ever made editable. */
+.storyboard-act-board-narration-pause-marker {
+  display: inline-block;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.storyboard-act-board-narration-pause-marker::before {
+  content: 'pause';
+  display: inline-block;
+  margin: 0 4px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--cd-narration) 18%, transparent);
+  color: var(--cd-narration);
+  font: 700 10px/1.4 var(--cd-font-mono);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  opacity: 1;
+  vertical-align: middle;
 }
 
 .storyboard-act-board-node-footage-status {
@@ -5917,7 +5954,10 @@ audio.storyboard-act-board-node-audio {
   border-radius: 3px;
   background: var(--cd-accent);
   color: var(--cd-text);
-  font: 12px var(--cd-font-mono);
+  font-family: var(--cd-font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .storyboard-act-board-playback-stage.playing {
@@ -8072,10 +8112,9 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.selected {
 
 .open-slot-text {
   font-family: var(--cd-font-mono);
-  font-size: 12px;
+  font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  opacity: 0.6;
 }
 
 .paper-section-open-slot.has-footage {
@@ -8688,6 +8727,7 @@ button:not(.clear-debug-session-btn):not(.narrative-arc-outline-item):not(.chip)
   background: var(--cd-accent-special);
   color: var(--cd-accent-text);
   text-transform: uppercase;
+  font-size: 10px;
 }
 
 .btn-primary,
@@ -8737,9 +8777,10 @@ button:not(.clear-debug-session-btn):not(.narrative-arc-outline-item):not(.chip)
 #moodboard-next-row {
   position: fixed;
   bottom: 15px;
-  right: 43%;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 2000;
-  text-align: right;
+  text-align: center;
 }
 
 /* A small hand-drawn nudge keeps the next-step action discoverable without
@@ -12346,8 +12387,10 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
   border: 0;
   border-radius: 0;
   background: var(--cd-accent);
-  font: 9px/1.2 var(--cd-font-mono);
   text-align: center;
+  font-family: var(--cd-font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
@@ -12473,56 +12516,17 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
   pointer-events: auto;
 }
 
-/* The generation reference: a still pinned as the basis for new images and
-   video. Sits beside the pin control on a gallery thumbnail and on the
-   selected preview, and stays visible once set so it is obvious which image
-   the next generation will be built from. */
-.storyboard-act-board-footage-reference-btn {
-  position: absolute;
-  z-index: 3;
-  /* Directly beneath the pin control, sharing its right edge. */
-  top: 25px;
-  right: 3px;
-  display: grid;
-  width: 18px;
-  height: 18px;
-  place-items: center;
-  padding: 0;
-  border-radius: 50%;
-  background: var(--cd-accent-special) !important;
-  color: #fff !important;
-  font-size: 12px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.storyboard-act-board-footage-reference-btn:hover,
-.storyboard-act-board-footage-reference-btn:focus-visible {
-  background: var(--cd-accent);
-  outline: 2px solid rgba(241, 135, 0, .25);
-}
-
-.storyboard-act-board-footage-reference-btn.is-reference {
-  /* !important for the same reason the pin button uses it: a generic
-     small-button rule otherwise wins and the active state reads as inactive. */
-  /* --cd-accent-hover is a light grey, which reads as inactive at this size.
-     Use the orange accent so the pinned reference is unmistakable. */
-  background: var(--cd-accent-special) !important;
-  color: var(--cd-accent-text) !important;
-}
-
-/* On the selected preview the pin sits at 28px (below Replace), so the
-   reference control stacks under that one instead. */
-.storyboard-act-board-footage-featured > .storyboard-act-board-footage-reference-btn {
-  top: 50px;
-  right: 4px;
-}
-
 /* The reference thumbnail shown inside the image/video generation inputs. */
 .storyboard-act-board-reference-input-value {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.storyboard-act-board-reference-input-value.is-empty {
+  color: var(--cd-text);
+  font-style: italic;
+  opacity: .7;
 }
 .storyboard-act-board-reference-input-thumb {
   width: 44px;
@@ -12819,7 +12823,10 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
   opacity: 1;
   background: var(--cd-accent-special);
   color: var(--cd-surface, #fff);
-  transform: translateY(-50%) scale(1.12);
+  /* No scale here: the segment and strip are both overflow:hidden (see the
+     comment above), so growing past this badge's own 14x14 box gets the
+     grown part clipped away instead of sitting on top of the track. */
+  transform: translateY(-50%);
   outline: none;
 }
 
@@ -12866,7 +12873,10 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
   opacity: 1;
   background: var(--cd-text);
   color: var(--cd-surface, #fff);
-  transform: translateY(-50%) scale(1.12);
+  /* No scale here: the segment and strip are both overflow:hidden, so
+     growing past this badge's own 14x14 box gets the grown part clipped
+     away instead of sitting on top of the track. */
+  transform: translateY(-50%);
   outline: none;
 }
 
@@ -12915,6 +12925,7 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
 .storyboard-act-board-playback-caption.is-narration {
   font: italic 14px/1.45 'Playfair Display', Georgia, serif;
   opacity: 1;
+  text-transform: initial;
 }
 .storyboard-act-board-playback-caption.is-narration::before { content: '\201C'; }
 .storyboard-act-board-playback-caption.is-narration::after { content: '\201D'; }

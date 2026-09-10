@@ -3,31 +3,40 @@ server.py's /media/search_video and /media/search_audio routes) - triggered
 by that page's per-section "Find Footage" action, using the video_query/
 audio_query fields storyboard_llm.py's generate_storyboard already produces.
 
-Three video providers (Pexels, Internet Archive, Library of Congress) plus
-one audio provider (Freesound), all single unretried GETs against a plain
-REST search endpoint - there's nothing here that benefits from the
-retry-on-transient-failure pattern the LLM clients use; a failed search
-just fails. Every search_videos() implementation returns the same shape
-([{'id', 'thumbnail_url', 'video_url', 'duration', 'creator',
+Four video providers (Wikimedia Commons, Library of Congress, Pexels,
+Internet Archive) plus one audio provider (Freesound), all single unretried
+GETs against a plain REST search endpoint - there's nothing here that
+benefits from the retry-on-transient-failure pattern the LLM clients use; a
+failed search just fails. Every search_videos() implementation returns the
+same shape ([{'id', 'thumbnail_url', 'video_url', 'duration', 'creator',
 'source_url'}, ...]) regardless of provider, so callers (see server.py)
 don't need to special-case any of them.
 
-Internet Archive and Library of Congress need no API key at all (verified
-live - see the research this was built from) and are B-roll-appropriate in
-a different way than Pexels: real archival/historical footage, not modern
-stock clips - both need a second request per candidate result to resolve
-an actual playable file URL (Archive.org: a /metadata/<id> call for its
-file list; LOC: a per-item ?fo=json call for its IIIF-AV resource list),
-unlike Pexels' single search response which already embeds direct file
-URLs - so these two are slower per search and cap how many candidates get
-that follow-up resolution (see _MAX_METADATA_LOOKUPS below).
+/media/search_video only actively queries Wikimedia Commons and Library of
+Congress (see server.py) - Pexels strips audio from every clip, and Internet
+Archive's Prelinger collection is mostly silent industrial/newsreel footage,
+neither useful when a presenter wants a clip WITH its original sound intact
+(e.g. to test Smart Arrange's audio transitions/ducking). Both clients stay
+defined and fully working here so either can be added back to that route's
+provider list with a one-line change if that need changes again.
+
+Internet Archive, Library of Congress, and Wikimedia Commons need no API key
+at all (verified live). Archive and LOC each need a second request per
+candidate result to resolve an actual playable file URL (Archive.org: a
+/metadata/<id> call for its file list; LOC: a per-item ?fo=json call for its
+IIIF-AV resource list) - slower per search than Pexels' or Commons' single
+search response, which already embed direct file URLs - so these two cap how
+many candidates get that follow-up resolution (see _MAX_METADATA_LOOKUPS
+below).
 
 Env vars (see backend/.env.example):
     PEXELS_API_KEY      https://www.pexels.com/api/ (free)
     FREESOUND_API_KEY   https://freesound.org/apiv2/apply/ (free tier is
                          non-commercial use only)
-    (Internet Archive and Library of Congress need no env var/key at all.)
+    (Internet Archive, Library of Congress, and Wikimedia Commons need no
+    env var/key at all.)
 """
+import html
 import os
 import re
 
@@ -38,6 +47,11 @@ _FREESOUND_SEARCH_URL = 'https://freesound.org/apiv2/search/text/'
 _ARCHIVE_SEARCH_URL = 'https://archive.org/advancedsearch.php'
 _ARCHIVE_METADATA_URL = 'https://archive.org/metadata/{identifier}'
 _LOC_SEARCH_URL = 'https://www.loc.gov/film-and-videos/'
+_WIKIMEDIA_API_URL = 'https://commons.wikimedia.org/w/api.php'
+_WIKIMEDIA_THUMB_WIDTH = 320
+# Required by Wikimedia's API etiquette (https://meta.wikimedia.org/wiki/User-Agent_policy) -
+# an unidentified/browser-spoofing User-Agent risks being rate-limited.
+_WIKIMEDIA_USER_AGENT = 'rehearsal-mvp-kg/1.0 (documentary-editing tool; no contact URL configured)'
 
 # Both Internet Archive and Library of Congress only return item-level
 # metadata from their own search endpoints - actually confirming a usable
@@ -74,6 +88,19 @@ def _duration_seconds(value):
     except ValueError:
         return None
     return seconds if seconds > 0 else None
+
+
+_HTML_TAG_RE = re.compile(r'<[^>]+>')
+
+
+def _strip_html(value):
+    """Wikimedia's extmetadata Artist/Credit fields are raw HTML (links,
+    bold, entities, etc.) - a plain-text creator credit reads better than
+    markup."""
+    if not value:
+        return None
+    text = html.unescape(_HTML_TAG_RE.sub('', str(value))).strip()
+    return text or None
 
 
 class StockMediaCallError(Exception):
@@ -128,6 +155,117 @@ class PexelsClient:
                 'duration': _duration_seconds(video.get('duration')),
                 'creator': (video.get('user') or {}).get('name'),
                 'source_url': video.get('url'),
+            })
+        return results
+
+
+_WIKIMEDIA_PREFERRED_HEIGHT = 480
+
+
+def _select_wikimedia_video(videoinfo):
+    """Prefers a pre-transcoded, smaller derivative over the full-resolution
+    original. Direct downloads of a Commons video's ORIGINAL file are
+    aggressively rate-limited - verified live: repeated attempts got a 429
+    whose body literally reads "please contact noc@wikimedia.org... or
+    instead use thumbnail images in sizes listed", even from a single
+    server, at a normal one-request-per-search-result pace. The same
+    transcoded renditions MediaWiki's own <video> player uses (served from
+    a distinct /transcoded/ path) are not subject to that limit - verified
+    live with the same request pattern. Falls back to the original only
+    when no transcoded derivative exists at all (rare - very old/short
+    uploads). Returns {'url', 'width', 'height'}."""
+    original = {
+        'url': videoinfo.get('url'),
+        'width': videoinfo.get('width'),
+        'height': videoinfo.get('height'),
+    }
+    transcoded = [d for d in (videoinfo.get('derivatives') or [])
+                  if d.get('transcodekey') and d.get('src')]
+    if not transcoded:
+        return original
+    # WebM (vp9/opus) keeps the audio track and is broadly browser-playable;
+    # among those, the smallest one at or above the preferred height, else
+    # the largest available if none reach it.
+    webm = [d for d in transcoded if 'webm' in (d.get('type') or '')] or transcoded
+    at_or_above = [d for d in webm if (d.get('height') or 0) >= _WIKIMEDIA_PREFERRED_HEIGHT]
+    chosen = min(at_or_above, key=lambda d: d.get('height') or 0) if at_or_above \
+        else max(webm, key=lambda d: d.get('height') or 0)
+    return {'url': chosen['src'], 'width': chosen.get('width'), 'height': chosen.get('height')}
+
+
+class WikimediaCommonsClient:
+    """No API key, no signup - verified live. Unlike Pexels (which strips
+    audio from every clip) or Internet Archive's Prelinger collection (mostly
+    silent industrial/newsreel footage), Commons hosts real uploaded
+    recordings - interviews, documentary excerpts, field footage, NASA/NOAA
+    material - that often keep their original synced audio. A single search
+    request already returns a direct file URL, thumbnail, and duration (the
+    MediaWiki API's videoinfo prop), unlike Archive/LOC's two-step lookup."""
+
+    def is_configured(self):
+        return True
+
+    def search_videos(self, query, per_page=5):
+        """Returns [{'id', 'thumbnail_url', 'video_url', 'duration',
+        'creator', 'source_url'}, ...]."""
+        try:
+            response = requests.get(
+                _WIKIMEDIA_API_URL,
+                params={
+                    'action': 'query',
+                    'generator': 'search',
+                    # filetype:video is a CirrusSearch keyword restricting
+                    # results to actual video files, not every File: page
+                    # whose description happens to mention the query.
+                    'gsrsearch': f'filetype:video {query}',
+                    'gsrnamespace': 6,  # File:
+                    'gsrlimit': per_page,
+                    'prop': 'videoinfo',
+                    'viprop': 'url|mime|size|extmetadata|derivatives',
+                    'viurlwidth': _WIKIMEDIA_THUMB_WIDTH,
+                    'format': 'json',
+                },
+                headers={'User-Agent': _WIKIMEDIA_USER_AGENT},
+                timeout=15,
+            )
+            response.raise_for_status()
+            data = response.json()
+        except requests.RequestException as exc:
+            raise StockMediaCallError(f'Wikimedia Commons search failed: {exc}')
+        except ValueError as exc:
+            raise StockMediaCallError(f'Wikimedia Commons search returned invalid JSON: {exc}')
+
+        pages = (data.get('query') or {}).get('pages') or {}
+        # generator=search does not guarantee response order matches
+        # relevance ranking (verified live: dict iteration order here follows
+        # pageid, not search rank) - restore it via each page's own `index`.
+        ordered_pages = sorted(pages.values(), key=lambda page: page.get('index', 0))
+        results = []
+        for page in ordered_pages:
+            videoinfo = (page.get('videoinfo') or [None])[0]
+            if not videoinfo or not videoinfo.get('url'):
+                continue
+            selected = _select_wikimedia_video(videoinfo)
+            # Landscape only, matching every other provider's convention here
+            # - the board's stage is 16:9, and a portrait clip would arrive
+            # as a tall pillar between wide ones.
+            width = selected.get('width') or 0
+            height = selected.get('height') or 0
+            if width and height and height > width:
+                continue
+            extmetadata = videoinfo.get('extmetadata') or {}
+            creator = _strip_html(
+                (extmetadata.get('Artist') or {}).get('value')
+                or (extmetadata.get('Credit') or {}).get('value'))
+            results.append({
+                'id': page.get('pageid'),
+                'thumbnail_url': videoinfo.get('thumburl'),
+                'video_url': selected.get('url'),
+                'width': width or None,
+                'height': height or None,
+                'duration': _duration_seconds(videoinfo.get('duration')),
+                'creator': creator,
+                'source_url': videoinfo.get('descriptionurl'),
             })
         return results
 

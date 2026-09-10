@@ -10,41 +10,19 @@ except ImportError:
     OpenAI = None
 
 
-_SYSTEM_PROMPT = """You formulate two concise external-media search queries for a documentary scene.
+_SYSTEM_PROMPT = """You formulate two concise external-media search queries for one filmable narration highlight - a short clause the presenter has already chosen to illustrate with a shot.
 
-VIDEO priority (highest first):
-1. The filmable narration fragment defines the concrete visual beat, when provided.
-2. The reference-footage subject/entities define WHAT is depicted, when provided.
-3. Scene notes and scene techniques define the intended action, composition, and visual treatment.
-4. Narration, title, act, and abstract fill missing subject/context.
-4. Documentary mode influences style and atmosphere, never replacing the subject.
-Return a literal, filmable 3-10 word stock-video query. Avoid academic jargon and camera instructions that a stock search engine cannot match.
+VIDEO: the highlight IS the concrete visual beat - it defines what is depicted. Use the surrounding narration only to disambiguate the highlight's subject/setting (who or what it refers to), never to replace or broaden it. Documentary mode influences style and atmosphere, never the subject. Return a literal, filmable 3-10 word stock-video query. Avoid academic jargon and camera instructions that a stock search engine cannot match. If the highlight is abstract (academic jargon, an invisible process, a dataset, theory, metric, or idea with no literal footage), return a concrete query that metaphorically or observationally represents it instead (for example, researchers comparing charts, hands annotating data, a close-up of a computer screen).
 
 AUDIO priority:
-1. Translate the scene into a SOUND YOU CAN HEAR, not a description of the research topic.
+1. Translate the highlight into a SOUND YOU CAN HEAR, not a description of the research topic.
 2. Prefer one familiar sound source or action plus an optional setting: "footsteps in hallway", "paper rustling", "quiet laboratory ambience", "keyboard typing".
-3. Use narration and reference footage only to choose that broad, audible source; treat academic names, theories, species, datasets, institutions, and technical terms as context to paraphrase or discard.
-4. Prefer common Freesound-style tags and generic searchable wording over rare proper nouns or exact scene details. If no literal sound is implied, choose a plausible environmental bed such as "room tone", "office ambience", "outdoor ambience", or "subtle machinery hum".
+3. Use the surrounding narration only to choose that broad, audible source; treat academic names, theories, species, datasets, institutions, and technical terms as context to paraphrase or discard.
+4. Prefer common Freesound-style tags and generic searchable wording over rare proper nouns or exact details. If no literal sound is implied, choose a plausible environmental bed such as "room tone", "office ambience", "outdoor ambience", or "subtle machinery hum".
 5. Documentary mode may shape the atmosphere (naturalistic, intimate, tense), but never replace the sound source.
 Return exactly 2-5 ordinary words (up to 6 only when needed), lower-case, as a sound-effect or ambience search query. No sentence, explanation, abstract concept, music genre, camera language, visual metaphor, or proper noun.
 
 Respond only as JSON: {"video_query":"...","audio_query":"..."}."""
-
-
-_FILMABILITY_SYSTEM_PROMPT = """You are a documentary footage editor. Classify candidate phrases from one narration passage by whether a filmmaker can show them on screen.
-
-Choose at most the three strongest visual beats. Return only JSON in this shape:
-{"spans":[{"start":0,"end":12,"bucket":"depictable","query":"people walking through a laboratory","visual_proxy":"","salience":0.9}]}
-
-Rules:
-- depictable: a concrete person, place, object, visible action, or observable scene. The query must be a broad, literal stock-footage query of 3-10 ordinary words.
-- abstract: academic jargon, an invisible process, a dataset, theory, metric, or idea that is not literal stock footage. Supply a concrete visual_proxy and query that metaphorically or observationally represents it (for example, researchers comparing charts, hands annotating data, or a close-up of a computer screen).
-- ignore: filler, vague connective language, or a phrase that would not help choose a shot.
-- Preserve the supplied character offsets exactly. Do not invent offsets or return candidates that were not supplied.
-- A candidate with kind "user_selection" is an explicit presenter request. Always return a classification for it (even if it is abstract or otherwise weak), preserve its offsets exactly, and provide the best literal query or visual_proxy available.
-- Prefer phrases that are specific, visually salient, and useful for a coherent documentary sequence. Avoid returning multiple overlapping or redundant beats.
-- A candidate with kind "clause" is a whole spoken clause, not a phrase. Return a classification for EVERY clause candidate (clauses do not compete with each other and are not limited to three), preserve its offsets exactly, and use bucket "ignore" only for pure filler. For each clause also return "queries": 2-3 DISTINCT literal stock-footage queries of 3-10 ordinary words that could each illustrate that clause with a different subject, setting, scale or angle (for example a wide establishing shot, a close detail, and people doing the activity). "query" must equal the first entry of "queries".
-"""
 
 
 class MediaQueryLLMCallError(Exception):
@@ -69,21 +47,16 @@ class MediaQueryLLMClient:
             self._client = OpenAI(**kwargs)
         return self._client
 
-    def generate_queries(self, scene):
+    def generate_queries(self, highlight, narration='', documentary_mode=''):
         if not self.is_configured():
             raise MediaQueryLLMCallError('Media-query LLM is not configured (missing API key or openai package)')
+        highlight = (highlight or '').strip()
+        if not highlight:
+            raise MediaQueryLLMCallError('highlight is required')
         payload = {
-            'title': scene.get('title', ''),
-            'act': scene.get('act', ''),
-            'scene_notes': scene.get('scene_notes', ''),
-            'footage_fragment': scene.get('footage_fragment', ''),
-            'scene_techniques': scene.get('scene_techniques', []),
-            'narration': scene.get('narration', ''),
-            'narration_entities': scene.get('narration_entities', []),
-            'reference_footage_description': scene.get('reference_footage_description', ''),
-            'reference_footage_entities': scene.get('reference_footage_entities', []),
-            'abstract': scene.get('abstract', ''),
-            'documentary_mode': scene.get('documentary_mode', ''),
+            'highlight': highlight,
+            'narration': (narration or '').strip(),
+            'documentary_mode': (documentary_mode or '').strip(),
         }
         try:
             response = self._get_client().chat.completions.create(
@@ -103,47 +76,3 @@ class MediaQueryLLMClient:
             return {'video_query': video, 'audio_query': audio}
         except Exception as exc:
             raise MediaQueryLLMCallError(f'Could not generate media queries: {exc}') from exc
-
-    def classify_filmability(self, narration, spans, documentary_mode=''):
-        """Classify local narration candidates into usable visual beats.
-
-        The local span pass deliberately happens before this call. Keeping the
-        LLM input to offset-bearing candidates makes the result cheap, stable,
-        and directly renderable in the browser without another text-matching
-        pass.
-        """
-        if not self.is_configured():
-            raise MediaQueryLLMCallError('Media-query LLM is not configured (missing API key or openai package)')
-        payload = {
-            'narration': str(narration or '')[:20000],
-            'documentary_mode': str(documentary_mode or '')[:80],
-            'candidates': [
-                {
-                    'text': str(span.get('text') or ''),
-                    'start': int(span.get('start', 0)),
-                    'end': int(span.get('end', 0)),
-                    'kind': str(span.get('kind') or ''),
-                    'label': str(span.get('label') or ''),
-                    'salience': float(span.get('salience') or 0),
-                }
-                for span in (spans or [])[:24]
-                if isinstance(span, dict)
-            ],
-        }
-        try:
-            response = self._get_client().chat.completions.create(
-                model=self.model,
-                messages=[
-                    {'role': 'system', 'content': _FILMABILITY_SYSTEM_PROMPT},
-                    {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False)},
-                ],
-                response_format={'type': 'json_object'},
-                temperature=0.2,
-            )
-            parsed = json.loads(response.choices[0].message.content)
-            result = parsed.get('spans') if isinstance(parsed, dict) else None
-            if not isinstance(result, list):
-                raise ValueError('response omitted spans')
-            return result
-        except Exception as exc:
-            raise MediaQueryLLMCallError(f'Could not classify narration filmability: {exc}') from exc

@@ -180,22 +180,51 @@ def premiere_stock_media_dir(project_id):
 _MAX_STOCK_MEDIA_DOWNLOAD_BYTES = 200 * 1024 * 1024
 
 
+# Wikimedia's CDN (upload.wikimedia.org) enforces its User-Agent policy
+# (https://meta.wikimedia.org/wiki/User-Agent_policy) even for plain file
+# downloads, not just API calls - an unidentified default python-requests
+# User-Agent gets a 403. Harmless to send for every provider, so it's not
+# conditional on the URL's host.
+_DOWNLOAD_USER_AGENT = 'rehearsal-mvp-kg/1.0 (documentary-editing tool; no contact URL configured)'
+
+
 def download_stock_media_to_disk(url, dest_path):
-    """Streams a stock-media pick's URL to dest_path - see
+    """Downloads a stock-media pick's URL to dest_path - see
     premiere_stock_media_dir's own comment on why this needs to happen at
     all. Raises requests.RequestException/ValueError on failure (bad URL,
     non-2xx, oversized response) - callers are expected to surface that as
     a clean error to the presenter (a dead search result is disappointing,
-    not fatal), not retry silently."""
-    with requests.get(url, stream=True, timeout=30) as response:
-        response.raise_for_status()
-        written = 0
-        with open(dest_path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=256 * 1024):
-                written += len(chunk)
-                if written > _MAX_STOCK_MEDIA_DOWNLOAD_BYTES:
-                    raise ValueError(f'download exceeded {_MAX_STOCK_MEDIA_DOWNLOAD_BYTES} bytes')
-                f.write(chunk)
+    not fatal), not retry silently.
+
+    Shells out to curl rather than using requests/urllib3 directly - verified
+    live that Wikimedia's CDN (upload.wikimedia.org) consistently 429s a
+    request made via Python's requests/urllib3 in some environments (this
+    system Python's LibreSSL-backed ssl module produces a different TLS
+    fingerprint than a real browser or curl - see the NotOpenSSLWarning
+    urllib3 itself emits on such a system - which its edge appears to rate-
+    limit far more aggressively), while an identical curl request to the
+    same URL, same headers, same moment, succeeds every time. requests
+    remains the norm everywhere else in this codebase; this one call site
+    needs to look like an ordinary client to reach this specific host
+    reliably."""
+    cmd = [
+        'curl', '-sS', '-L', '--fail',
+        '--max-time', '30',
+        '--max-filesize', str(_MAX_STOCK_MEDIA_DOWNLOAD_BYTES),
+        '-H', f'User-Agent: {_DOWNLOAD_USER_AGENT}',
+        '-o', str(dest_path),
+        '--', url,
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, timeout=35)
+    except (subprocess.SubprocessError, OSError) as exc:
+        raise requests.RequestException(f'curl download failed: {exc}') from exc
+    if result.returncode == 63:  # CURLE_FILESIZE_EXCEEDED
+        raise ValueError(f'download exceeded {_MAX_STOCK_MEDIA_DOWNLOAD_BYTES} bytes')
+    if result.returncode != 0:
+        raise requests.RequestException(
+            f'curl exited {result.returncode} downloading {url}: '
+            f'{result.stderr.decode(errors="replace").strip()}')
 
 
 def resolve_static_preview_path(preview_url):

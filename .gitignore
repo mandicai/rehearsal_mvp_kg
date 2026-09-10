@@ -27,3 +27,9 @@ premiere-plugin/
 paper_snapshots/
 
 other/
+
+# YouTube narration/frame review CLI output (see
+# backend/youtube_narration_timeline_cli.py) - downloaded videos, extracted
+# frames, and generated HTML reports, all reproducible locally on demand.
+youtube_narration_timelines/
+urls.txt

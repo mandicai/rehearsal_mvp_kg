@@ -254,7 +254,7 @@ const ACT_BOARD_SUGGESTED_FOOTAGE_IMAGE_SAMPLE_COUNT = 2;
 // right after a card's stock search, and the one for a merged node. Set to
 // false to stop spending credits on every card that appears (a node's own
 // Generate button keeps working either way).
-const ACT_BOARD_AUTO_GENERATE_FOOTAGE_IMAGES = true;
+const ACT_BOARD_AUTO_GENERATE_FOOTAGE_IMAGES = false;
 // What a suggested highlight is: 'phrase' (words / noun phrases, the original
 // model) or 'clause' (a whole spoken clause, each spawning several footage
 // nodes with different footage illustrating it). Flip back to 'phrase' to
@@ -265,6 +265,12 @@ const ACT_BOARD_HIGHLIGHT_UNIT = 'clause';
 const ACT_BOARD_CLAUSE_ALTERNATES_MAX = 3;
 // Last-resort top-up when a clause has no distinct subjects to search for.
 const ACT_BOARD_CLAUSE_QUERY_VARIANTS = ['wide establishing shot', 'close-up detail'];
+// A presenter's own recorded pause is treated as a deliberate beat marker: any
+// gap this long or longer between two consecutive (real, Whisper-timed) words
+// forces an additional clause cut there, even mid-sentence. This only ever
+// ADDS cuts on top of backend/server.py's punctuation-based clause split -
+// see splitActBoardClauseSpansAtPauses - never merges clauses back together.
+const ACT_BOARD_PAUSE_MIN_SECONDS = 1.0;
 const ACT_BOARD_QUERY_STOPWORDS = new Set(('a an and the of to in on at for from by with as but or nor so yet while '
   + 'that this these those it its they them their there here is are was were be been being have has had do does did '
   + 'not no into onto over under across after before during between through about against every each some any all '
@@ -785,7 +791,6 @@ const actBoardNarrationAbortControllers = new Map();
 // transcript analysis.  Keep one in-flight request per exact transcript
 // range so rapid highlighting/Visualize clicks can share the same result.
 const actBoardManualFilmabilityPromises = new Map();
-const actBoardManualFilmabilityAbortControllers = new Map();
 // Keep microphone recorder ownership outside an individual rendered button.
 // Narration controls are mirrored in the scene rail and their hidden source
 // cards can be rebuilt while a recording is in progress; a closure-local
@@ -7930,8 +7935,15 @@ function requestActBoardNarrationAnalysis(narrationNode, { force = false } = {})
   const controller = typeof AbortController === 'function' ? new AbortController() : null;
   actBoardNarrationAbortControllers.set(narrationNode.id, controller);
   // The unit is part of the key: a phrase-era analysis of the same text must
-  // not be served as a clause analysis, or vice versa.
-  const persistentKey = `${hash}|${actBoardDocumentaryModeForNode(narrationNode.actKey, narrationNode)}|${ACT_BOARD_HIGHLIGHT_UNIT}`;
+  // not be served as a clause analysis, or vice versa. Re-recording the exact
+  // same words with a DIFFERENT pause pattern must also miss this cache -
+  // splitActBoardClauseSpansAtPauses's cuts depend on where the presenter
+  // paused, not just the transcribed text, so the persisted key has to carry
+  // that too (`hash` itself stays text-only - it backs several unrelated
+  // staleness checks elsewhere that must keep comparing pure text).
+  const pauseFingerprint = ACT_BOARD_HIGHLIGHT_UNIT === 'clause'
+    ? actBoardPauseCharOffsets(narrationNode).join(',') : '';
+  const persistentKey = `${hash}|${actBoardDocumentaryModeForNode(narrationNode.actKey, narrationNode)}|${ACT_BOARD_HIGHLIGHT_UNIT}|${pauseFingerprint}`;
   const cachedAnalysis = readActBoardPersistentCache('narration', persistentKey);
   if (cachedAnalysis && Array.isArray(cachedAnalysis.spans)) {
     narrationNode.narrationSpanHash = hash;
@@ -7952,48 +7964,19 @@ function requestActBoardNarrationAnalysis(narrationNode, { force = false } = {})
     ? fetchNarrationClauses : fetchNarrationSpans;
   const promise = fetchCandidates(text, controller?.signal)
     .then(local => {
-      if (actBoardNarrationTextHash(actBoardNarrationSourceText(narrationNode)) !== hash) return null;
-      const candidates = (Array.isArray(local.spans) ? local.spans : [])
+      if (actBoardNarrationTextHash(actBoardNarrationSourceText(narrationNode)) !== hash) return;
+      let candidates = (Array.isArray(local.spans) ? local.spans : [])
         .filter(span => !actBoardNarrationSpanExcluded(narrationNode, span));
-      narrationNode.narrationCandidateSpans = candidates;
-      narrationNode.narrationSpans = candidates.map(span => ({ ...span, bucket: 'pending' }));
-      narrationNode.narrationSpanStatus = candidates.length ? 'classifying' : 'ready';
-      saveDebugSession();
-      // Do not rebuild the entire board while the optional filmability
-      // classifier is still pending. A second full render here can cause the
-      // scene-containment pass and browser scroll anchoring to re-measure the
-      // growing narration card, which makes it appear to creep downward.
-      // There is no useful visual state to show for an empty candidate list,
-      // so only that terminal local-extraction case needs an immediate render.
-      if (!candidates.length) {
-        alignActBoardNarrationFragments(narrationNode, []);
-        const scene = actBoardSceneForNode(narrationNode.actKey, narrationNode);
-        queueActBoardScenePatch(narrationNode.actKey, scene?.id || narrationNode.sceneId, {
-          persist: true,
-        });
-        return null;
+      if (ACT_BOARD_HIGHLIGHT_UNIT === 'clause') {
+        candidates = splitActBoardClauseSpansAtPauses(candidates, narrationNode);
       }
-      // Let rapid edits settle before spending the classifier request. The
-      // narration hash still guards against a stale response after an edit.
-      return new Promise((resolve, reject) => {
-        const timer = setTimeout(resolve, 300);
-        controller?.signal.addEventListener('abort', () => {
-          clearTimeout(timer);
-          reject(Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }));
-        }, { once: true });
-      }).then(() =>
-        fetchNarrationFilmability({
-          narration: text,
-          spans: candidates,
-          documentaryMode: actBoardDocumentaryModeForNode(narrationNode.actKey, narrationNode),
-          signal: controller?.signal,
-        }));
-    })
-    .then(classified => {
-      if (!classified || actBoardNarrationTextHash(actBoardNarrationSourceText(narrationNode)) !== hash) return;
-      narrationNode.narrationSpans = (Array.isArray(classified.spans) ? classified.spans : [])
-        .filter(span => !actBoardNarrationSpanExcluded(narrationNode, span));
-      narrationNode.narrationSpanSource = classified.source || 'fallback';
+      narrationNode.narrationCandidateSpans = candidates;
+      // No filmability classifier: clause boundaries (pauses + punctuation +
+      // the word-count cap) are the only gate on what becomes a highlight
+      // now, so every local candidate is used as-is - there is nothing left
+      // to wait on an LLM for here.
+      narrationNode.narrationSpans = candidates.map(span => ({ ...span, bucket: 'depictable' }));
+      narrationNode.narrationSpanSource = 'local';
       narrationNode.narrationSpanStatus = 'ready';
       writeActBoardPersistentCache('narration', persistentKey, {
         source: narrationNode.narrationSpanSource,
@@ -8011,15 +7994,10 @@ function requestActBoardNarrationAnalysis(narrationNode, { force = false } = {})
     })
     .catch(error => {
       if (error?.name === 'AbortError') return;
-      // Local extraction is still useful if the optional classifier is down.
       if (actBoardNarrationTextHash(actBoardNarrationSourceText(narrationNode)) !== hash) return;
       narrationNode.narrationSpanStatus = 'error';
       narrationNode.narrationSpanError = error.message;
-      narrationNode.narrationSpans = (narrationNode.narrationCandidateSpans || []).slice(0, 3).map(span => ({
-        ...span, bucket: 'depictable', query: span.text,
-      }));
-      alignActBoardNarrationFragments(narrationNode,
-        narrationNode.narrationSpans.map(span => span.text));
+      alignActBoardNarrationFragments(narrationNode, []);
       saveDebugSession();
       const scene = actBoardSceneForNode(narrationNode.actKey, narrationNode);
       queueActBoardScenePatch(narrationNode.actKey, scene?.id || narrationNode.sceneId, {
@@ -8075,8 +8053,6 @@ function actBoardManualFilmabilitySelectionPresent(narrationNode, selection) {
 function cancelActBoardManualFilmability(narrationNode, selection) {
   const key = actBoardManualFilmabilityRequestKey(narrationNode, selection);
   if (!key) return;
-  actBoardManualFilmabilityAbortControllers.get(key)?.abort?.();
-  actBoardManualFilmabilityAbortControllers.delete(key);
   actBoardManualFilmabilityPromises.delete(key);
 }
 
@@ -8093,7 +8069,7 @@ function updateActBoardManualFilmabilitySelection(narrationNode, selection, clas
     bucket: classified.bucket || 'depictable',
     visual_proxy: normalizeActBoardFootagePhrase(classified.visual_proxy || ''),
     filmabilityPending: false,
-    filmabilitySource: 'llm',
+    filmabilitySource: 'local',
   };
   ['selectedFootagePhrases', 'userFilmablePhrases', 'footageSuggestedPhrases']
     .forEach(field => {
@@ -8128,58 +8104,19 @@ function requestActBoardManualFilmability(narrationNode, selection) {
     updateActBoardManualFilmabilitySelection(narrationNode, selection, exactExisting);
     return Promise.resolve(exactExisting);
   }
-  const controller = typeof AbortController === 'function' ? new AbortController() : null;
-  actBoardManualFilmabilityAbortControllers.set(key, controller);
+  // No filmability classifier to consult anymore - an explicit presenter
+  // selection is depictable by definition, and its actual stock-search query
+  // is generated later, per footage node, from the highlight text itself.
   const candidateText = source.slice(start, end);
-  const candidate = {
-    text: candidateText,
-    start,
-    end,
-    kind: 'user_selection',
-    label: 'USER_SELECTION',
-    salience: 1,
-  };
-  let promise;
-  promise = fetchNarrationFilmability({
-    narration: source,
-    spans: [candidate],
-    documentaryMode: actBoardDocumentaryModeForNode(narrationNode.actKey, narrationNode),
-    signal: controller?.signal,
-  }).then(result => {
-    if (actBoardNarrationTextHash(String(narrationNode.transcript || ''))
-      !== actBoardNarrationTextHash(source)
-      || !actBoardManualFilmabilitySelectionPresent(narrationNode, selection)) return null;
-    const spans = Array.isArray(result?.spans) ? result.spans : [];
-    const classified = spans.find(item =>
-      actBoardManualFilmabilityRangeMatches(item, selection)) || spans[0];
-    // The backend preserves candidate offsets and falls back locally when the
-    // optional LLM is unavailable. Keep the phrase useful even if a proxy
-    // returns an empty/ill-formed result.
-    return updateActBoardManualFilmabilitySelection(
-      narrationNode,
-      selection,
-      classified || { bucket: 'depictable', query: selection.text },
-    ) ? classified : null;
-  }).catch(error => {
-    if (error?.name === 'AbortError') return null;
-    if (actBoardNarrationTextHash(String(narrationNode.transcript || ''))
-      !== actBoardNarrationTextHash(source)
-      || !actBoardManualFilmabilitySelectionPresent(narrationNode, selection)) return null;
-    // Classification is an enhancement, not a prerequisite for using a
-    // manually highlighted phrase. Preserve the raw phrase as a safe query.
-    updateActBoardManualFilmabilitySelection(narrationNode, selection, {
-      bucket: 'depictable', query: selection.text, visual_proxy: '',
-    });
-    return null;
-  }).finally(() => {
+  const classified = { bucket: 'depictable', query: candidateText, visual_proxy: '' };
+  updateActBoardManualFilmabilitySelection(narrationNode, selection, classified);
+  const promise = Promise.resolve(classified);
+  actBoardManualFilmabilityPromises.set(key, promise);
+  promise.finally(() => {
     if (actBoardManualFilmabilityPromises.get(key) === promise) {
       actBoardManualFilmabilityPromises.delete(key);
     }
-    if (actBoardManualFilmabilityAbortControllers.get(key) === controller) {
-      actBoardManualFilmabilityAbortControllers.delete(key);
-    }
   });
-  actBoardManualFilmabilityPromises.set(key, promise);
   return promise;
 }
 
@@ -8229,7 +8166,16 @@ function actBoardNarrationFragments(text) {
   return evenlySpaced;
 }
 
-function appendActBoardNarrationWords(parent, text, sourceOffset, source) {
+// pauseAfterWordIndices: optional Set of GLOBAL word indices (the same
+// numbering as word.dataset.narrationWordIndex below) - a zero-width,
+// textContent-empty marker is inserted right after that word. Word-index
+// rather than a character offset so a pause survives being rendered against a
+// differently-whitespaced copy of the same words (e.g. the scene-narration
+// carousel's `.replace(/\s+/g, ' ')` collapse) - collapsing whitespace never
+// changes which word is Nth. Empty textContent keeps the marker invisible to
+// callers that read a rendered span's textContent back out as editable
+// narration (e.g. makeActBoardInlinePhraseEditor).
+function appendActBoardNarrationWords(parent, text, sourceOffset, source, pauseAfterWordIndices) {
   const value = String(text || '');
   if (!value) return;
   const baseWordIndex = normalizedBoardWords(String(source || '').slice(0, sourceOffset)).length;
@@ -8240,8 +8186,9 @@ function appendActBoardNarrationWords(parent, text, sourceOffset, source) {
   while ((match = wordPattern.exec(value))) {
     if (match.index > cursor) parent.appendChild(document.createTextNode(value.slice(cursor, match.index)));
     const word = document.createElement('span');
+    const globalWordIndex = baseWordIndex + localWordIndex;
     word.className = 'storyboard-act-board-narration-word';
-    word.dataset.narrationWordIndex = String(baseWordIndex + localWordIndex);
+    word.dataset.narrationWordIndex = String(globalWordIndex);
     word.dataset.narrationSourceStart = String(sourceOffset + match.index);
     word.dataset.narrationSourceEnd = String(sourceOffset + match.index + match[0].length);
     word.dataset.narrationWordText = match[0];
@@ -8249,11 +8196,18 @@ function appendActBoardNarrationWords(parent, text, sourceOffset, source) {
     parent.appendChild(word);
     cursor = match.index + match[0].length;
     localWordIndex += 1;
+    if (pauseAfterWordIndices && pauseAfterWordIndices.has(globalWordIndex)) {
+      const marker = document.createElement('span');
+      marker.className = 'storyboard-act-board-narration-pause-marker';
+      marker.setAttribute('aria-hidden', 'true');
+      marker.title = 'Good place to take a breath';
+      parent.appendChild(marker);
+    }
   }
   if (cursor < value.length) parent.appendChild(document.createTextNode(value.slice(cursor)));
 }
 
-function buildActBoardSuggestedNarrationText(text, fragments, onFragmentEdit, labelText = 'Suggested narration: ', onFragmentSelect, highlightFallback = true, onFragmentRemove = null) {
+function buildActBoardSuggestedNarrationText(text, fragments, onFragmentEdit, labelText = 'Suggested narration: ', onFragmentSelect, highlightFallback = true, onFragmentRemove = null, pauseWordIndices = null) {
   const container = document.createElement('p');
   container.className = 'storyboard-act-board-node-text';
   // if (onFragmentSelect) {
@@ -8263,6 +8217,8 @@ function buildActBoardSuggestedNarrationText(text, fragments, onFragmentEdit, la
   label.textContent = labelText;
   container.appendChild(label);
   const source = String(text || '');
+  const pauseAfterWordIndices = Array.isArray(pauseWordIndices) && pauseWordIndices.length
+    ? new Set(pauseWordIndices) : null;
   const ranges = [];
   let searchFrom = 0;
   (Array.isArray(fragments) ? fragments : []).forEach(fragment => {
@@ -8280,11 +8236,23 @@ function buildActBoardSuggestedNarrationText(text, fragments, onFragmentEdit, la
     searchFrom = end;
   });
   ranges.sort((a, b) => a.start - b.start);
+  // Drop any range that fully contains another, different range in this list
+  // (for example an auto-detected clause spanning the whole narration when a
+  // short recording has no punctuation left to split on, wrapping around a
+  // presenter's own, more specific manual highlight inside it). Without this,
+  // the render loop below keeps only the first range reached at a given
+  // position and silently skips the narrower one nested inside it, which
+  // reads as the manual highlight being swallowed by a highlight box around
+  // the entire narration.
+  const containsAnotherRange = (candidate, index) => ranges.some((other, otherIndex) => otherIndex !== index
+    && candidate.start <= other.start && candidate.end >= other.end
+    && (candidate.start < other.start || candidate.end > other.end));
+  const visibleRanges = ranges.filter((range, index) => !containsAnotherRange(range, index));
   let cursor = 0;
-  ranges.forEach(range => {
+  visibleRanges.forEach(range => {
     if (range.start < cursor) return;
     if (range.start > cursor) {
-      appendActBoardNarrationWords(container, source.slice(cursor, range.start), cursor, source);
+      appendActBoardNarrationWords(container, source.slice(cursor, range.start), cursor, source, pauseAfterWordIndices);
     }
     const highlight = document.createElement('span');
     const metadata = range.metadata || {};
@@ -8297,7 +8265,7 @@ function buildActBoardSuggestedNarrationText(text, fragments, onFragmentEdit, la
     highlight.dataset.narrationFragmentStart = String(range.start);
     highlight.dataset.narrationFragmentEnd = String(range.end);
     if (metadata.bucket) highlight.classList.add(`storyboard-act-board-narration-span-${metadata.bucket}`);
-    appendActBoardNarrationWords(highlight, source.slice(range.start, range.end), range.start, source);
+    appendActBoardNarrationWords(highlight, source.slice(range.start, range.end), range.start, source, pauseAfterWordIndices);
     const bucket = metadata.bucket;
     if (bucket === 'depictable') {
       highlight.title = `Find footage for “${metadata.query || highlight.textContent}”`;
@@ -8384,7 +8352,7 @@ function buildActBoardSuggestedNarrationText(text, fragments, onFragmentEdit, la
     editable.className = highlightFallback
       ? 'storyboard-act-board-node-fragment'
       : 'storyboard-act-board-node-plain-editable';
-    appendActBoardNarrationWords(editable, source, 0, source);
+    appendActBoardNarrationWords(editable, source, 0, source, pauseAfterWordIndices);
     editable.title = 'Double-click to edit this narration';
     editable.addEventListener('dblclick', event => {
       event.preventDefault();
@@ -8399,7 +8367,7 @@ function buildActBoardSuggestedNarrationText(text, fragments, onFragmentEdit, la
     cursor = source.length;
   }
   if (cursor < source.length) {
-    appendActBoardNarrationWords(container, source.slice(cursor), cursor, source);
+    appendActBoardNarrationWords(container, source.slice(cursor), cursor, source, pauseAfterWordIndices);
   }
   if (!source) container.appendChild(document.createTextNode('No narration draft yet.'));
   if (onFragmentSelect && source) {
@@ -9151,13 +9119,16 @@ function normalizedBoardWords(text) {
 // Convert phrase timestamps into contiguous footage windows. The phrase start
 // is the boundary where a later shot begins, while the first shot owns the
 // pre-roll and the final shot owns the tail through the end of narration.
-function actBoardNarrationFootageWindow(timings, index, totalDuration, previousStart = 0) {
+// `endIndex` (defaults to `index`) lets a caller ask for the window through a
+// LATER row than the one it started at - see applyActBoardFootageAlignment's
+// merge pass, which folds several short clause rows into one held shot.
+function actBoardNarrationFootageWindow(timings, index, totalDuration, previousStart = 0, endIndex = index) {
   const timing = Array.isArray(timings) ? timings[index] : null;
   const requestedStart = index === 0
     ? 0 : Number(timing?.startSeconds);
   const start = Math.max(previousStart, Number.isFinite(requestedStart) ? requestedStart : previousStart);
   const nextTiming = Array.isArray(timings)
-    ? timings.slice(index + 1).find(item => Number.isFinite(Number(item?.startSeconds)))
+    ? timings.slice(endIndex + 1).find(item => Number.isFinite(Number(item?.startSeconds)))
     : null;
   const requestedEnd = nextTiming ? Number(nextTiming.startSeconds) : Number(totalDuration);
   const end = Math.max(start, Number.isFinite(requestedEnd) ? requestedEnd : start);
@@ -9216,6 +9187,105 @@ function actBoardTimedWordsFor(narrationNode) {
   return { words, duration, timed };
 }
 
+// Character offsets in the transcript right after the last word spoken before
+// a real recorded silence (ACT_BOARD_PAUSE_MIN_SECONDS+ - see
+// narrationNode.silences, backend/ingest/transcription.py's detect_silences).
+// Deliberately NOT based on the gap between consecutive word timestamps:
+// Whisper's per-word timing is an approximate internal alignment, not true
+// forced-alignment, and was confirmed live to report a flat 0s gap between
+// every word across a recording that had a genuine, audible 1-2s pause -
+// silence detection runs directly on the audio waveform instead, independent
+// of Whisper entirely. A word's own START time is still trusted to place it
+// in the right neighborhood (only the INTER-word gap was unreliable).
+// Returns [] whenever word timing is only estimated (actBoardTimedWordsFor's
+// `timed: false`) or no silence was detected.
+function actBoardPauseCharOffsets(narrationNode) {
+  const { words: timedWords, timed } = actBoardTimedWordsFor(narrationNode);
+  if (!timed || timedWords.length < 2) return [];
+  const silences = (Array.isArray(narrationNode?.silences) ? narrationNode.silences : [])
+    .filter(silence => Number(silence?.duration ?? (Number(silence?.end) - Number(silence?.start)))
+      >= ACT_BOARD_PAUSE_MIN_SECONDS);
+  if (!silences.length) return [];
+  const transcript = String(narrationNode?.transcript || '');
+  const wordPattern = /[A-Za-z0-9']+/g;
+  const charRanges = [];
+  let match;
+  while ((match = wordPattern.exec(transcript))) {
+    charRanges.push({ start: match.index, end: match.index + match[0].length });
+  }
+  // charRanges (this word pattern) and timedWords (normalizedBoardWords, same
+  // character class only lower-cased) tokenize the same transcript the same
+  // way, so they align by position - but never assume it, only trust it.
+  if (charRanges.length !== timedWords.length) return [];
+  const offsets = new Set();
+  silences.forEach(silence => {
+    const silenceStart = Number(silence.start);
+    if (!Number.isFinite(silenceStart)) return;
+    let lastIndex = -1;
+    for (let i = 0; i < timedWords.length; i += 1) {
+      if (Number(timedWords[i].start) <= silenceStart) lastIndex = i;
+      else break;
+    }
+    if (lastIndex >= 0) offsets.add(charRanges[lastIndex].end);
+  });
+  return Array.from(offsets).sort((a, b) => a - b);
+}
+
+// Trims the same leading/trailing whitespace/punctuation backend/server.py's
+// narration_clauses route strips via its own `add()`, so a pause-forced cut
+// reads as clean text. Returns null for a piece that trims down to nothing
+// usable (mirrors that route's length/alnum checks).
+function trimActBoardClauseText(source, start, end) {
+  const raw = source.slice(start, end);
+  const leadingLen = (/^[\s,;:\-–—]*/.exec(raw) || [''])[0].length;
+  const trailingLen = (/[\s,;:\-–—.!?]*$/.exec(raw) || [''])[0].length;
+  const trimmedStart = start + leadingLen;
+  const trimmedEnd = Math.max(trimmedStart, end - trailingLen);
+  if (trimmedEnd <= trimmedStart) return null;
+  const text = source.slice(trimmedStart, trimmedEnd);
+  if (!/[a-z0-9]/i.test(text)) return null;
+  return { start: trimmedStart, end: trimmedEnd, text };
+}
+
+// A presenter's own recorded pause is a stronger cue than punctuation, so this
+// ADDS a cut inside an already backend-split clause wherever a real pause
+// falls - never merges clauses back together, and never touches a non-clause
+// span (phrase/entity/user_selection) kind. No minimum-words-per-side floor:
+// narration is now suggested as one sentence per segment (see
+// applyActBoardNarrationSuggestion), so a pause near either edge of a short
+// segment is common and should still split rather than get silently dropped.
+function splitActBoardClauseSpansAtPauses(spans, narrationNode) {
+  if (!Array.isArray(spans) || !spans.length) return spans;
+  const pauseOffsets = actBoardPauseCharOffsets(narrationNode);
+  if (!pauseOffsets.length) return spans;
+  const transcript = String(narrationNode?.transcript || '');
+  const result = [];
+  spans.forEach(span => {
+    if (!span || span.kind !== 'clause') {
+      result.push(span);
+      return;
+    }
+    const pieces = [{ start: Number(span.start), end: Number(span.end) }];
+    pauseOffsets.forEach(offset => {
+      for (let i = 0; i < pieces.length; i += 1) {
+        const piece = pieces[i];
+        if (offset <= piece.start || offset >= piece.end) continue;
+        pieces.splice(i, 1, { start: piece.start, end: offset }, { start: offset, end: piece.end });
+        break;
+      }
+    });
+    if (pieces.length === 1) {
+      result.push(span);
+      return;
+    }
+    pieces.forEach(piece => {
+      const trimmed = trimActBoardClauseText(transcript, piece.start, piece.end);
+      if (trimmed) result.push({ ...span, start: trimmed.start, end: trimmed.end, text: trimmed.text });
+    });
+  });
+  return result;
+}
+
 // Map a character window in the transcript onto the word range it covers, so a
 // span's saved offsets (or a match returned by the backend) can be read off the
 // same timed-word table that exact matching uses. The index convention matches
@@ -9228,6 +9298,26 @@ function actBoardWordRangeForCharRange(transcript, start, end) {
   const index = normalizedBoardWords(source.slice(0, from)).length;
   const length = normalizedBoardWords(source.slice(from, to)).length;
   return length ? { index, length } : null;
+}
+
+// Real spoken duration of one classified span (clause/phrase), in seconds -
+// used to size how many alternate footage nodes a clause needs (see
+// suggestActBoardSelectedFootage) instead of a flat per-clause count: a short
+// clause squeezed against several shots at the 5s floor stretched every one
+// of them far past how long it is actually spoken. Returns null when real
+// word timing isn't available (should not happen in practice - footage
+// suggestion is transcript-only, i.e. always post-recording - but never
+// trust that blindly).
+function actBoardClauseSpokenSeconds(narrationNode, phrase) {
+  const transcript = String(narrationNode?.transcript || '');
+  const range = actBoardWordRangeForCharRange(transcript, phrase?.start, phrase?.end);
+  if (!range) return null;
+  const { words: timedWords, timed } = actBoardTimedWordsFor(narrationNode);
+  if (!timed) return null;
+  const first = timedWords[range.index];
+  const last = timedWords[range.index + range.length - 1];
+  if (!first || !last) return null;
+  return Math.max(0, Number(last.end) - Number(first.start));
 }
 
 // Character offsets a narration already knows for its phrases. Footage nodes
@@ -9452,6 +9542,12 @@ async function recordActBoardNarration(node, blob, filename, statusEl) {
     const transcript = await fetchTranscription(blob, filename);
     node.transcript = actBoardTranscriptionText(transcript);
     node.transcriptWords = Array.isArray(transcript.words) ? transcript.words : [];
+    // Real silence intervals detected directly from the audio waveform (see
+    // backend/ingest/transcription.py's detect_silences) - used instead of
+    // Whisper's own word-to-word gaps, which are an approximate internal
+    // alignment and were confirmed to report a flat 0s gap across a real
+    // recording that had a genuine, audible 1-2s pause.
+    node.silences = Array.isArray(transcript.silences) ? transcript.silences : [];
     // The uploaded transcript is a new analysis input. Discard the previous
     // phrase/entity ranges so the timing rows are rebuilt from this recording
     // rather than trying to align stale phrases against the new words.
@@ -9939,6 +10035,44 @@ function applyActBoardFootageAlignment(plan, llmMatches) {
     }
   });
   const rows = distinct;
+
+  // Merge consecutive clause rows whose COMBINED natural span is still under
+  // the floor into one shared held shot, instead of stretching each one to
+  // the floor individually - that compounds fast (verified live: four ~2s
+  // clauses in an 8s recording, each independently floor-stretched to 5s,
+  // overran the recording by 150% by the last one - every stretch pushes the
+  // next clause's own natural start later, shrinking ITS natural length,
+  // demanding more stretch in turn). Only clause-kind rows merge; a
+  // phrase-level beat (ACT_BOARD_HIGHLIGHT_UNIT='phrase') never merges with a
+  // neighbour, since that unit predates this and has different expectations.
+  const rowIsClauseKind = rows.map(row => {
+    const key = `${row.startSeconds}:${row.endSeconds}`;
+    const representative = placed.find(item => rangeKey(item) === key);
+    return representative?.node?.footageBeatKind === 'clause';
+  });
+  const mergeGroupStart = new Array(rows.length);
+  const mergeGroupEnd = new Array(rows.length);
+  {
+    let groupStart = 0;
+    while (groupStart < rows.length) {
+      let groupEnd = groupStart;
+      if (rowIsClauseKind[groupStart]) {
+        while (
+          rows[groupEnd].endSeconds - rows[groupStart].startSeconds < ACT_BOARD_MIN_SHOT_SECONDS
+          && groupEnd + 1 < rows.length
+          && rowIsClauseKind[groupEnd + 1]
+        ) {
+          groupEnd += 1;
+        }
+      }
+      for (let i = groupStart; i <= groupEnd; i += 1) {
+        mergeGroupStart[i] = groupStart;
+        mergeGroupEnd[i] = groupEnd;
+      }
+      groupStart = groupEnd + 1;
+    }
+  }
+
   const groupSize = new Map();
   placed.forEach(item => groupSize.set(rangeKey(item), (groupSize.get(rangeKey(item)) || 0) + 1));
   const groupSeen = new Map();
@@ -9947,9 +10081,29 @@ function applyActBoardFootageAlignment(plan, llmMatches) {
   let previousStart = 0;
   let cursor = 0;
   let previousFloorExtended = 0;
+  // Timing of each merge group's representative shot, so a merged-away row's
+  // OWN footage node - still a real alternate the presenter might prefer -
+  // can share its slot instead of vanishing or keeping stale timing. It is
+  // parked (hidden) there rather than shown as a second, overlapping shot.
+  const representativeTiming = new Map();
   placed.forEach((item, index) => {
     const key = rangeKey(item);
     const rowIndex = distinct.findIndex(row => rangeKey(row) === key);
+    const groupStartIndex = mergeGroupStart[rowIndex];
+    if (groupStartIndex !== rowIndex) {
+      const timing = representativeTiming.get(groupStartIndex);
+      if (timing) {
+        item.node.startSeconds = timing.startSeconds;
+        item.node.durationSeconds = timing.durationSeconds;
+      }
+      item.node.trackHidden = true;
+      item.node.floorExtendedSeconds = 0;
+      item.node.pushedByFloorSeconds = 0;
+      item.node.durationWasSuggested = false;
+      item.node.alignedToNarration = true;
+      item.node.timingWasManuallyAdjusted = true;
+      return;
+    }
     const position = groupSeen.get(key) || 0;
     groupSeen.set(key, position + 1);
     // The window is computed once per group, at its first member. previousStart
@@ -9957,7 +10111,8 @@ function applyActBoardFootageAlignment(plan, llmMatches) {
     // would start their window at their sibling's start and re-split what was
     // left - the third of three shots landed at 7.07 instead of 6.64.
     if (!groupWindow.has(key)) {
-      groupWindow.set(key, actBoardNarrationFootageWindow(rows, rowIndex, duration, previousStart));
+      groupWindow.set(key,
+        actBoardNarrationFootageWindow(rows, rowIndex, duration, previousStart, mergeGroupEnd[rowIndex]));
     }
     const window = groupWindow.get(key);
     const members = groupSize.get(key) || 1;
@@ -9969,10 +10124,13 @@ function applyActBoardFootageAlignment(plan, llmMatches) {
     // A clause's shots end where the clause stops being spoken - one shot or
     // three. A shot that ran on until the next beat began (or, for the last
     // clause, to the end of the recording) read as far longer than the words
-    // it illustrated. The gap that follows is deliberate.
+    // it illustrated. The gap that follows is deliberate. A MERGED group's
+    // "clause" is the whole group, so this uses the group's own combined end,
+    // not just this row's - otherwise the merge above would be undone here.
+    const mergedEndSeconds = rows[mergeGroupEnd[rowIndex]].endSeconds;
     const endsWithSpokenSpan = members > 1 || item.node.footageBeatKind === 'clause';
     const windowEnd = endsWithSpokenSpan
-      ? Math.min(window.endSeconds, Math.max(window.startSeconds, item.endSeconds))
+      ? Math.min(window.endSeconds, Math.max(window.startSeconds, mergedEndSeconds))
       : window.endSeconds;
     // Where the words put this shot: its share of the spoken span, however
     // short. The floor is applied to the LENGTH only, so a shot that must hold
@@ -10008,6 +10166,10 @@ function applyActBoardFootageAlignment(plan, llmMatches) {
     // `orderedActBoardSceneFootage` otherwise treats a non-manual shot as a
     // footage-only chain and packs it from 0, undoing the alignment.
     item.node.timingWasManuallyAdjusted = true;
+    if (!representativeTiming.has(rowIndex)) {
+      representativeTiming.set(rowIndex,
+        { startSeconds: item.node.startSeconds, durationSeconds: item.node.durationSeconds });
+    }
     previousStart = start;
     cursor = start + length;
   });
@@ -10031,8 +10193,11 @@ function applyActBoardFootageAlignment(plan, llmMatches) {
     cursor += length;
   });
   // Shape the boundaries once every shot has its final visual timing. Parked
-  // clips join the run so a cut can also land on the tail of the scene.
-  const run = [...placed.map(item => item.node), ...parked];
+  // clips join the run so a cut can also land on the tail of the scene. A
+  // merged-away row's node is excluded - it shares its representative's exact
+  // timing (see the merge pass above), so treating it as a real neighbour
+  // would corrupt the adjacency this planning assumes.
+  const run = [...placed.map(item => item.node), ...parked].filter(node => !node.trackHidden);
   // Narration-relative cuts first: they move picture boundaries, and the
   // clip-audio planner below sizes its spill against the resulting durations.
   const narrationCuts = planActBoardNarrationCuts(run);
@@ -10421,6 +10586,10 @@ async function smartArrangeActBoardScene(scene, nodes, nodeStack, signal = null)
       node.nextNarrationNodeId = orderedNarrations[index + 1]?.id || null;
     }
     narrationCursor += duration;
+    // A deliberate silence between spoken segments, not a mistake to close up
+    // - the cross-segment footage-extension pass below fills it by holding
+    // the first segment's last shot, so the picture never goes black.
+    if (index < orderedNarrations.length - 1) narrationCursor += ACT_BOARD_NARRATION_SEGMENT_GAP_SECONDS;
   });
   const normalizePhrase = value => normalizedBoardWords(value).join(' ');
   const phraseScore = (query, phrase) => {
@@ -10452,6 +10621,7 @@ async function smartArrangeActBoardScene(scene, nodes, nodeStack, signal = null)
   // touching the timeline, so a clip's start comes from when its phrase is
   // actually spoken rather than from its position in a list.
   const assignedFootage = new Set();
+  const associatedByNarration = new Map();
   const plans = narrations.map(narration => {
     // Alternates parked off the rail (trackHidden) keep whatever timing they
     // have; arranging them would stack several shots on one clause.
@@ -10461,6 +10631,7 @@ async function smartArrangeActBoardScene(scene, nodes, nodeStack, signal = null)
       .sort((a, b) => (Number(a.sequenceIndex) || 0) - (Number(b.sequenceIndex) || 0)
         || (Number(a.startSeconds) || 0) - (Number(b.startSeconds) || 0));
     associated.forEach(node => assignedFootage.add(node.id));
+    associatedByNarration.set(narration.id, associated);
     return planActBoardFootageAlignment(narration, associated);
   });
 
@@ -10490,6 +10661,57 @@ async function smartArrangeActBoardScene(scene, nodes, nodeStack, signal = null)
     parkedClipCount += applied.parked;
     if (!plan.timed) anyEstimatedTiming = true;
   });
+  // A deliberate gap sits between consecutive narration segments (see the
+  // packing loop above) - fill it by holding the first segment's last shot
+  // through it, then cut into the second segment's own first shot slightly
+  // AFTER its narration has already started speaking, rather than exactly on
+  // the silence-to-speech boundary, which reads as a harder, more mechanical
+  // cut. This is a picture-only timing shift, not a J-cut in this file's
+  // sense (see ACT_BOARD_AUDIO_CUT_MIN_SECONDS above) - no clip's own audio
+  // is moved, only startSeconds/durationSeconds.
+  // applyActBoardFootageAlignment re-sorts its OWN internal `placed` list by
+  // each shot's actual matched-phrase time, but `associated` (what we
+  // captured above) keeps its pre-alignment array order - so "last/first
+  // element of associated" is not reliably "last/first by final timing".
+  // Pick by the real, post-alignment startSeconds/end instead.
+  const latestByEnd = list => list.reduce((best, node) => {
+    const end = (Number(node.startSeconds) || 0) + (Number(node.durationSeconds) || 0);
+    const bestEnd = best ? (Number(best.startSeconds) || 0) + (Number(best.durationSeconds) || 0) : -Infinity;
+    return end > bestEnd ? node : best;
+  }, null);
+  const earliestByStart = list => list.reduce((best, node) =>
+    (!best || (Number(node.startSeconds) || 0) < (Number(best.startSeconds) || 0)) ? node : best, null);
+  for (let i = 0; i < orderedNarrations.length - 1; i += 1) {
+    const narrationA = orderedNarrations[i];
+    const narrationB = orderedNarrations[i + 1];
+    const footageOfA = associatedByNarration.get(narrationA.id) || [];
+    const footageOfB = associatedByNarration.get(narrationB.id) || [];
+    const lastOfA = latestByEnd(footageOfA);
+    const firstOfB = earliestByStart(footageOfB);
+    if (!lastOfA || !firstOfB || lastOfA === firstOfB) continue;
+    // Never eat into firstOfB below the shot floor to make room for the
+    // overlap - a short second segment simply gets a hard cut instead.
+    const overlapSeconds = Math.max(0, Math.min(
+      ACT_BOARD_SEGMENT_GAP_OVERLAP_SECONDS,
+      (Number(firstOfB.durationSeconds) || 0) - ACT_BOARD_MIN_SHOT_SECONDS,
+    ));
+    const holdEndSeconds = Number(narrationB.startSeconds) + overlapSeconds;
+    const extendedDuration = holdEndSeconds - (Number(lastOfA.startSeconds) || 0);
+    if (extendedDuration > (Number(lastOfA.durationSeconds) || 0)) {
+      lastOfA.durationSeconds = Number(extendedDuration.toFixed(2));
+      lastOfA.durationWasSuggested = false;
+    }
+    if (overlapSeconds > 0) {
+      // firstOfB's own END time is unchanged (start moves later by exactly
+      // as much as duration shrinks), so nothing after it on segment B's
+      // rail needs re-timing. Picture timing only - no clip's own audio
+      // moves, so this intentionally does not touch transitionKind/
+      // audioLeadSeconds or anything else the J/L-cut audio system reads.
+      firstOfB.startSeconds = Number(holdEndSeconds.toFixed(2));
+      firstOfB.durationSeconds = Number((Number(firstOfB.durationSeconds) - overlapSeconds).toFixed(2));
+      firstOfB.durationWasSuggested = false;
+    }
+  }
   narrations.forEach(narration => {
     if (narrationRows.has(narration.id)) return;
     narrationRows.set(narration.id, {
@@ -10880,7 +11102,7 @@ const ACT_BOARD_NARRATION_CUT_MAX_SECONDS = 3.0;
 // for the transition on top of it.
 // Same value as the shot floor (declared below; a const cannot be read before
 // its line): a picture edit may not push a shot under the floor either.
-const ACT_BOARD_NARRATION_CUT_MIN_SHOT_SECONDS = 1.0;
+const ACT_BOARD_NARRATION_CUT_MIN_SHOT_SECONDS = 5.0;
 const ACT_BOARD_NARRATION_CUT_SPACING = 2;
 
 // Generated video is capped by the model. When a clip's real duration is not
@@ -10892,16 +11114,28 @@ const ACT_BOARD_GENERATED_VIDEO_MAX_SECONDS = 8;
 // shot then runs past its phrase and bumps the next shot later (see
 // applyActBoardFootageAlignment), where an L-cut is suggested to carry the
 // outgoing sound across the delayed picture.
-const ACT_BOARD_MIN_SHOT_SECONDS = 1.0;
+const ACT_BOARD_MIN_SHOT_SECONDS = 5.0;
+// Deliberate silence between two spoken narration segments (see
+// smartArrangeActBoardScene's narration-packing pass) - a beat for the
+// presenter's own pacing, not a mistake to close up. The rail fills it by
+// holding the first segment's last shot through it (see the cross-segment
+// footage-extension pass), so the picture never goes black during the pause.
+const ACT_BOARD_NARRATION_SEGMENT_GAP_SECONDS = 5.0;
+// How far the second segment's own first shot is delayed past where its
+// narration actually starts speaking - its voice leads its own picture in
+// by this much, reading as a deliberate transition; cutting the picture
+// exactly on the silence-to-speech boundary reads as mechanical. Not a J-cut
+// in this file's sense (see ACT_BOARD_AUDIO_CUT_MIN_SECONDS above): no clip's
+// own audio moves here, only picture timing - the narration that leads is
+// already playing independently on its own track regardless of what any
+// footage node does.
+const ACT_BOARD_SEGMENT_GAP_OVERLAP_SECONDS = 1.0;
 // Two shots meeting exactly are not overlapping. Timings are rounded to 2dp
 // independently on each side of a seam, so an exact join can land a hair below
 // the running cursor; without a tolerance the overlap repair below snaps it
 // forward and silently erases a deliberate anticipate cut. Well under a frame
 // at 30fps (0.033s), so nothing visible survives inside it.
 const ACT_BOARD_TRACK_SEAM_TOLERANCE_SECONDS = 0.02;
-// The hint stays until the gesture it teaches has been used once.
-let actBoardSpawnHintDismissed = false;
-
 // How long the final shot stays on screen after its own duration ends, so a
 // sequence landing exactly on that boundary does not flash the placeholder
 // before the transport's stop tick. Past this the stage goes to "No footage
@@ -11968,17 +12202,24 @@ function syncActBoardReferenceInputRows(node) {
 }
 
 // A small preview of the image a generation will be based on, shown inside the
-// image/video generation inputs so the reference is visible at the moment of
-// generating rather than only on the thumbnail that was pinned.
+// image/video generation inputs. The reference IS whichever image is
+// currently selected (see actBoardReferenceVisual) - there is no separate
+// pinning step, so this also doubles as the "what's selected" row for both
+// the image and video generation panels.
 function buildActBoardReferenceInputRow(node) {
-  const visual = actBoardReferenceVisual(node);
-  if (!visual) return null;
   const row = document.createElement('div');
   row.className = 'storyboard-act-board-generation-input-row storyboard-act-board-reference-input-row';
   const label = document.createElement('strong');
   label.textContent = 'Reference image';
   const value = document.createElement('span');
   value.className = 'storyboard-act-board-reference-input-value';
+  const visual = actBoardReferenceVisual(node);
+  if (!visual) {
+    value.classList.add('is-empty');
+    value.textContent = 'None selected — generate or upload an image first';
+    row.append(label, value);
+    return row;
+  }
   const thumb = document.createElement('img');
   thumb.className = 'storyboard-act-board-reference-input-thumb';
   thumb.src = visual.thumbnailUrl || visual.url;
@@ -11986,7 +12227,7 @@ function buildActBoardReferenceInputRow(node) {
   thumb.loading = 'lazy';
   thumb.decoding = 'async';
   const caption = document.createElement('span');
-  caption.textContent = visual.label || 'Pinned reference';
+  caption.textContent = visual.label || 'Selected image';
   value.append(thumb, caption);
   row.append(label, value);
   return row;
@@ -12216,7 +12457,15 @@ function packActBoardSceneNarrationStarts(actKey, sceneId = null) {
       || estimateActBoardNarrationSeconds(node.transcript || node.text) || 0.5);
     const current = Math.max(0, Number(node.startSeconds) || 0);
     if (node.timingWasManuallyAdjusted) {
-      cursor = Math.max(cursor, current + duration);
+      // Keeps its place, but never earlier than the previous segment's end -
+      // otherwise its audio window starts inside that segment's own window
+      // and both play at once instead of one after the other.
+      const adjusted = Math.max(current, cursor);
+      if (Math.abs(adjusted - current) > 0.01) {
+        node.startSeconds = Number(adjusted.toFixed(2));
+        changed = true;
+      }
+      cursor = adjusted + duration;
       return;
     }
     if (Math.abs(current - cursor) > 0.01) {
@@ -12274,6 +12523,188 @@ function createActBoardNarrationSegmentNode(actKey, scene = null) {
   nodes.push(node);
   packActBoardSceneNarrationStarts(actKey, node.sceneId);
   return node;
+}
+
+// Common title/abbreviation words whose period is never a sentence boundary
+// (checked case-insensitively, without the period) - see
+// actBoardNarrationSentences.
+const ACT_BOARD_SENTENCE_ABBREVIATIONS = new Set([
+  'mr', 'mrs', 'ms', 'dr', 'prof', 'sr', 'jr', 'st', 'vs', 'etc',
+  'approx', 'inc', 'ltd', 'co', 'corp', 'gen', 'rev', 'capt', 'sgt', 'no', 'fig', 'dept',
+]);
+
+// A crude but dependency-free sentence split - same idea as
+// backend/server.py's narration_clauses regex fallback (no spaCy needed here
+// since this only ever runs on a short, already-generated draft, never a full
+// transcript), but also guards the two abbreviation shapes an AI-drafted
+// sentence commonly contains: initials/acronyms ("U.S.", "a.m.", "U.S.A.")
+// and title/abbreviation words ("Dr.", "etc."). ["one."] -> ["one."];
+// multiple sentences come back in order, each trimmed and non-empty. Prefers
+// under-splitting a genuinely ambiguous case (e.g. a sentence that both ends
+// in "U.S." AND is immediately followed by a new one) over ever mangling an
+// abbreviation mid-word.
+function actBoardNarrationSentences(text) {
+  const source = String(text || '').trim();
+  if (!source) return [];
+  const protectedPeriods = new Set();
+  const initialRe = /\b[A-Za-z]\.(?=[A-Za-z]\.|\s|$)/g;
+  let match;
+  while ((match = initialRe.exec(source))) protectedPeriods.add(match.index + match[0].length - 1);
+  const abbrevRe = /\b([A-Za-z]{2,6})\.(?=\s|$)/g;
+  while ((match = abbrevRe.exec(source))) {
+    if (ACT_BOARD_SENTENCE_ABBREVIATIONS.has(match[1].toLowerCase())) {
+      protectedPeriods.add(match.index + match[0].length - 1);
+    }
+  }
+  const sentences = [];
+  let start = 0;
+  for (let i = 0; i < source.length; i += 1) {
+    if (!'.!?'.includes(source[i]) || protectedPeriods.has(i)) continue;
+    let end = i + 1;
+    while (end < source.length && '.!?'.includes(source[end])) end += 1;
+    sentences.push(source.slice(start, end).trim());
+    start = end;
+  }
+  if (start < source.length) sentences.push(source.slice(start).trim());
+  return sentences.filter(Boolean);
+}
+
+// Narration nodes this one has previously split off for its OWN multi-sentence
+// suggestion (see applyActBoardNarrationSuggestion) - never a segment the
+// presenter added by hand, which carries no splitFromNarrationNodeId.
+function actBoardOwnedNarrationSplitChildren(actKey, narrationNode) {
+  return actBoardNodesForAct(actKey)
+    .filter(node => node.type === 'narration' && node.splitFromNarrationNodeId === narrationNode.id);
+}
+
+// Removes one never-recorded auto-split child, splicing the narration chain
+// the same way removeActBoardFootageNodesForDeletedPhrases splices a footage
+// chain. Callers only ever pass a child with no transcript - see
+// applyActBoardNarrationSuggestion's anyChildRecorded guard.
+function removeActBoardUnrecordedSplitChild(actKey, child) {
+  const nodes = actBoardNodesForAct(actKey);
+  const previous = nodes.find(item => item.id === child.previousNarrationNodeId);
+  const next = nodes.find(item => item.id === child.nextNarrationNodeId);
+  if (previous && previous.nextNarrationNodeId === child.id) previous.nextNarrationNodeId = next?.id || null;
+  if (next && next.previousNarrationNodeId === child.id) next.previousNarrationNodeId = previous?.id || null;
+  actBoardNodes[actKey] = nodes.filter(node => node.id !== child.id);
+  if (Array.isArray(actBoardScenes[actKey])) {
+    actBoardScenes[actKey] = actBoardScenes[actKey].map(scene => ({
+      ...scene,
+      nodeIds: (scene.nodeIds || []).filter(item => item !== child.id),
+      nodeSnapshots: (scene.nodeSnapshots || []).filter(snapshot => snapshot?.id !== child.id),
+      nodeLinks: (scene.nodeLinks || []).filter(link =>
+        link.sourceId !== child.id && link.targetId !== child.id),
+    }));
+  }
+}
+
+// Converts arbitrary character offsets into a text into word indices (the
+// same numbering as appendActBoardNarrationWords's
+// word.dataset.narrationWordIndex) - so a position survives being rendered
+// against a differently-whitespaced copy of the same text (e.g. the
+// scene-narration carousel's `.replace(/\s+/g, ' ')` collapse, which never
+// changes which word is Nth).
+function actBoardCharOffsetsToWordIndices(text, charOffsets) {
+  if (!Array.isArray(charOffsets) || !charOffsets.length) return [];
+  const wordPattern = /[A-Za-z0-9']+/g;
+  const wordEnds = [];
+  let match;
+  while ((match = wordPattern.exec(String(text || '')))) wordEnds.push(match.index + match[0].length);
+  if (!wordEnds.length) return [];
+  const indices = new Set();
+  charOffsets.forEach(raw => {
+    const offset = Number(raw);
+    if (!Number.isFinite(offset) || offset <= 0) return;
+    let nearest = -1;
+    for (let i = 0; i < wordEnds.length; i += 1) {
+      if (wordEnds[i] > offset) break;
+      nearest = i;
+    }
+    if (nearest >= 0) indices.add(nearest);
+  });
+  return Array.from(indices);
+}
+
+// Visual-only breath cues for a suggested draft, BEFORE recording. Reuses the
+// exact same deterministic, LLM-free boundary logic that already splits a
+// RECORDED transcript into footage-worthy clauses (backend/server.py's
+// narration_clauses/_split_clause_text - no LLM call, pure punctuation/
+// conjunction/length rules), just applied to the draft text instead of the
+// transcript. Fire-and-forget: never blocks the suggestion flow, and a
+// failed/superseded fetch just leaves the draft with no cues rather than
+// stale or wrong ones. Once the presenter actually records, real filmability
+// highlights take over instead (see requestActBoardNarrationAnalysis) - this
+// never runs against a recorded transcript.
+function refreshActBoardNarrationDraftPauseCues(actKey, narrationNode) {
+  if (!narrationNode || narrationNode.type !== 'narration') return;
+  const text = String(narrationNode.text || '').trim();
+  if (!text || narrationNode.transcript) {
+    if (narrationNode.pauseWordIndices?.length) narrationNode.pauseWordIndices = [];
+    return;
+  }
+  fetchNarrationClauses(text).then(local => {
+    if (narrationNode.text !== text || narrationNode.transcript) return; // stale, edited, or since recorded
+    const spans = Array.isArray(local?.spans) ? local.spans : [];
+    // A breath belongs at the end of every clause EXCEPT the last one - there
+    // is nothing left to read after that.
+    const charOffsets = spans.slice(0, -1).map(span => Number(span.end)).filter(Number.isFinite);
+    narrationNode.pauseWordIndices = actBoardCharOffsetsToWordIndices(text, charOffsets);
+    const scene = actBoardSceneForNode(actKey, narrationNode);
+    queueActBoardScenePatch(actKey, scene?.id || narrationNode.sceneId, { persist: true });
+  }).catch(() => {
+    // Best-effort visual cue only - never surface an error for something
+    // this cosmetic.
+  });
+}
+
+// Every narration node already requires its own recording before it counts as
+// spoken (see requestActBoardNarrationAnalysis's transcript-only gate) - so
+// turning a multi-sentence draft into several independently recordable
+// segments needs no new state, just more chained nodes. Called by every
+// Suggest/re-suggest narration site right after a fresh suggestion comes back
+// (see fetchSuggestNarration callers). A single-sentence result is a no-op
+// beyond setting node.text exactly as before this existed.
+function applyActBoardNarrationSuggestion(actKey, narrationNode, narration) {
+  const sentences = actBoardNarrationSentences(narration);
+  const existingChildren = actBoardOwnedNarrationSplitChildren(actKey, narrationNode)
+    .sort((a, b) => (Number(a.startSeconds) || 0) - (Number(b.startSeconds) || 0));
+  if (existingChildren.some(child => child.transcript)) {
+    // Never destructively re-split over a segment the presenter already
+    // recorded - leave that whole chain exactly as it is, and fall back to a
+    // single merged draft on THIS node only, same as before this feature
+    // existed.
+    narrationNode.text = narration;
+    refreshActBoardNarrationDraftPauseCues(actKey, narrationNode);
+    return;
+  }
+  narrationNode.text = sentences[0] || narration;
+  refreshActBoardNarrationDraftPauseCues(actKey, narrationNode);
+  if (sentences.length <= 1) {
+    // A previous, longer suggestion may have left unrecorded split children
+    // behind - this shorter one no longer needs any of them.
+    existingChildren.forEach(child => removeActBoardUnrecordedSplitChild(actKey, child));
+    syncActBoardLiveSceneSnapshots(actBoardSceneForNode(actKey, narrationNode) || null);
+    return;
+  }
+  const scene = actBoardSceneForNode(actKey, narrationNode);
+  let previous = narrationNode;
+  for (let i = 1; i < sentences.length; i += 1) {
+    const child = existingChildren[i - 1] || createActBoardNarrationSegmentNode(actKey, scene);
+    child.text = sentences[i];
+    child.status = 'ready';
+    child.splitFromNarrationNodeId = narrationNode.id;
+    child.previousNarrationNodeId = previous.id;
+    previous.nextNarrationNodeId = child.id;
+    previous = child;
+    refreshActBoardNarrationDraftPauseCues(actKey, child);
+  }
+  previous.nextNarrationNodeId = null;
+  // Drop any extra previously-split children beyond what this suggestion needs.
+  existingChildren.slice(sentences.length - 1)
+    .forEach(child => removeActBoardUnrecordedSplitChild(actKey, child));
+  packActBoardSceneNarrationStarts(actKey, narrationNode.sceneId);
+  syncActBoardLiveSceneSnapshots(actBoardSceneForNode(actKey, narrationNode) || null);
 }
 
 const ACT_BOARD_PIXELS_PER_SECOND = 34;
@@ -14370,12 +14801,16 @@ function wireActBoardNodeSpawn(nodeStack, actKey) {
     menu.remove();
   });
   // Double-click-to-spawn is the board's main creation gesture and nothing on
-  // screen says so. Show a non-interactive hint whenever a board mounts and
-  // let it linger; it goes away only once the gesture is used, so a presenter
-  // who has not tried it yet still sees it after the board rebuilds.
-  showActBoardSpawnHint(nodeStack);
+  // screen says so. Show a non-interactive hint whenever the act has a scene
+  // that still has nothing in it - the hint reads "add to scene", which is
+  // meaningless before any scene exists, and once a scene already has nodes
+  // the gesture is no longer the first thing a presenter needs pointed out.
+  // Recomputed on every mount (rather than a one-time-ever flag) so a freshly
+  // added empty scene gets the hint again even after an earlier one taught it.
+  if (actBoardScenesForAct(actKey).some(scene => !actBoardSceneNodes(scene).length)) {
+    showActBoardSpawnHint(nodeStack);
+  }
   nodeStack.addEventListener('dblclick', event => {
-    actBoardSpawnHintDismissed = true;
     dismissActBoardSpawnHint(nodeStack);
     const nodeTarget = event.target.closest('.storyboard-act-board-node');
     const onPlaybackSurface = nodeTarget?.classList.contains('storyboard-act-board-node-playback');
@@ -14415,7 +14850,7 @@ function dismissActBoardSpawnHint(nodeStack) {
 }
 
 function showActBoardSpawnHint(nodeStack) {
-  if (!nodeStack || actBoardSpawnHintDismissed) return;
+  if (!nodeStack) return;
   if (nodeStack.querySelector('.storyboard-act-board-spawn-hint')) return;
   const hint = document.createElement('div');
   hint.className = 'storyboard-act-board-spawn-hint';
@@ -14426,7 +14861,7 @@ function showActBoardSpawnHint(nodeStack) {
   cursor.className = 'storyboard-act-board-spawn-hint-cursor';
   const label = document.createElement('span');
   label.className = 'storyboard-act-board-spawn-hint-label';
-  label.textContent = 'Double-click anywhere to add a node';
+  label.textContent = 'Double-click to add to scene';
   hint.append(cursor, label);
   nodeStack.appendChild(hint);
 }
@@ -14753,21 +15188,69 @@ function actBoardImageShotPlanForVisual(node, visual = null) {
   return node.shotPlan && typeof node.shotPlan === 'object' ? node.shotPlan : null;
 }
 
-function actBoardImageShotPlanDisplayText(node, visual = null) {
+// Shot-size letters (see backend/shot_plan_llm.py's _SHOT_SIZES) spelled out
+// so a presenter who has not memorized cinematography shorthand still knows
+// what "MCU" means at a glance.
+const ACT_BOARD_SHOT_SIZE_NAMES = {
+  ELS: 'Extreme Long Shot',
+  LS: 'Long Shot',
+  MLS: 'Medium-Long Shot',
+  MS: 'Medium Shot',
+  MCU: 'Medium Close-Up',
+  CU: 'Close-Up',
+  ECU: 'Extreme Close-Up',
+};
+
+function actBoardShotSizeDisplayText(value) {
+  const key = String(value || '').trim().toUpperCase();
+  const name = ACT_BOARD_SHOT_SIZE_NAMES[key];
+  return name ? `${key} (${name})` : String(value || '').trim();
+}
+
+// One [label, value] pair per populated shot-plan field, for building the
+// bolded-label rows in the image-generation inputs panel. Shared with
+// actBoardImageShotPlanDisplayText's flat text below so both stay in sync.
+function actBoardImageShotPlanRows(node, visual = null) {
   const plan = actBoardImageShotPlanForVisual(node, visual);
-  if (!plan) return 'No saved shot plan for this visual.';
+  if (!plan) return [];
   const techniques = Array.isArray(plan.techniques)
     ? plan.techniques.filter(Boolean).join(' · ') : '';
-  const fields = [
-    ['Shot size', plan.shot_size || plan.shotSize],
+  return [
+    ['Shot size', actBoardShotSizeDisplayText(plan.shot_size || plan.shotSize)],
     ['Narrative operation', plan.narrative_operation || plan.narrativeOperation],
     ['Purpose', plan.purpose],
     ['Visual description', plan.visual_description || plan.visualDescription || plan.visual],
     ['Techniques', techniques],
   ].filter(([, value]) => String(value || '').trim());
+}
+
+function actBoardImageShotPlanDisplayText(node, visual = null) {
+  const fields = actBoardImageShotPlanRows(node, visual);
   return fields.length
     ? fields.map(([label, value]) => `${label}: ${String(value).trim()}`).join('\n')
     : 'No saved shot plan for this visual.';
+}
+
+// Fills the shot-plan value cell with one row per field, the label bolded -
+// `container.textContent = actBoardImageShotPlanDisplayText(...)` could not
+// bold a label without also bolding the value, since it is one flat string.
+function renderActBoardImageShotPlanRows(container, node, visual = null) {
+  if (!container) return;
+  container.replaceChildren();
+  const fields = actBoardImageShotPlanRows(node, visual);
+  if (!fields.length) {
+    container.textContent = 'No saved shot plan for this visual.';
+    return;
+  }
+  fields.forEach(([label, value]) => {
+    const row = document.createElement('div');
+    row.className = 'storyboard-act-board-image-generation-shot-plan-row';
+    const strongLabel = document.createElement('strong');
+    strongLabel.textContent = `${label}: `;
+    row.appendChild(strongLabel);
+    row.appendChild(document.createTextNode(String(value).trim()));
+    container.appendChild(row);
+  });
 }
 
 // Keep the editable technique row truthful when an older node selects an
@@ -15349,8 +15832,10 @@ async function generateActBoardNodeVideo(actKey, act, node) {
       : (selected && selected.kind !== 'video' ? selected : null))
     : selected;
   const endVisual = twoFrameEnabled ? actBoardVisualForKey(node, endKey) : null;
-  // A pinned reference image is the explicit answer to "what should this video
-  // be built from", so it wins over whichever visual is merely selected.
+  // The reference image (see actBoardReferenceVisual) is just the selected
+  // still, so outside two-frame mode this is the same value as startVisual -
+  // kept as its own read for symmetry with the image-generation path, which
+  // has no startVisual concept of its own.
   const referenceVisual = twoFrameEnabled ? null : actBoardReferenceVisual(node);
   const seedVisual = referenceVisual || startVisual;
   const chosenImageUrl = seedVisual && seedVisual.kind !== 'video' ? seedVisual.url : '';
@@ -15562,7 +16047,15 @@ function syncActBoardNarrationChainTiming(chain) {
   if (!Array.isArray(chain) || chain.length < 2) return;
   let cursor = Math.max(0, Number(chain[0].startSeconds) || 0);
   chain.forEach((node, index) => {
-    if (index > 0 && !node.timingWasManuallyAdjusted) node.startSeconds = Number(cursor.toFixed(2));
+    if (index > 0) {
+      // A dragged segment keeps its own place, but only forward of the
+      // previous segment's end - letting it sit earlier would give this
+      // node's audio window a head start into the previous node's own
+      // window, so both play at once instead of one after the other.
+      const manualStart = Math.max(0, Number(node.startSeconds) || 0);
+      node.startSeconds = Number((node.timingWasManuallyAdjusted
+        ? Math.max(manualStart, cursor) : cursor).toFixed(2));
+    }
     const duration = Math.max(0.5,
       actBoardNarrationSegmentDuration(node)
         || estimateActBoardNarrationSeconds(node.transcript || node.text));
@@ -15878,20 +16371,20 @@ function actBoardSelectedFootageMedia(footage, sourceNodes = null) {
   // too loud is turned down rather than silenced wholesale. An explicit
   // per-node mute still wins.
   const muteAudio = footage.muteAudio === true
-    || actBoardNodeVolume(footage, 1) <= 0;
+    || actBoardNodeVolume(footage, 0.5) <= 0;
   return { url, kind, thumbnailUrl, muteAudio };
 }
 
-// The presenter's explicit reference image for this node: new images are
+// Whichever visual is currently selected/featured on the node: new images are
 // generated as an edit OF it (the backend's images.edit path, reached via
-// `reference_sketch_url`), and a generated video is seeded from it instead of
-// from whichever visual happens to be selected.
+// `reference_sketch_url`), and a generated video is seeded from it. Selecting
+// an image already means "use this", so there is no separate pinning step.
 //
 // Only a still qualifies. The image models take an image, and a video would
 // need a frame extracted first - the backend can do that for an open slot, but
 // keeping this to stills makes what the reference does obvious in the UI.
 function actBoardReferenceVisual(node) {
-  const key = String(node?.referenceVisualKey || '');
+  const key = String(node?.selectedVisualKey || '');
   if (!key) return null;
   const visual = actBoardVisualForKey(node, key);
   if (!visual || visual.kind === 'video') return null;
@@ -15903,14 +16396,6 @@ function actBoardReferenceVisual(node) {
 function actBoardReferenceImageUrl(node) {
   const visual = actBoardReferenceVisual(node);
   return visual ? (visual.url || visual.thumbnailUrl || '') : '';
-}
-
-function toggleActBoardReferenceVisual(node, key) {
-  if (!node) return '';
-  const next = String(node.referenceVisualKey || '') === String(key) ? '' : String(key || '');
-  node.referenceVisualKey = next;
-  saveDebugSession();
-  return next;
 }
 
 // Resolve an Act Board footage visual by the stable gallery key used by the
@@ -16613,7 +17098,7 @@ function buildActBoardNarrationPlayback(actKey, node, boardLayer, playbackNode =
       element.controls = false;
       element.preload = 'auto';
       element.src = media.url;
-      element.volume = actBoardNodeVolume(node, 1);
+      element.volume = actBoardNodeVolume(node, 0.5);
       element.setAttribute('aria-label', `${node.fragment || 'Footage'} transition audio`);
       element.addEventListener('click', event => event.stopPropagation());
       panel.appendChild(element);
@@ -16624,7 +17109,7 @@ function buildActBoardNarrationPlayback(actKey, node, boardLayer, playbackNode =
   const refreshPlaybackVolumes = () => {
     audio.volume = actBoardNodeVolume(playbackNarration, 1);
     footageCutLayers.forEach(layer => {
-      layer.element.volume = actBoardNodeVolume(layer.node, 1);
+      layer.element.volume = actBoardNodeVolume(layer.node, 0.5);
     });
     // The stage's own clip, so dragging a footage volume slider is audible
     // immediately instead of only after the next shot change.
@@ -16633,7 +17118,7 @@ function buildActBoardNarrationPlayback(actKey, node, boardLayer, playbackNode =
       if (current) {
         const media = actBoardSelectedFootageMedia(current);
         state.video.muted = media.muteAudio === true;
-        state.video.volume = state.video.muted ? 0 : actBoardNodeVolume(current, 1);
+        state.video.volume = state.video.muted ? 0 : actBoardNodeVolume(current, 0.5);
       }
     }
     narrationAudioLayers.forEach(layer => {
@@ -16714,7 +17199,7 @@ function buildActBoardNarrationPlayback(actKey, node, boardLayer, playbackNode =
     // track, so mute only that embedded track while leaving uploaded/stock
     // footage audio behavior unchanged.
     state.video.muted = selectedMedia.muteAudio === true;
-    state.video.volume = state.video.muted ? 0 : actBoardNodeVolume(footage, 1);
+    state.video.volume = state.video.muted ? 0 : actBoardNodeVolume(footage, 0.5);
     const start = Math.max(0, Number(footage.startSeconds) || 0);
     // A J-cut clip started sounding audioLeadSeconds before its picture, so by
     // the time it is on screen it is already that far into its source.
@@ -16844,7 +17329,7 @@ function buildActBoardNarrationPlayback(actKey, node, boardLayer, playbackNode =
         return;
       }
       layer.element.volume = Math.max(0, Math.min(1,
-        actBoardNodeVolume(layer.node, 1) * Math.max(0, Math.min(1, ramp))));
+        actBoardNodeVolume(layer.node, 0.5) * Math.max(0, Math.min(1, ramp))));
       if (forceSeek || Math.abs((Number(layer.element.currentTime) || 0) - local) > 0.35) {
         try { layer.element.currentTime = local; } catch (err) { /* metadata not ready */ }
       }
@@ -17073,7 +17558,7 @@ function buildActBoardNarrationPlayback(actKey, node, boardLayer, playbackNode =
       // Keep generated model audio out of the linked playback mix. Uploaded
       // and stock footage retain their native audio, subject to node volume.
       video.muted = muteAudio === true;
-      video.volume = video.muted ? 0 : actBoardNodeVolume(footage, 1);
+      video.volume = video.muted ? 0 : actBoardNodeVolume(footage, 0.5);
       stage.appendChild(video);
       state.video = video;
     } else if (url || thumbnailUrl) {
@@ -17654,11 +18139,14 @@ function refreshActBoardSelectedVisualDom(actKey, node) {
       }
     }
   });
-  const shotPlanText = actBoardImageShotPlanDisplayText(node, visual);
   board.querySelectorAll('.storyboard-act-board-image-generation-shot-plan-value')
     .forEach(value => {
-      if (value.dataset.nodeId === String(node.id)) value.textContent = shotPlanText;
+      if (value.dataset.nodeId === String(node.id)) renderActBoardImageShotPlanRows(value, node, visual);
     });
+  // The selected visual IS the reference now (see actBoardReferenceVisual),
+  // so a selection made through this in-place path needs the reference row/
+  // summary thumb refreshed too, same as the full rerender path already does.
+  syncActBoardReferenceInputRows(node);
   const aiSelected = visual.generatedIndex != null || visual.source === 'AI-generated'
     || (node.mediaOrigin === 'generated' && node.mediaUrl);
   board.querySelectorAll('.storyboard-act-board-node-footage[data-node-id]')
@@ -18928,6 +19416,11 @@ function buildActBoardPlaybackAudioTrack({
     if (typeof onSelect === 'function') onSelect(node);
     updateNarrationEntityCue();
   };
+  // Exposed so selecting a segment from the OTHER entry point (a scene's
+  // narration slide - see selectNarrationSegment) can paint this track's
+  // selected segment to match, without duplicating the highlight/focus/panel
+  // logic above.
+  if (kind === 'narration') track._actBoardHighlightNarrationNode = highlightPlaybackTrackNode;
 
   const removeSelectedTrackSegment = () => {
     const entry = segmentEntries.find(item => item.node === selectedTrackNode);
@@ -19941,15 +20434,8 @@ async function findActBoardFootageNode(
     const result = explicitQuery
       ? { video_query: explicitQuery }
       : await fetchMediaQueries({
-        title: `Footage for ${footageNode.fragment}`,
-        act: act.label || '',
-        scene_notes: `${act.description || ''}\nFilmable narration fragment: ${footageNode.fragment}`.trim(),
-        footage_fragment: footageNode.fragment,
+        highlight: footageNode.fragment,
         narration: narrationText,
-        narration_entities: narrationNode?.narrationSpans || [],
-        reference_footage_description: '',
-        reference_footage_entities: [],
-        abstract: findAbstractText(),
         documentary_mode: actBoardDocumentaryModeForNode(actKey, footageNode),
       }, requestSignal);
     if (!requestIsCurrent()) return;
@@ -20290,7 +20776,30 @@ function collectActBoardVisualizePhrases(actKey, narrationNode, narrationText, s
     .filter(phraseOccursInCurrentNarration)
     .filter((item, index, all) => all.findIndex(candidate =>
       actBoardNarrationSpanTextKey(candidate.text) === actBoardNarrationSpanTextKey(item.text)
-      && Number(candidate.start) === Number(item.start)) === index);
+      && Number(candidate.start) === Number(item.start)) === index)
+    // A manually highlighted phrase is an explicit, specific choice. An
+    // automatic clause candidate that merely contains it (most often the
+    // entire narration, when a short recording has no punctuation left to
+    // split into more than one clause) adds nothing over the manual pick and
+    // would otherwise spawn a second, redundant "entire narration" footage
+    // node right alongside it - see buildActBoardSuggestedNarrationText's
+    // matching containment filter for the highlight-rendering side of this.
+    .filter((item, index, all) => {
+      const isManual = item.kind === 'user_selection' || item.origin === 'manual';
+      if (isManual) return true;
+      const start = Number(item.start);
+      const end = Number(item.end);
+      if (!Number.isFinite(start) || !Number.isFinite(end)) return true;
+      return !all.some((other, otherIndex) => {
+        if (otherIndex === index) return false;
+        const otherIsManual = other.kind === 'user_selection' || other.origin === 'manual';
+        if (!otherIsManual) return false;
+        const otherStart = Number(other.start);
+        const otherEnd = Number(other.end);
+        if (!Number.isFinite(otherStart) || !Number.isFinite(otherEnd)) return false;
+        return start <= otherStart && end >= otherEnd && (start < otherStart || end > otherEnd);
+      });
+    });
 }
 
 async function suggestActBoardSelectedFootage(
@@ -20314,42 +20823,76 @@ async function suggestActBoardSelectedFootage(
     ? narrationNode.footageNodeIds.filter(id => nodes.some(node => node.id === id)) : [];
   selected.forEach(phrase => {
     // Several distinct visual ideas can illustrate one beat (a clause carries
-    // 2-3 queries). Spawn one footage node per query: the first lands on the
-    // rail, the others are parked off it as alternates until one is chosen.
-    // A phrase-level beat has a single query and behaves exactly as before.
+    // up to a few queries). Spawn one footage node per query: the first lands
+    // on the rail, the others are parked off it as alternates until one is
+    // chosen. A phrase-level beat has a single query and behaves exactly as
+    // before.
+    const phraseTextKey = normalizeActBoardFootagePhrase(phrase.text).toLocaleLowerCase();
     const queries = [];
     const pushQuery = value => {
       const clean = normalizeActBoardFootagePhrase(value);
-      if (clean && !queries.some(item => item.toLocaleLowerCase() === clean.toLocaleLowerCase())) {
+      if (!clean) return;
+      // The raw clause/phrase text is never a real search query - it means no
+      // distinct query exists yet, not that the clause itself is one. Nothing
+      // sets phrase.query/.queries/.visual_proxy to anything but an echo of
+      // phrase.text anymore (no classifier - see requestActBoardNarrationAnalysis),
+      // so this guard is what actually keeps that echo from becoming the
+      // node's query; leaving it unset instead lets findActBoardFootageNode's
+      // own query-generation call (fetchMediaQueries) run for real.
+      if (clean.toLocaleLowerCase() === phraseTextKey) return;
+      if (!queries.some(item => item.toLocaleLowerCase() === clean.toLocaleLowerCase())) {
         queries.push(clean);
       }
     };
-    [phrase.query || phrase.visual_proxy || phrase.text,
+    [phrase.query || phrase.visual_proxy,
       ...(Array.isArray(phrase.queries) ? phrase.queries : [])].forEach(pushQuery);
-    // A clause is illustrated by several shots. When the classifier returned
-    // fewer queries than that (no key, a timeout, a cached pre-`queries`
-    // analysis), derive the rest from the primary query so the clause still
-    // gets its 2-3 shots rather than one; the model's own variety wins when it
-    // is available because it comes first.
+    // A clause is illustrated by several shots, but never more than actually
+    // fit its own spoken window (plus the gap that follows it, which the last
+    // of them ends up holding through - see smartArrangeActBoardScene's
+    // cross-segment pass) at the shot floor. Squeezing a fixed 3 alternates
+    // into a clause spoken in a couple of seconds stretched every one of them
+    // far past its natural length. Falls back to the fixed count when real
+    // word timing isn't available (should not happen here - this only ever
+    // runs against a recorded transcript - but never trust that blindly).
+    const clauseSeconds = actBoardClauseSpokenSeconds(narrationNode, phrase);
+    const maxAlternates = Number.isFinite(clauseSeconds) && clauseSeconds > 0
+      ? Math.max(1, Math.floor(
+        (clauseSeconds + ACT_BOARD_NARRATION_SEGMENT_GAP_SECONDS) / ACT_BOARD_MIN_SHOT_SECONDS))
+      : ACT_BOARD_CLAUSE_ALTERNATES_MAX;
+    // The first shot's query is reserved for the real per-highlight call
+    // (findActBoardFootageNode's fetchMediaQueries, which grounds it in the
+    // full narration and documentary mode) rather than a local guess - local
+    // subject extraction only adds variety for the shots after it.
     const isClause = phrase.kind === 'clause' || ACT_BOARD_HIGHLIGHT_UNIT === 'clause';
-    if (isClause) {
-      // Each shot searches for a different subject from the clause, the way
-      // phrase-level highlights each searched for their own phrase. Only when
-      // the clause yields no further subjects do the scale/angle suffixes on
-      // the primary query fill the remaining slots.
+    const extraSlots = Math.max(0, maxAlternates - 1);
+    if (isClause && extraSlots > 0) {
+      // Each extra shot searches for a different subject from the clause, the
+      // way phrase-level highlights each searched for their own phrase. Only
+      // when the clause yields a genuine subject to build on do the
+      // scale/angle suffixes fill the remaining slots - never suffixing the
+      // raw clause.
       actBoardClauseSubjectQueries(phrase.text).forEach(subject => {
-        if (queries.length < ACT_BOARD_CLAUSE_ALTERNATES_MAX) pushQuery(subject);
+        if (queries.length < extraSlots) pushQuery(subject);
       });
-      const primary = queries[0] || normalizeActBoardFootagePhrase(phrase.text);
-      ACT_BOARD_CLAUSE_QUERY_VARIANTS.forEach(suffix => {
-        if (queries.length < ACT_BOARD_CLAUSE_ALTERNATES_MAX) pushQuery(`${primary} ${suffix}`);
-      });
+      if (queries.length) {
+        const primary = queries[0];
+        ACT_BOARD_CLAUSE_QUERY_VARIANTS.forEach(suffix => {
+          if (queries.length < extraSlots) pushQuery(`${primary} ${suffix}`);
+        });
+      }
     }
+    // One footage node per selected phrase, plus one per extra local-subject
+    // query found above. The first always has query '' so its search goes
+    // through the real query-generation call instead of a local guess or the
+    // raw phrase text.
+    const alternateCount = Math.min(1 + queries.length, maxAlternates);
+    const alternateQueries = Array.from({ length: alternateCount },
+      (_, index) => (index === 0 ? '' : queries[index - 1] || ''));
     const sameBeatNodes = nodes.filter(node => node.type === 'footage'
       && node.narrationNodeId === narrationNode.id
       && actBoardNarrationSpanTextKey(node.fragment)
         === actBoardNarrationSpanTextKey(phrase.text));
-    queries.slice(0, ACT_BOARD_CLAUSE_ALTERNATES_MAX).forEach((query, alternateIndex) => {
+    alternateQueries.forEach((query, alternateIndex) => {
     let footageNode = sameBeatNodes[alternateIndex] || null;
     if (!footageNode) {
       footageNode = {
@@ -20684,8 +21227,13 @@ async function suggestActBoardFootageInternal(actKey, act, narrationNode, source
     if (footageNode) {
       usedExisting.add(footageNode.id);
       footageNode.filmabilityBucket = smartSpan?.bucket || footageNode.filmabilityBucket || 'depictable';
+      // No classifier proposes a query anymore (see requestActBoardNarrationAnalysis) -
+      // leave filmabilityQuery as whatever it already was rather than fabricating
+      // one from the raw fragment, which would short-circuit the real
+      // stock-search query generation at search time (see suggestActBoardFootage's
+      // explicitQuery check).
       footageNode.filmabilityQuery = smartSpan?.query || smartSpan?.visual_proxy
-        || footageNode.filmabilityQuery || fragment;
+        || footageNode.filmabilityQuery || '';
       footageNode.filmabilityProxy = smartSpan?.visual_proxy || footageNode.filmabilityProxy || '';
       if (!actBoardFootageNodeHasSelectedVisual(footageNode)) {
         footageNode.status = 'generating';
@@ -20712,7 +21260,9 @@ async function suggestActBoardFootageInternal(actKey, act, narrationNode, source
         nextFootageNodeId: null,
         ...(smartSpan ? {
           filmabilityBucket: smartSpan.bucket,
-          filmabilityQuery: smartSpan.query || smartSpan.visual_proxy || fragment,
+          // Left unset rather than defaulting to the raw fragment - see the
+          // matching comment on the existing-node branch above.
+          filmabilityQuery: smartSpan.query || smartSpan.visual_proxy || '',
           filmabilityProxy: smartSpan.visual_proxy || '',
         } : {}),
       };
@@ -20872,8 +21422,9 @@ async function suggestActBoardNarration(actKey, act, button, position) {
       abstract: findAbstractText(),
       documentaryMode: actBoardDocumentaryModeForNode(actKey, node),
     });
-    node.text = (result.narration || '').trim();
-    if (!node.text) throw new Error('The narration suggestion was empty.');
+    const narration = (result.narration || '').trim();
+    if (!narration) throw new Error('The narration suggestion was empty.');
+    applyActBoardNarrationSuggestion(actKey, node, narration);
     node.status = 'ready';
     saveDebugSession();
     rerenderActBoard();
@@ -20929,7 +21480,7 @@ async function autoPopulateActBoardScenesForFirstArc() {
           actKey: act.key,
           sceneId: scene.id,
           status: draft ? 'ready' : 'draft',
-          text: draft,
+          text: '',
           sceneNotes: sourceText,
           footageFragments: [],
           footageNodeIds: [],
@@ -20951,13 +21502,14 @@ async function autoPopulateActBoardScenesForFirstArc() {
         };
         nodes.push(narrationNode);
         attachActBoardNodeToScene(act.key, narrationNode, scene);
+        if (draft) applyActBoardNarrationSuggestion(act.key, narrationNode, draft);
       } else if (!narrationNode.transcript && !narrationNode.text && draft) {
         // A pre-existing empty starter narration is safe to fill on this
         // first bootstrap, but never overwrite recorded or edited work.
-        narrationNode.text = draft;
         narrationNode.status = 'ready';
         if (!narrationNode.sceneNotes) narrationNode.sceneNotes = sourceText;
         attachActBoardNodeToScene(act.key, narrationNode, scene);
+        applyActBoardNarrationSuggestion(act.key, narrationNode, draft);
       }
 
       // A freshly accepted arc should not create empty sound nodes. Audio is
@@ -21222,7 +21774,9 @@ async function suggestInitialActBoardNarration(actKey, act, narrationNode) {
   const arcDraft = actBoardIsFirstNarrationOfAct(actKey, narrationNode)
     ? actBoardAcceptedArcNarrationForAct(actKey) : '';
   if (arcDraft) {
-    narrationNode.text = arcDraft;
+    // Accepted verbatim from the arc preview, which never requests pause
+    // markers (see fetchSuggestNarration callers) - nothing to show here.
+    applyActBoardNarrationSuggestion(actKey, narrationNode, arcDraft);
     narrationNode.status = 'ready';
     narrationNode.error = '';
     narrationNode.narrationSpanHash = '';
@@ -21253,8 +21807,9 @@ async function suggestInitialActBoardNarration(actKey, act, narrationNode) {
     const stillPresent = actBoardNodesForAct(actKey).some(node => node === narrationNode);
     if (!stillPresent || !sceneStillPresent()
       || narrationNode.initialNarrationSuggestionInFlight !== token) return false;
-    narrationNode.text = String(result.narration || '').trim();
-    if (!narrationNode.text) throw new Error('The narration suggestion was empty.');
+    const narration = String(result.narration || '').trim();
+    if (!narration) throw new Error('The narration suggestion was empty.');
+    applyActBoardNarrationSuggestion(actKey, narrationNode, narration);
     narrationNode.status = 'ready';
     narrationNode.narrationSpanHash = '';
     narrationNode.narrationSpanStatus = 'stale';
@@ -21311,8 +21866,9 @@ async function resuggestActBoardNarration(actKey, act, narrationNode, button) {
       abstract: findAbstractText(),
       documentaryMode: actBoardDocumentaryModeForNode(actKey, narrationNode),
     });
-    narrationNode.text = (result.narration || '').trim();
-    if (!narrationNode.text) throw new Error('The narration suggestion was empty.');
+    const narration = (result.narration || '').trim();
+    if (!narration) throw new Error('The narration suggestion was empty.');
+    applyActBoardNarrationSuggestion(actKey, narrationNode, narration);
     narrationNode.status = 'ready';
     narrationNode.narrationSpanExclusions = [];
     narrationNode.selectedFootagePhrases = [];
@@ -22675,6 +23231,10 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
       sideIsRecorded ? onFilmableSpanSelect : null,
       sideIsRecorded && !analysisPending && smartSpans.length > 0,
       sideIsRecorded ? onFilmableSpanRemove : null,
+      // pauseWordIndices are only meaningful while sideNarrationText is
+      // actually node.text (the draft), never once it has switched over to
+      // node.transcript.
+      sideIsRecorded ? null : node.pauseWordIndices,
     );
     sideText.classList.add('storyboard-act-board-narration-side-preview-text');
     sideText.dataset.actBoardNarrationNodeId = node.id;
@@ -22906,7 +23466,7 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
         node.text, [],
         null,
         'Suggested narration: ', null, false,
-        null);
+        null, node.pauseWordIndices);
       primaryNarration.classList.add('storyboard-act-board-narration-primary');
       primaryNarration.dataset.actBoardNarrationNodeId = node.id;
       // Suggested copy is a draft, not the spoken track. Entity offsets are
@@ -23530,7 +24090,7 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
           const muteGeneratedAudio = visual.source === 'AI-generated'
             || visual.generatedIndex != null;
           video.muted = muteGeneratedAudio;
-          video.volume = muteGeneratedAudio ? 0 : actBoardNodeVolume(node, 1);
+          video.volume = muteGeneratedAudio ? 0 : actBoardNodeVolume(node, 0.5);
           video.playsInline = true;
           video.preload = 'metadata';
           video.setAttribute('aria-label', `${visual.label || label || node.fragment || 'Selected footage'} preview`);
@@ -23640,53 +24200,6 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
       });
       return pinButton;
     };
-    // Pin a still as the basis for generation: new images are produced as an
-    // edit of it, and a generated video is seeded from it. Videos are excluded
-    // because the image models take an image, not a clip.
-    const createReferenceButton = option => {
-      if (!option || option.kind === 'video') return null;
-      if (!(option.url || option.thumbnailUrl)) return null;
-      const isReference = String(node.referenceVisualKey || '') === String(option.key);
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'storyboard-act-board-footage-reference-btn';
-      // Filled when in use, hollow when not - readable at 18px without relying
-      // on colour alone.
-      button.textContent = isReference ? '★' : '☆';
-      button.title = isReference
-        ? 'Stop using this image as the generation reference'
-        : 'Use this image as the reference for generating images and video';
-      button.setAttribute('aria-label', button.title);
-      button.setAttribute('aria-pressed', String(isReference));
-      button.classList.toggle('is-reference', isReference);
-      button.addEventListener('click', event => {
-        event.preventDefault();
-        event.stopPropagation();
-        const next = toggleActBoardReferenceVisual(node, option.key);
-        // The generation inputs list the reference; keep it truthful now
-        // rather than only after the next rerender.
-        syncActBoardReferenceInputRows(node);
-        // Update every reference control in place rather than rerendering: the
-        // selected-visual DOM patch does not rebuild the thumbnail rail, so a
-        // rerender is both heavier and unreliable for this. Only one image can
-        // be the reference, so the others are cleared here too.
-        const scope = button.closest('.storyboard-act-board-node-panel-host')
-          || button.closest('.storyboard-act-board-footage-gallery')?.parentElement
-          || document;
-        scope.querySelectorAll('.storyboard-act-board-footage-reference-btn')
-          .forEach(other => {
-            const isReference = Boolean(next) && other === button;
-            other.classList.toggle('is-reference', isReference);
-            other.textContent = isReference ? '★' : '☆';
-            other.setAttribute('aria-pressed', String(isReference));
-            other.title = isReference
-              ? 'Stop using this image as the generation reference'
-              : 'Use this image as the reference for generating images and video';
-            other.setAttribute('aria-label', other.title);
-          });
-      });
-      return button;
-    };
     const splitVisualNodes = node.compositionMode === 'split-screen'
       ? (node.splitScreenNodeIds || [])
         .map(id => actBoardNodesForAct(actKey).find(item => item.type === 'footage' && item.id === id))
@@ -23772,10 +24285,6 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
       appendFeaturedVisual(featured, selectedVisual, node.fragment);
       const selectedPinButton = createPinButton(selectedVisual);
       if (selectedPinButton) featured.appendChild(selectedPinButton);
-      // The upload only ever appears here, not in the thumbnail rail, so this
-      // is the one place a presenter can pin their own image as the reference.
-      const selectedReferenceButton = createReferenceButton(selectedVisual);
-      if (selectedReferenceButton) featured.appendChild(selectedReferenceButton);
       const replacePicker = createUploadPicker();
       const replaceButton = document.createElement('button');
       replaceButton.type = 'button';
@@ -23857,7 +24366,7 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
       volumeInput.min = '0';
       volumeInput.max = '1';
       volumeInput.step = '0.01';
-      volumeInput.value = String(actBoardNodeVolume(node, 1));
+      volumeInput.value = String(actBoardNodeVolume(node, 0.5));
       volumeInput.title = 'Level of this clip\u2019s own audio in playback and export';
       volumeInput.addEventListener('pointerdown', event => event.stopPropagation());
       volumeInput.addEventListener('input', () => {
@@ -24098,8 +24607,6 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
       }
       const pinButton = createPinButton(option);
       if (pinButton) thumbWrap.appendChild(pinButton);
-      const referenceButton = createReferenceButton(option);
-      if (referenceButton) thumbWrap.appendChild(referenceButton);
       thumbRail.appendChild(thumbWrap);
     });
     if (alternateVisualOptions.length || node.status === 'generating'
@@ -24252,11 +24759,10 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
     imageInputsSummary.appendChild(generateExamplesBtn);
     applyActBoardReferenceSummaryThumb(imageInputsSummary, node);
     imageInputsPanel.appendChild(imageInputsSummary);
-    const imageReferenceRow = buildActBoardReferenceInputRow(node);
-    if (imageReferenceRow) imageInputsPanel.appendChild(imageReferenceRow);
+    imageInputsPanel.appendChild(buildActBoardReferenceInputRow(node));
     const inputRows = [
       ['Specific phrase', imageInputs.phrase],
-      ['Shot plan', actBoardImageShotPlanDisplayText(node, selectedVisual)],
+      ['Shot plan', null],
       ['Scene techniques', imageInputs.techniques.join(' · ')],
       ['Documentary mode', imageInputs.documentaryMode],
     ];
@@ -24302,16 +24808,20 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
           saveDebugSession();
         });
         content = phraseInput;
+      } else if (label === 'Shot plan') {
+        // A div, not a span: renderActBoardImageShotPlanRows fills it with one
+        // block-level row per field, label bolded, rather than one flat string.
+        content = document.createElement('div');
+        content.className = 'storyboard-act-board-image-generation-input-value'
+          + ' storyboard-act-board-image-generation-shot-plan-value';
+        content.dataset.nodeId = node.id;
+        content.title = 'Shot plan saved with the selected generated image';
+        row.classList.add('storyboard-act-board-shot-plan-context-row');
+        renderActBoardImageShotPlanRows(content, node, selectedVisual);
       } else {
         content = document.createElement('span');
         content.className = 'storyboard-act-board-image-generation-input-value';
         content.textContent = value || 'None';
-        if (label === 'Shot plan') {
-          row.classList.add('storyboard-act-board-shot-plan-context-row');
-          content.classList.add('storyboard-act-board-image-generation-shot-plan-value');
-          content.dataset.nodeId = node.id;
-          content.title = 'Shot plan saved with the selected generated image';
-        }
       }
       if (label === 'Scene techniques') {
         row.classList.add('storyboard-act-board-image-generation-techniques-row');
@@ -24348,10 +24858,7 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
     applyActBoardReferenceSummaryThumb(videoInputsSummary, node);
     videoInputsPanel.appendChild(videoInputsSummary);
     const videoReferenceRow = buildActBoardReferenceInputRow(node);
-    if (videoReferenceRow) videoInputsPanel.appendChild(videoReferenceRow);
-    const selectedImageLabel = hasSelectedImage
-      ? (videoStartVisual?.label || selectedVisual?.label || 'Selected image')
-      : 'None selected — generate or upload an image first';
+    videoInputsPanel.appendChild(videoReferenceRow);
     const shotPlan = {
       ...(videoStartVisual?.shotPlan || selectedGenerated?.shotPlan || node.shotPlan || {}),
     };
@@ -24367,7 +24874,6 @@ function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
       : selectedGenerated;
     const videoInputRows = new Map();
     [
-      ['Selected image', selectedImageLabel],
       ['Documentary mode', videoInputs.documentaryMode],
     ].forEach(([label, value]) => {
       const row = document.createElement('div');
@@ -25139,7 +25645,7 @@ function buildActBoardFullPlaybackPanel(board, exportActionGroup = null) {
   nodeDetailsContent.className = 'storyboard-act-board-full-playback-node-details-content';
   const nodeDetailsEmpty = document.createElement('p');
   nodeDetailsEmpty.className = 'storyboard-act-board-full-playback-node-detail-empty';
-  nodeDetailsEmpty.textContent = 'Click a node on the Act Board to inspect its content here.';
+  nodeDetailsEmpty.textContent = 'Click on scene content to inspect its details here.';
   nodeDetailsContent.appendChild(nodeDetailsEmpty);
   nodeDetails.appendChild(nodeDetailsContent);
   body.appendChild(nodeDetails);
@@ -26222,6 +26728,11 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
           slide.dataset.narrationNodeId === String(node.id));
         slide._actBoardRefreshControls?.();
       });
+    // The narration track is the other entry point for the same selection
+    // (see buildActBoardPlaybackAudioTrack's own comment on
+    // _actBoardHighlightNarrationNode) - keep its selected segment in sync
+    // when the slide side is what changed it.
+    narrationTrack?._actBoardHighlightNarrationNode?.(node);
     const selectedSlide = narrationSlides.querySelector(
       `.storyboard-act-board-scene-narration-slide[data-narration-node-id="${String(node.id).replace(/"/g, '\\"')}"]`,
     );
@@ -26311,6 +26822,7 @@ function buildActBoardCanvasPlaybackTracks(actKey, scene, boardLayer, nodes) {
         null,
         false,
         null,
+        entry.pauseWordIndices,
       )
       : document.createElement('div');
     suggested.classList.add('storyboard-act-board-scene-suggested-narration');
@@ -27783,17 +28295,9 @@ function ensureFootageQueries(section) {
     return Promise.resolve();
   }
 
-  const act = currentArcSections.find(a => a.key === currentAssignments[section.index]);
   return fetchMediaQueries({
-    title: section.title || 'Documentary scene',
-    act: act ? act.label : '',
-    scene_notes: sectionCompositionNotes(section),
-    techniques: sceneTechniques(section),
+    highlight: section.footageSubject || section.text || section.title || 'Documentary scene',
     narration: effectiveSectionNarration(section),
-    narration_entities: section.entities || [],
-    reference_footage_description: section.footageSubject || '',
-    reference_footage_entities: section.footageEntities || [],
-    abstract: findAbstractText(),
     documentary_mode: selectedDocumentaryMode,
   })
     .then(result => {
@@ -29314,7 +29818,7 @@ function actBoardRenderFootageSpec(node, nodes) {
     // The node's own level, so footage audio is mixed like a sound effect or
     // narration rather than being fixed at whatever the renderer assumes.
     // Ducking under narration is still applied on top, in the renderer.
-    source_volume: actBoardNodeVolume(node, 1),
+    source_volume: actBoardNodeVolume(node, 0.5),
     // J/L-cut. The shot's own audio is muted in the per-shot render and the
     // clip's sound is re-emitted as one timeline-absolute event spanning the
     // lead, the shot and the tail - shot audio cannot cross a concat boundary,
@@ -30165,7 +30669,7 @@ function relocateAllSidebarModules() {
   if (sidebarStackEl) sidebarStackEl.classList.toggle('collapsed', sidebarPanelsCollapsed);
   if (togglePanelsBtn) {
     togglePanelsBtn.style.display = '';
-    togglePanelsBtn.textContent = sidebarPanelsCollapsed ? 'Show panels' : 'Hide panels';
+    togglePanelsBtn.textContent = sidebarPanelsCollapsed ? 'Show setup' : 'Hide setup';
   }
 }
 
@@ -30179,7 +30683,7 @@ if (togglePanelsBtn) {
   togglePanelsBtn.addEventListener('click', () => {
     sidebarPanelsCollapsed = !sidebarPanelsCollapsed;
     sidebarStackEl.classList.toggle('collapsed', sidebarPanelsCollapsed);
-    togglePanelsBtn.textContent = sidebarPanelsCollapsed ? 'Show panels' : 'Hide panels';
+    togglePanelsBtn.textContent = sidebarPanelsCollapsed ? 'Show setup' : 'Hide setup';
     saveDebugSession();
   });
 }

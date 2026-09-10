@@ -1732,7 +1732,6 @@ function fetchPaperExtraction(file) {
 const STORYBOARD_API_URL = `${API_BASE_URL}/paper/storyboard`;
 const MEDIA_QUERIES_API_URL = `${API_BASE_URL}/paper/media_queries`;
 const NARRATION_SPANS_API_URL = `${API_BASE_URL}/narration/spans`;
-const NARRATION_FILMABILITY_API_URL = `${API_BASE_URL}/narration/classify`;
 const NARRATION_CLAUSES_API_URL = `${API_BASE_URL}/narration/clauses`;
 const FOOTAGE_MATCH_API_URL         = `${API_BASE_URL}/narration/match_footage`;
 
@@ -1781,23 +1780,6 @@ function fetchNarrationClauses(text, signal) {
     if (err?.name === 'AbortError') throw err;
     if (err.isServerError) throw err;
     throw new Error(`Could not reach the narration-clause server at ${NARRATION_CLAUSES_API_URL} (${err.message}).`);
-  });
-}
-
-function fetchNarrationFilmability({ narration, spans, documentaryMode, signal }) {
-  return fetch(NARRATION_FILMABILITY_API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    ...(signal ? { signal } : {}),
-    body: JSON.stringify({
-      narration: String(narration || ''),
-      spans: Array.isArray(spans) ? spans : [],
-      documentary_mode: documentaryMode || '',
-    }),
-  }).then(handleJsonResponse).catch(err => {
-    if (err?.name === 'AbortError') throw err;
-    if (err.isServerError) throw err;
-    throw new Error(`Could not reach the narration-filmability server at ${NARRATION_FILMABILITY_API_URL} (${err.message}).`);
   });
 }
 
