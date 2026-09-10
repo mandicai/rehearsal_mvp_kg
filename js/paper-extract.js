@@ -249,12 +249,12 @@ const ACT_BOARD_IMAGE_SAMPLE_COUNT = 1;
 // A newly suggested footage node gets a small gallery so the presenter can
 // compare visual directions without waiting for a large batch. This is
 // separate from the manual Generate image button, which remains one image.
-const ACT_BOARD_SUGGESTED_FOOTAGE_IMAGE_SAMPLE_COUNT = 2;
-// Automatic AI image generation for footage nodes: the two samples requested
+const ACT_BOARD_SUGGESTED_FOOTAGE_IMAGE_SAMPLE_COUNT = 1;
+// Automatic AI image generation for footage nodes: the one sample requested
 // right after a card's stock search, and the one for a merged node. Set to
 // false to stop spending credits on every card that appears (a node's own
 // Generate button keeps working either way).
-const ACT_BOARD_AUTO_GENERATE_FOOTAGE_IMAGES = false;
+const ACT_BOARD_AUTO_GENERATE_FOOTAGE_IMAGES = true;
 // What a suggested highlight is: 'phrase' (words / noun phrases, the original
 // model) or 'clause' (a whole spoken clause, each spawning several footage
 // nodes with different footage illustrating it). Flip back to 'phrase' to
@@ -15066,9 +15066,10 @@ function actBoardSuggestedTechniques(actKey, node) {
   // Give the node a small palette that can be edited or reused. Each generated
   // image is assigned exactly one technique from this palette below, so a
   // single image never gets an ambiguous bundle of visual directions. The
-  // suggested-footage gallery has two samples, so seed the fresh node with
-  // the same number of possible directions; the input row then truthfully
-  // describes every technique that can appear in an image banner.
+  // suggested-footage gallery has ACT_BOARD_SUGGESTED_FOOTAGE_IMAGE_SAMPLE_COUNT
+  // samples, so seed the fresh node with the same number of possible
+  // directions; the input row then truthfully describes every technique that
+  // can appear in an image banner.
   const shuffled = candidates.slice();
   for (let i = shuffled.length - 1; i > 0; i -= 1) {
     const j = Math.floor(Math.random() * (i + 1));
