@@ -315,8 +315,10 @@ const ACT_BOARD_DEFAULT_VIDEO_TECHNIQUES = ['Pan'];
 const ACT_BOARD_LINKING_ENABLED = false;
 // Camera direction is derived from the shot plan's narrative operation. It is
 // intentionally read-only in the Act Board until we have a more advanced
-// motion editor. The planner's structured movement remains the fallback when
-// an operation has not been returned yet.
+// motion editor. The shot plan no longer carries a camera `movement` field
+// (see backend/shot_plan_llm.py - the planner is told not to choose one, and
+// ignores any it volunteers), so the operation IS the only signal; an
+// unrecognized/absent operation falls back to the neutral 'observe' hold.
 const ACT_BOARD_OPERATION_CAMERA_DIRECTIONS = {
   orient: 'Gently pan across the scene to orient the viewer.',
   contextualize: 'Hold the composition, then gently pan to reveal the surrounding context.',
@@ -332,16 +334,6 @@ const ACT_BOARD_OPERATION_CAMERA_DIRECTIONS = {
   expand: 'Pull back gradually to reveal the wider context around the subject.',
   narrow: 'Slowly push in to narrow the viewer’s attention onto the subject.',
 };
-const ACT_BOARD_MOVEMENT_CAMERA_DIRECTIONS = {
-  static: 'Hold the composition with only subtle environmental motion.',
-  pan: 'Gently pan across the scene to reveal its relationships.',
-  tilt: 'Tilt slowly to reveal the scene vertically.',
-  push_in: 'Slowly push toward the subject to focus attention.',
-  pull_out: 'Pull back gradually to reveal more surrounding context.',
-  tracking: 'Track smoothly alongside the subject as the action unfolds.',
-  handheld: 'Use gentle handheld movement to stay present with the subject.',
-};
-
 function filterActBoardTechniques(values, allowedCategories) {
   return sanitizeDocumentaryTechniques(values).filter(technique =>
     !allowedCategories || allowedCategories.has(TECHNIQUE_CATEGORY[technique]));
@@ -361,12 +353,8 @@ function ensureActBoardVideoGenerationTechniques(node) {
 
 function actBoardSuggestedCameraDirection(shotPlan = {}) {
   const operation = String(shotPlan.narrative_operation || '').trim().toLowerCase();
-  if (ACT_BOARD_OPERATION_CAMERA_DIRECTIONS[operation]) {
-    return ACT_BOARD_OPERATION_CAMERA_DIRECTIONS[operation];
-  }
-  const movement = String(shotPlan.movement || '').trim().toLowerCase();
-  return ACT_BOARD_MOVEMENT_CAMERA_DIRECTIONS[movement]
-    || ACT_BOARD_MOVEMENT_CAMERA_DIRECTIONS.static;
+  return ACT_BOARD_OPERATION_CAMERA_DIRECTIONS[operation]
+    || ACT_BOARD_OPERATION_CAMERA_DIRECTIONS.observe;
 }
 
 // Compatibility shim for sessions that still have an older renderer cached:
@@ -11154,7 +11142,7 @@ const ACT_BOARD_NARRATION_CUT_MAX_SECONDS = 3.0;
 // for the transition on top of it.
 // Same value as the shot floor (declared below; a const cannot be read before
 // its line): a picture edit may not push a shot under the floor either.
-const ACT_BOARD_NARRATION_CUT_MIN_SHOT_SECONDS = 5.0;
+const ACT_BOARD_NARRATION_CUT_MIN_SHOT_SECONDS = 3.0;
 const ACT_BOARD_NARRATION_CUT_SPACING = 2;
 
 // Generated video is capped by the model. When a clip's real duration is not
@@ -11166,7 +11154,7 @@ const ACT_BOARD_GENERATED_VIDEO_MAX_SECONDS = 8;
 // shot then runs past its phrase and bumps the next shot later (see
 // applyActBoardFootageAlignment), where an L-cut is suggested to carry the
 // outgoing sound across the delayed picture.
-const ACT_BOARD_MIN_SHOT_SECONDS = 5.0;
+const ACT_BOARD_MIN_SHOT_SECONDS = 3.0;
 // Deliberate silence between two spoken narration segments (see
 // smartArrangeActBoardScene's narration-packing pass) - a beat for the
 // presenter's own pacing, not a mistake to close up. The rail fills it by

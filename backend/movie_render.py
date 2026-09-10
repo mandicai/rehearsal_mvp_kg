@@ -75,7 +75,7 @@ _DIP_TO_BLACK_SECONDS = 0.5
 _STILL_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.bmp'}
 
 # Mirrors js/paper-extract.js's ACT_BOARD_MIN_SHOT_SECONDS.
-_MIN_SHOT_SECONDS = 5.0
+_MIN_SHOT_SECONDS = 3.0
 
 
 class MovieRenderError(Exception):
