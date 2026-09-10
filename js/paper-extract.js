@@ -8059,8 +8059,14 @@ function cancelActBoardManualFilmability(narrationNode, selection) {
 function updateActBoardManualFilmabilitySelection(narrationNode, selection, classified) {
   if (!narrationNode || !selection || !classified
     || !actBoardManualFilmabilitySelectionPresent(narrationNode, selection)) return false;
+  // Never fall back to the raw highlighted text as the query: with no
+  // classifier, there is no real query yet, and letting the verbatim
+  // selection become the query short-circuits the per-footage-node
+  // fetchMediaQueries call (findActBoardFootageNode's explicitQuery check),
+  // so the stock search runs on the literal clause instead of a searchable
+  // phrase. Leaving it empty is what lets that real query generation run.
   const query = normalizeActBoardFootagePhrase(
-    classified.query || classified.visual_proxy || selection.text,
+    classified.query || classified.visual_proxy || '',
   );
   const next = {
     ...selection,
@@ -8106,9 +8112,10 @@ function requestActBoardManualFilmability(narrationNode, selection) {
   }
   // No filmability classifier to consult anymore - an explicit presenter
   // selection is depictable by definition, and its actual stock-search query
-  // is generated later, per footage node, from the highlight text itself.
-  const candidateText = source.slice(start, end);
-  const classified = { bucket: 'depictable', query: candidateText, visual_proxy: '' };
+  // is generated later, per footage node, by fetchMediaQueries. Leave query
+  // empty (NOT the raw highlighted text) so that real generation is what
+  // runs, rather than a verbatim-clause stock search.
+  const classified = { bucket: 'depictable', query: '', visual_proxy: '' };
   updateActBoardManualFilmabilitySelection(narrationNode, selection, classified);
   const promise = Promise.resolve(classified);
   actBoardManualFilmabilityPromises.set(key, promise);
@@ -10634,6 +10641,33 @@ async function smartArrangeActBoardScene(scene, nodes, nodeStack, signal = null)
       Number.isFinite(Number(next?.startSeconds)) ? Number(next.startSeconds) : duration);
     return { start, end: Math.max(start + 0.5, end) };
   };
+
+  // Old-highlight cleanup. A footage node anchored to a narration whose
+  // CURRENT transcript no longer contains that node's fragment (the presenter
+  // edited or replaced that highlight, so the words it illustrated are gone)
+  // leaves the TRACK but stays on the board: its segment is removed, the node
+  // itself is not. This is what makes re-Visualizing / re-arranging after a
+  // highlight edit refresh the rail - dropping the stale shots and placing the
+  // new ones - without discarding footage the presenter may still want to
+  // reuse. Independent, merged, and split-screen footage (no narration parent,
+  // or a combined prompt rather than a transcript phrase) is never touched;
+  // neither is a narration that has no transcript yet, since orphanhood can't
+  // be judged without one.
+  narrations.forEach(narration => {
+    const transcript = String(narration.transcript || '').trim();
+    if (!transcript) return;
+    const transcriptNormalized = ` ${normalizePhrase(transcript)} `;
+    footage.forEach(node => {
+      const belongs = node.narrationNodeId === narration.id
+        || (narration.footageNodeIds || []).includes(node.id);
+      if (!belongs || node.trackHidden) return;
+      const fragmentNormalized = normalizePhrase(node.fragment || '');
+      if (fragmentNormalized && !transcriptNormalized.includes(` ${fragmentNormalized} `)) {
+        node.trackHidden = true;
+        persistActBoardTrackNode(node);
+      }
+    });
+  });
 
   // Resolve every clip to a position in its narration's transcript before
   // touching the timeline, so a clip's start comes from when its phrase is
@@ -18191,6 +18225,7 @@ function refreshActBoardFootageLoadingDom(node) {
     }
     const rail = card.querySelector('.storyboard-act-board-footage-thumb-rail');
     if (!rail) return;
+    let placeholderCreated = false;
     const syncPlaceholder = (className, text, active) => {
       let placeholder = rail.querySelector(`.${className.replace(/ /g, '.')}`);
       if (active && !placeholder) {
@@ -18199,6 +18234,7 @@ function refreshActBoardFootageLoadingDom(node) {
         placeholder.setAttribute('aria-live', 'polite');
         placeholder.textContent = text;
         rail.prepend(placeholder);
+        placeholderCreated = true;
       } else if (!active) {
         placeholder?.remove();
       }
@@ -18211,6 +18247,21 @@ function refreshActBoardFootageLoadingDom(node) {
       'storyboard-act-board-footage-generating-placeholder image-generation',
       'Image generating…', node.generationStatus === 'generating-images',
     );
+    // The footage content panel stacks the search/generation inputs below the
+    // gallery, and the featured box is tall, so a freshly-appearing thumb rail
+    // of pulsing placeholders can start life below the panel's fold. When the
+    // placeholders first appear inside the selected-node/scene panels (never
+    // the canvas card), bring the rail into that panel's own scroll viewport
+    // once so the presenter can see generation is under way.
+    if (placeholderCreated) {
+      const scrollHost = card.closest(
+        '.storyboard-act-board-full-playback-node-details-content,'
+        + ' .storyboard-act-board-selected-scene-playback-mount',
+      );
+      if (scrollHost) {
+        try { rail.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (err) { /* optional */ }
+      }
+    }
   });
   return true;
 }

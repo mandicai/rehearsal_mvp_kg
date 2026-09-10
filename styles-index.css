@@ -4033,14 +4033,18 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
   align-items: center;
   justify-content: center;
   min-width: 0;
-  overflow: hidden;
+  /* Deliberately NOT clipped: the ::before thumbnail wash is inset:0 and so
+     stays within the segment on its own, but the cut badges (J/L/A/H) sit at
+     the segment's edges and need to hang over the track and grow on hover
+     without being sheared off by a narrow (short-shot) segment. The duration
+     label keeps its own clip below so it can't spill instead. */
+  overflow: visible;
   padding: 2px 4px;
   border: 0;
   color: var(--cd-text);
   cursor: pointer;
   touch-action: none;
   font: 8px var(--cd-font-mono);
-  text-overflow: ellipsis;
   white-space: nowrap;
   background: var(--cd-footage);
 }
@@ -4550,8 +4554,15 @@ body.act-board-active .sidebar-stack:not(.collapsed) {
 
 .storyboard-act-board-footage-track-duration-label {
   align-self: center;
+  min-width: 0;
+  max-width: 100%;
+  /* The segment is now overflow:visible so its cut badges can hang over the
+     track; keep the duration text itself clipped to the segment so a short
+     shot's label can't spill into its neighbours. */
+  overflow: hidden;
   line-height: 1;
   letter-spacing: 0.04em;
+  text-overflow: ellipsis;
 }
 
 .storyboard-act-board-scene-recorded-narration {
@@ -12812,9 +12823,9 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
   transition: opacity .12s ease, background-color .12s ease, transform .12s ease;
 }
 
-/* Inside the segment, not overhanging it: the segment and the strip are both
-   `overflow: hidden`, so a tab hanging off the edge is simply clipped away.
-   Offset past the drag handle that owns the very edge. */
+/* Offset past the drag handle that owns the very edge. The segment is now
+   overflow:visible (see its rule), so the badge can hang over the track and
+   grow on hover instead of being clipped. */
 .storyboard-act-board-footage-track-audio-cut.j-cut { left: 6px; }
 .storyboard-act-board-footage-track-audio-cut.l-cut { right: 6px; }
 
@@ -12823,10 +12834,7 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
   opacity: 1;
   background: var(--cd-accent-special);
   color: var(--cd-surface, #fff);
-  /* No scale here: the segment and strip are both overflow:hidden (see the
-     comment above), so growing past this badge's own 14x14 box gets the
-     grown part clipped away instead of sitting on top of the track. */
-  transform: translateY(-50%);
+  transform: translateY(-50%) scale(1.18);
   outline: none;
 }
 
@@ -12873,10 +12881,7 @@ body.pub-to-doc-page .documentary-modes-bar .chip.suggested.chip-draggable {
   opacity: 1;
   background: var(--cd-text);
   color: var(--cd-surface, #fff);
-  /* No scale here: the segment and strip are both overflow:hidden, so
-     growing past this badge's own 14x14 box gets the grown part clipped
-     away instead of sitting on top of the track. */
-  transform: translateY(-50%);
+  transform: translateY(-50%) scale(1.18);
   outline: none;
 }
 
