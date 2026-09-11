@@ -263,50 +263,12 @@ const ACT_BOARD_HIGHLIGHT_UNIT = 'clause';
 // Footage nodes spawned per clause. All go on the rail, interspersed across
 // the clause's spoken window in order.
 const ACT_BOARD_CLAUSE_ALTERNATES_MAX = 3;
-// Last-resort top-up when a clause has no distinct subjects to search for.
-const ACT_BOARD_CLAUSE_QUERY_VARIANTS = ['wide establishing shot', 'close-up detail'];
 // A presenter's own recorded pause is treated as a deliberate beat marker: any
 // gap this long or longer between two consecutive (real, Whisper-timed) words
 // forces an additional clause cut there, even mid-sentence. This only ever
 // ADDS cuts on top of backend/server.py's punctuation-based clause split -
 // see splitActBoardClauseSpansAtPauses - never merges clauses back together.
 const ACT_BOARD_PAUSE_MIN_SECONDS = 1.0;
-const ACT_BOARD_QUERY_STOPWORDS = new Set(('a an and the of to in on at for from by with as but or nor so yet while '
-  + 'that this these those it its they them their there here is are was were be been being have has had do does did '
-  + 'not no into onto over under across after before during between through about against every each some any all '
-  + 'more most many much such very than then when where which who whom whose why how we our us you your he she his '
-  + 'her him i me my can could may might must shall should will would also just only even still').split(/\s+/));
-
-// Distinct subjects inside a clause, for one stock search each: adjacent
-// content-word pairs first ("tidal wetlands", "storm surge", "coastal change"),
-// then single content words as a fallback. No tagger is available locally,
-// so this is a stopword heuristic - good enough to give each of a clause's
-// shots its own subject rather than the same query with a suffix.
-function actBoardClauseSubjectQueries(text) {
-  const tokens = String(text || '').toLocaleLowerCase().replace(/[^a-z0-9\s'-]/g, ' ').split(/\s+/).filter(Boolean);
-  const content = tokens.map(token => !ACT_BOARD_QUERY_STOPWORDS.has(token) && token.length > 2);
-  const pairs = [];
-  const singles = [];
-  tokens.forEach((token, index) => {
-    if (!content[index]) return;
-    if (content[index + 1]) pairs.push(`${token} ${tokens[index + 1]}`);
-    else if (!content[index - 1]) singles.push(token);
-  });
-  // Pairs whose words look like nouns ("tidal wetlands") before pairs that
-  // straddle a verb ("wetlands shifted"), and never two subjects sharing a
-  // word, so a clause's shots search for genuinely different things.
-  const verbish = word => /(ed|ing)$/.test(word);
-  const ranked = [...pairs.filter(pair => !pair.split(' ').some(verbish)),
-    ...pairs.filter(pair => pair.split(' ').some(verbish)),
-    ...singles.filter(word => word.length > 3 && !verbish(word))];
-  const used = new Set();
-  return ranked.filter(query => {
-    const words = query.split(' ');
-    if (words.some(word => used.has(word))) return false;
-    words.forEach(word => used.add(word));
-    return true;
-  });
-}
 const ACT_BOARD_VIDEO_TECHNIQUE_CATEGORIES = new Set(['movement']);
 const ACT_BOARD_DEFAULT_VIDEO_TECHNIQUES = ['Pan'];
 // Linking is temporarily disabled in the Act Board UI while narration-driven
@@ -355,15 +317,6 @@ function actBoardSuggestedCameraDirection(shotPlan = {}) {
   const operation = String(shotPlan.narrative_operation || '').trim().toLowerCase();
   return ACT_BOARD_OPERATION_CAMERA_DIRECTIONS[operation]
     || ACT_BOARD_OPERATION_CAMERA_DIRECTIONS.observe;
-}
-
-// Compatibility shim for sessions that still have an older renderer cached:
-// the current Act Board does not render an editable suggestion list, but a
-// stale call can safely receive the one operation-derived direction instead
-// of throwing a ReferenceError during node construction.
-function actBoardAnimationDirectionSuggestions(node) {
-  const shotPlan = node?.shotPlan || node || {};
-  return [actBoardSuggestedCameraDirection(shotPlan)];
 }
 
 // A compact baseline toolkit shown to every presenter, regardless of what a
@@ -949,15 +902,6 @@ function enqueueActBoardImageRequest(task, signal) {
     }
     actBoardImageRequestQueue.push(item);
     pumpActBoardImageRequestQueue();
-  });
-}
-
-function abortActBoardSuggestionGenerations(actKey) {
-  const prefix = `${actKey}:`;
-  actBoardGenerationAbortControllers.forEach((entry, key) => {
-    if (key.startsWith(prefix) && entry?.suggestionToken) {
-      try { entry.controller.abort(); } catch (err) { /* already finished */ }
-    }
   });
 }
 
@@ -5805,15 +5749,6 @@ function getSceneRole(section) {
   return 'aRoll';
 }
 
-// Expository is a project mode as well as a scaffolded scene kind. Older or
-// hand-arranged scenes may not carry shotKind, so generation must honor the
-// selected mode too. Cutaway-role scenes remain ordinary individual shots.
-function isExpositoryPrimaryScene(section) {
-  return getSceneRole(section) === 'aRoll' && (
-    section.shotKind === 'expositoryNarration' || selectedDocumentaryMode === 'expository'
-  );
-}
-
 // A scene's on-screen duration in seconds - from its (auto- or hand-)
 // generated edit plan, falling back to a flat default so the timeline can
 // still size it before an edit plan exists.
@@ -6841,30 +6776,6 @@ function buildNarrativeTimeline(timelineEl, sections, assignmentsByIndex) {
   return { clipsBySectionIndex, layout: activeSfxLayout };
 }
 
-function moveSceneOnActBoard(sourceIndex, targetIndex, targetActKey) {
-  if (sourceIndex == null || !targetActKey) return;
-  const sourcePosition = currentSections.findIndex(section => section.index === sourceIndex);
-  if (sourcePosition === -1) return;
-  const [source] = currentSections.splice(sourcePosition, 1);
-
-  let insertPosition = currentSections.length;
-  if (targetIndex != null) {
-    const targetPosition = currentSections.findIndex(section => section.index === targetIndex);
-    if (targetPosition !== -1) insertPosition = targetPosition;
-  } else {
-    // Appending to an act means placing the scene after that act's last scene
-    // in the shared section order, while leaving all source material intact.
-    currentSections.forEach((section, index) => {
-      if (currentAssignments[section.index] === targetActKey) insertPosition = index + 1;
-    });
-  }
-  currentSections.splice(insertPosition, 0, source);
-  currentAssignments[sourceIndex] = targetActKey;
-  saveDebugSession();
-  const remaining = currentSections.filter(section => !section.removed);
-  renderMovieEditor(resultsEl, currentLabel, remaining, currentAssignments);
-}
-
 function actBoardNodesForAct(actKey) {
   if (!Array.isArray(actBoardNodes[actKey])) actBoardNodes[actKey] = [];
   return actBoardNodes[actKey];
@@ -7659,12 +7570,6 @@ function ensureActBoardPlaybackNode(actKey, narrationNode, options = {}) {
     if (snapshot) scene.nodeSnapshots = [...(scene.nodeSnapshots || []), snapshot];
   }
   return playback;
-}
-
-function removeActBoardPlaybackNode(actKey, narrationNodeId) {
-  if (!narrationNodeId) return;
-  actBoardNodes[actKey] = actBoardNodesForAct(actKey)
-    .filter(node => !(node.type === 'playback' && node.narrationNodeId === narrationNodeId));
 }
 
 function createActBoardNodeId(type) {
@@ -8670,24 +8575,6 @@ function refreshActBoardNarrationHighlightDom(narrationNode) {
   return true;
 }
 
-function replaceActBoardNarrationPhrase(text, original, replacement) {
-  const source = String(text || '');
-  const index = source.toLocaleLowerCase().indexOf(String(original || '').toLocaleLowerCase());
-  if (index < 0) return `${source}${source ? ' ' : ''}${replacement}`.trim();
-  return `${source.slice(0, index)}${replacement}${source.slice(index + original.length)}`;
-}
-
-// Edge grips for resizing an entity across words.
-//
-// A marked entity is not one element: it is a contiguous RUN of word spans
-// carrying the highlight class. So there is no border to grab until we make
-// one - a grip is appended to the first and last word of each run, and dragging
-// it re-emits the phrase over whatever range the pointer lands on.
-const ACT_BOARD_ENTITY_CLASSES = [
-  'storyboard-act-board-narration-phrase-selected',
-  'storyboard-act-board-narration-phrase-has-footage',
-];
-
 
 // Make a rendered transcript directly editable in place.
 //
@@ -8862,71 +8749,6 @@ function commitActBoardTranscriptEdit(narrationNode, nextTranscript, reanalyze) 
   alignActBoardNarrationFragments(narrationNode);
   saveDebugSession();
   return true;
-}
-
-function editActBoardNarrationPhrase(narrationNode, original, replacement, sourceField = 'auto') {
-  if (!narrationNode || !original || !replacement) return;
-  const field = sourceField === 'text' || sourceField === 'transcript'
-    ? sourceField
-    : (narrationNode.transcript ? 'transcript' : 'text');
-  const priorFragments = Array.isArray(narrationNode.footageFragments)
-    && narrationNode.footageFragments.length
-    ? narrationNode.footageFragments.slice()
-    : actBoardNarrationFragments(narrationNode[field] || '');
-  narrationNode[field] = replaceActBoardNarrationPhrase(narrationNode[field], original, replacement);
-  narrationNode.footageFragments = priorFragments
-    .map(fragment => fragment === original ? replacement : fragment);
-  // Character offsets from the previous text are no longer trustworthy after
-  // an inline edit. Re-run the local span pass and classifier against the new
-  // narration instead of trying to patch overlapping entity ranges by hand.
-  narrationNode.narrationSpanHash = '';
-  narrationNode.narrationCandidateSpans = [];
-  narrationNode.narrationSpans = [];
-  narrationNode.narrationSpanStatus = 'stale';
-  const footage = actBoardNodesForAct(narrationNode.actKey)
-    .find(node => node.type === 'footage' && node.fragment === original
-      && node.narrationNodeId === narrationNode.id);
-  if (footage) {
-    footage.fragment = replacement;
-    footage.status = 'needs-search';
-    footage.query = '';
-    footage.results = [];
-    footage.generatedOptions = [];
-    footage.generationStatus = '';
-    footage.generationError = '';
-    footage.mediaUrl = '';
-    footage.mediaThumbnailUrl = '';
-    footage.mediaKind = '';
-    footage.mediaOrigin = '';
-    footage.selectedVisualKey = null;
-  }
-  if (field === 'transcript') alignActBoardNarrationFragments(narrationNode);
-  else recomputeActBoardTiming(narrationNode);
-  saveDebugSession();
-  rerenderActBoard();
-}
-
-function editActBoardFootagePhrase(footageNode, replacement) {
-  if (!footageNode || !replacement || replacement === footageNode.fragment) return;
-  const parent = actBoardNodesForAct(footageNode.actKey)
-    .find(node => node.type === 'narration' && node.id === footageNode.narrationNodeId);
-  if (parent) {
-    editActBoardNarrationPhrase(parent, footageNode.fragment, replacement);
-    return;
-  }
-  footageNode.fragment = replacement;
-  footageNode.status = 'needs-search';
-  footageNode.query = '';
-  footageNode.results = [];
-  footageNode.generatedOptions = [];
-  footageNode.generationStatus = '';
-  footageNode.mediaUrl = '';
-  footageNode.mediaThumbnailUrl = '';
-  footageNode.mediaKind = '';
-  footageNode.mediaOrigin = '';
-  footageNode.selectedVisualKey = null;
-  saveDebugSession();
-  rerenderActBoard();
 }
 
 function handleActBoardNarrationSpanSelect(narrationNode, metadata, renderedText, appendSelection = false) {
@@ -10990,53 +10812,6 @@ function footageNodeVisualSummary(node) {
   // otherwise retain the original fragment for an unsearched/upload card.
   return String(node.query || node.filmabilityQuery || node.fragment
     || node.imageGenerationPhrase || 'footage').trim();
-}
-
-// The compact fragment title uses the selected visual's provenance. Stock
-// footage is identified by its provider search query, uploads by the label the
-// presenter entered, and AI visuals by the content/technique context that
-// produced the image or video.
-function footageNodeFragmentTitle(node) {
-  if (!node) return '';
-  const visual = actBoardVisualForKey(node, node.selectedVisualKey);
-  const selectedKey = String(node.selectedVisualKey || '');
-  if (visual?.generatedIndex != null || visual?.source === 'AI-generated'
-    || selectedKey.startsWith('generated-')
-    || (node.mediaOrigin === 'generated' && node.mediaUrl)) {
-    const generatedIndex = Number.isInteger(Number(visual?.generatedIndex))
-      ? Number(visual.generatedIndex)
-      : Number(selectedKey.slice('generated-'.length));
-    const generated = Number.isInteger(generatedIndex)
-      ? node.generatedOptions?.[generatedIndex] : null;
-    const plan = visual?.shotPlan || generated?.shotPlan || generated?.shot_plan
-      || node.shotPlan || {};
-    const content = generated?.specificPhrase || visual?.specificPhrase
-      || node.imageGenerationPhrase || node.specificPhrase || node.fragment
-      || plan.visual_description || plan.visualDescription || '';
-    const techniques = Array.isArray(generated?.techniques) && generated.techniques.length
-      ? generated.techniques
-      : (Array.isArray(plan.techniques) ? plan.techniques : []);
-    const cameraTechniques = [
-      plan.shot_size || plan.shotSize,
-      plan.movement || plan.cameraMovement,
-    ].filter(Boolean);
-    return [
-      content ? `Content: ${String(content).trim()}` : '',
-      techniques.length ? `Scene techniques: ${techniques.join(' · ')}` : '',
-      cameraTechniques.length ? `Camera techniques: ${cameraTechniques.join(' · ')}` : '',
-    ].filter(Boolean).join(' · ') || 'AI-generated footage';
-  }
-  if (selectedKey.startsWith('result-')) {
-    const resultIndex = Number(selectedKey.slice('result-'.length));
-    const result = Number.isInteger(resultIndex) ? node.results?.[resultIndex] : null;
-    return String(result?.searchPhrase || result?.search_phrase || result?.query
-      || node.query || node.filmabilityQuery || node.fragment || result?.source
-      || 'footage').trim();
-  }
-  if (selectedKey === 'upload' || (node.mediaOrigin === 'upload' && node.mediaUrl)) {
-    return String(node.uploadLabel || node.fragment || 'footage').trim();
-  }
-  return footageNodeVisualSummary(node);
 }
 
 // Build the two compact rows shown over a footage node's preview. The first
@@ -21606,63 +21381,6 @@ async function suggestActBoardFootage(actKey, act, narrationNode, sourceText, op
   }
 }
 
-async function suggestActBoardNarration(actKey, act, button, position) {
-  const nodes = actBoardNodesForAct(actKey);
-  const node = {
-    id: createActBoardNodeId('narration'),
-    type: 'narration',
-    actKey,
-    status: 'generating',
-    text: '',
-    footageFragments: [],
-    footageNodeIds: [],
-    footageStatus: '',
-    error: '',
-    includeNarration: true,
-    startSeconds: 0,
-    trimStartSeconds: 0,
-    sourceDurationSeconds: 0,
-    narrationSegmentDurationSeconds: 0,
-  };
-  if (position) {
-    node.boardX = Math.max(0, Number(position.x) || 0);
-    node.boardY = Math.max(0, Number(position.y) || 0);
-    node.boardPositionMode = 'manual';
-  }
-  attachActBoardNodeToScene(actKey, node, actBoardOpenSceneForAct(actKey));
-  bringNewActBoardNodeToFront(actKey, node);
-  nodes.push(node);
-  if (button) button.disabled = true;
-  saveDebugSession();
-  rerenderActBoard();
-  try {
-    const result = await fetchSuggestNarration({
-      sectionTitle: `${act.label || 'Act'} narration`,
-      // Preserve the established first-draft context (existing section
-      // narration plus source notes). The editable node notes take over for
-      // subsequent “Suggest narration” requests.
-      sectionText: actBoardNarrationContext(actKey, act),
-      actTitle: act.label || '',
-      actDescription: act.description || '',
-      abstract: findAbstractText(),
-      documentaryMode: actBoardDocumentaryModeForNode(actKey, node),
-    });
-    const narration = (result.narration || '').trim();
-    if (!narration) throw new Error('The narration suggestion was empty.');
-    applyActBoardNarrationSuggestion(actKey, node, narration);
-    node.status = 'ready';
-    saveDebugSession();
-    rerenderActBoard();
-  } catch (err) {
-    node.status = 'error';
-    node.error = err.message;
-    saveDebugSession();
-    rerenderActBoard();
-  } finally {
-    if (button) button.disabled = false;
-  }
-}
-
 // The first accepted arc should open with a usable Act Board rather than a
 // collection of empty scene frames. Scaffold every currently defined board
 // scene with one suggested narration node. Filmable footage is derived only
@@ -22831,153 +22549,6 @@ function buildActBoardNarrationTimingControls(
     wire(selection, 'window');
     redraw();
   }
-}
-
-// A small source-window strip stays attached to the compact canvas shell. The
-// detailed editor is still mounted in the selected-node panel; both surfaces
-// edit the same persisted trim values so either one can be used without
-// reopening the panel.
-function buildActBoardMiniSourceEditor(actKey, node, card, boardLayer) {
-  if (!node) return null;
-  const sourceDuration = node.type === 'narration'
-    ? Math.max(0, Number(node.sourceDurationSeconds || node.audioDurationSeconds || 0))
-    : node.type === 'audio'
-      ? Math.max(0, Number(actBoardAudioSource(node).sourceDurationSeconds) || 0)
-      : Math.max(0, Number(actBoardFootageSourceDuration(node)) || 0);
-  if (!(sourceDuration > 0)) return null;
-
-  const editor = document.createElement('div');
-  const sharedEditorClass = node.type === 'narration'
-    ? 'storyboard-act-board-narration-source-editor'
-    : node.type === 'audio'
-      ? 'storyboard-act-board-audio-source-editor'
-      : 'storyboard-act-board-footage-source-editor';
-  editor.className = `storyboard-act-board-node-mini-source-editor ${sharedEditorClass} storyboard-act-board-${node.type}-source-editor-mini`;
-  editor.setAttribute('aria-label', `${node.type} source window`);
-  editor.title = 'Drag the highlighted window or either edge to choose the source segment';
-  editor.addEventListener('pointerdown', event => event.stopPropagation());
-  const readout = document.createElement('span');
-  readout.className = 'storyboard-act-board-node-mini-source-readout';
-  const strip = document.createElement('div');
-  strip.className = 'sfx-source-strip storyboard-act-board-node-mini-source-strip';
-  const selection = document.createElement('div');
-  selection.className = 'sfx-source-selection';
-  const label = document.createElement('span');
-  label.className = 'sfx-source-selection-label';
-  const startHandle = document.createElement('span');
-  startHandle.className = 'sfx-source-handle start';
-  startHandle.title = 'Drag source in-point';
-  const endHandle = document.createElement('span');
-  endHandle.className = 'sfx-source-handle end';
-  endHandle.title = 'Drag source out-point';
-  selection.append(label, startHandle, endHandle);
-  strip.appendChild(selection);
-  editor.append(readout, strip);
-
-  const minimumLength = node.type === 'audio' ? 0.1 : 0.5;
-  const readLength = () => node.type === 'narration'
-    ? Math.max(minimumLength, actBoardNarrationSegmentDuration(node)
-      || estimateActBoardNarrationSeconds(node.transcript || node.text))
-    : Math.max(minimumLength, Number(node.durationSeconds) || minimumLength);
-  const redraw = () => {
-    const start = Math.max(0, Math.min(sourceDuration - minimumLength,
-      Number(node.trimStartSeconds) || 0));
-    const length = Math.max(minimumLength,
-      Math.min(sourceDuration - start, readLength()));
-    selection.style.left = `${(start / sourceDuration) * 100}%`;
-    selection.style.width = `${(length / sourceDuration) * 100}%`;
-    label.textContent = `${length.toFixed(1)}s`;
-    readout.textContent = `${start.toFixed(1)}–${(start + length).toFixed(1)}s`;
-  };
-  editor._actBoardRefresh = redraw;
-
-  const coverageNarration = () => {
-    const linked = actBoardNarrationForNode(actKey, node);
-    if (linked) return linked;
-    return actBoardNodesForAct(actKey).find(item => item.type === 'narration'
-      && item.sceneId && node.sceneId && item.sceneId === node.sceneId) || null;
-  };
-  const showCoverage = () => {
-    const narration = coverageNarration();
-    if (!narration || !boardLayer) return;
-    const narrationStart = Math.max(0, Number(narration.startSeconds) || 0);
-    const start = Math.max(0, Number(node.startSeconds) || 0);
-    highlightActBoardNarrationTiming(
-      boardLayer,
-      narration,
-      Math.max(0, start - narrationStart),
-      Math.max(0, start - narrationStart + readLength()),
-    );
-  };
-  const clearCoverage = () => {
-    const narration = coverageNarration();
-    if (narration && boardLayer) clearActBoardNarrationTimingHighlight(boardLayer, narration);
-  };
-  const updateWindow = (start, length) => {
-    const safeStart = Math.max(0, Math.min(sourceDuration - minimumLength, Number(start) || 0));
-    const safeLength = Math.max(minimumLength,
-      Math.min(sourceDuration - safeStart, Number(length) || minimumLength));
-    node.trimStartSeconds = Number(safeStart.toFixed(2));
-    if (node.type === 'narration') {
-      node.narrationSegmentDurationSeconds = Number(safeLength.toFixed(2));
-      if (!(node.footageNodeIds || []).length) node.durationSeconds = node.narrationSegmentDurationSeconds;
-      refreshActBoardNarrationTimingForNode(node);
-    } else if (node.type === 'audio') {
-      node.durationSeconds = Number(safeLength.toFixed(2));
-      if (node.selectedAudio) {
-        node.selectedAudio.trimStartSeconds = node.trimStartSeconds;
-        node.selectedAudio.durationSeconds = node.durationSeconds;
-      }
-      refreshActBoardAudioTimingForNode(node);
-    } else {
-      node.durationSeconds = Number(safeLength.toFixed(2));
-      refreshActBoardFootageTrackForNode(node);
-    }
-    redraw();
-    showCoverage();
-    saveDebugSession();
-  };
-  const wire = (target, mode) => target.addEventListener('pointerdown', event => {
-    event.preventDefault();
-    event.stopPropagation();
-    const width = strip.getBoundingClientRect().width || 1;
-    const originX = event.clientX;
-    const initialStart = Math.max(0, Number(node.trimStartSeconds) || 0);
-    const initialLength = Math.max(minimumLength,
-      Math.min(sourceDuration - initialStart, readLength()));
-    const initialEnd = initialStart + initialLength;
-    try { target.setPointerCapture(event.pointerId); } catch (err) { /* optional */ }
-    const move = moveEvent => {
-      const delta = ((moveEvent.clientX - originX) / width) * sourceDuration;
-      const nextStart = mode === 'start'
-        ? Math.max(0, Math.min(initialEnd - minimumLength, initialStart + delta))
-        : mode === 'window'
-          ? Math.max(0, Math.min(sourceDuration - initialLength, initialStart + delta))
-          : initialStart;
-      const nextLength = mode === 'start'
-        ? initialEnd - nextStart
-        : mode === 'end'
-          ? Math.max(minimumLength, Math.min(sourceDuration - initialStart, initialLength + delta))
-          : initialLength;
-      updateWindow(nextStart, nextLength);
-    };
-    const up = () => {
-      target.removeEventListener('pointermove', move);
-      target.removeEventListener('pointerup', up);
-      target.removeEventListener('pointercancel', up);
-      try { target.releasePointerCapture(event.pointerId); } catch (err) { /* optional */ }
-      clearCoverage();
-      saveDebugSession();
-    };
-    target.addEventListener('pointermove', move);
-    target.addEventListener('pointerup', up, { once: true });
-    target.addEventListener('pointercancel', up, { once: true });
-  });
-  wire(startHandle, 'start');
-  wire(endHandle, 'end');
-  wire(selection, 'window');
-  redraw();
-  return editor;
 }
 
 function buildActBoardNode(actKey, act, node, boardLayer, nodeIndex = 0) {
