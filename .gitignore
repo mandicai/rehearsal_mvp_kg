@@ -6,9 +6,11 @@ system-build.ai
 system-build.png
 
 # Scratch/working assets (design sources, exported PDFs, example renders,
-# motion sketches) - local working files, not source-controlled. Covers the
-# former per-file pub_to_doc.ai / artboard_example.png rules.
+# motion sketches) - local working files, not source-controlled. The whole
+# public/ dir plus these same working files if they sit at the repo root.
 public/
+pub_to_doc.ai
+artboard_example.png
 
 # Local Netlify folder
 .netlify
