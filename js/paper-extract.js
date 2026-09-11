@@ -9984,19 +9984,30 @@ function planActBoardFootageAlignment(narration, associated) {
     hit.index < range.index + range.length && range.index < hit.index + hit.length);
   associated.forEach(node => {
     const phrase = String(node.fragment || '').trim();
+    const phraseKey = normalizedBoardWords(phrase).join(' ');
     let range = null;
-    if (words.length && phrase) {
+    // A montage beat spawns several shots that all carry the SAME fragment and
+    // are meant to SUBDIVIDE one clause window into quick cuts. So if a sibling
+    // already claimed this exact fragment's range, reuse it (share the window)
+    // rather than hunting for another occurrence that does not exist - that
+    // hunt would fail and park the sibling as its own full-length shot instead
+    // of a quick cut. Only a genuinely different fragment skips to the next
+    // occurrence to avoid stacking two different beats on one span.
+    const sibling = phraseKey && claimed.find(item => item.fragment === phraseKey);
+    if (sibling) {
+      range = { index: sibling.index, length: sibling.length };
+    } else if (words.length && phrase) {
       let hit = matchActBoardPhraseInTimedWords(words, phrase, 0);
       while (hit && overlapsClaimed(hit)) {
         hit = matchActBoardPhraseInTimedWords(words, phrase, hit.index + 1);
       }
       if (hit) {
         range = { index: hit.index, length: hit.length };
-        claimed.push(range);
+        claimed.push({ ...range, fragment: phraseKey });
       }
     }
     if (!range && transcript && phrase) {
-      const saved = offsets.get(normalizedBoardWords(phrase).join(' '));
+      const saved = offsets.get(phraseKey);
       if (saved) range = actBoardWordRangeForCharRange(transcript, saved.start, saved.end);
     }
     if (range) resolved.set(node.id, range);
@@ -10060,17 +10071,27 @@ function applyActBoardFootageAlignment(plan, llmMatches) {
     const representative = placed.find(item => rangeKey(item) === key);
     return representative?.node?.footageBeatKind === 'clause';
   });
+  // A montage beat is a deliberate burst of quick cuts across its OWN window;
+  // it must never be folded into a neighbouring held shot by the merge below,
+  // or its cuts would vanish. (A hold beat is a single sustained shot and
+  // merges normally with adjacent short holds.)
+  const rowIsMontage = rows.map(row => {
+    const key = `${row.startSeconds}:${row.endSeconds}`;
+    const representative = placed.find(item => rangeKey(item) === key);
+    return representative?.node?.footageRhythm === 'montage';
+  });
   const mergeGroupStart = new Array(rows.length);
   const mergeGroupEnd = new Array(rows.length);
   {
     let groupStart = 0;
     while (groupStart < rows.length) {
       let groupEnd = groupStart;
-      if (rowIsClauseKind[groupStart]) {
+      if (rowIsClauseKind[groupStart] && !rowIsMontage[groupStart]) {
         while (
           rows[groupEnd].endSeconds - rows[groupStart].startSeconds < ACT_BOARD_MIN_SHOT_SECONDS
           && groupEnd + 1 < rows.length
           && rowIsClauseKind[groupEnd + 1]
+          && !rowIsMontage[groupEnd + 1]
         ) {
           groupEnd += 1;
         }
@@ -10154,9 +10175,12 @@ function applyActBoardFootageAlignment(plan, llmMatches) {
     // The phrase window says how long this shot COULD hold; the clip says how
     // long it actually has. Taking the shorter leaves a gap before the next
     // shot rather than looping the clip to fill it - a visible gap reads as an
-    // editing decision, a repeating clip reads as a broken player.
+    // editing decision, a repeating clip reads as a broken player. A montage
+    // cut uses the shorter quick-cut floor so a burst of them fits its window.
+    const shotFloor = item.node.footageRhythm === 'montage'
+      ? ACT_BOARD_MONTAGE_MIN_SHOT_SECONDS : ACT_BOARD_MIN_SHOT_SECONDS;
     const length = Math.min(
-      Math.max(ACT_BOARD_MIN_SHOT_SECONDS, naturalLength),
+      Math.max(shotFloor, naturalLength),
       actBoardFootageMaxDurationSeconds(item.node),
     );
     // Record the two sides of a floor collision so the cut planner can shape
@@ -11155,6 +11179,10 @@ const ACT_BOARD_GENERATED_VIDEO_MAX_SECONDS = 8;
 // applyActBoardFootageAlignment), where an L-cut is suggested to carry the
 // outgoing sound across the delayed picture.
 const ACT_BOARD_MIN_SHOT_SECONDS = 3.0;
+// Quick-cut floor for a montage beat (footageRhythm === 'montage' from the
+// documentary footage plan). A montage is deliberately a burst of shorter
+// shots, so its cuts are allowed below the general held-shot floor above.
+const ACT_BOARD_MONTAGE_MIN_SHOT_SECONDS = 1.5;
 // Deliberate silence between two spoken narration segments (see
 // smartArrangeActBoardScene's narration-packing pass) - a beat for the
 // presenter's own pacing, not a mistake to close up. The rail fills it by
@@ -12609,6 +12637,32 @@ function actBoardNarrationSentences(text) {
   return sentences.filter(Boolean);
 }
 
+// How many sentences to fold into one slide when the draft has no paragraph
+// breaks to group by. A slide should carry a whole filmable beat (a few
+// sentences), not a single line - see applyActBoardNarrationSuggestion.
+const ACT_BOARD_NARRATION_SENTENCES_PER_BEAT = 3;
+
+// Group a suggested draft into multi-sentence BEATS, one per narration slide.
+// The narration LLM now returns blank-line-separated beats (see
+// backend/narration_llm.py); honour those. If a draft arrives without blank
+// lines (older cache, a hand-typed draft, or a terse model reply), fall back
+// to grouping sentences ~ACT_BOARD_NARRATION_SENTENCES_PER_BEAT at a time so a
+// slide still carries several sentences rather than one.
+function actBoardNarrationBeats(text) {
+  const source = String(text || '').trim();
+  if (!source) return [];
+  const paragraphs = source.split(/\n\s*\n+/).map(part => part.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  if (paragraphs.length > 1) return paragraphs;
+  const sentences = actBoardNarrationSentences(source);
+  if (sentences.length <= 1) return sentences.length ? [sentences[0]] : [source];
+  const beats = [];
+  for (let i = 0; i < sentences.length; i += ACT_BOARD_NARRATION_SENTENCES_PER_BEAT) {
+    beats.push(sentences.slice(i, i + ACT_BOARD_NARRATION_SENTENCES_PER_BEAT).join(' ').trim());
+  }
+  return beats.filter(Boolean);
+}
+
 // Narration nodes this one has previously split off for its OWN multi-sentence
 // suggestion (see applyActBoardNarrationSuggestion) - never a segment the
 // presenter added by hand, which carries no splitFromNarrationNodeId.
@@ -12706,7 +12760,9 @@ function refreshActBoardNarrationDraftPauseCues(actKey, narrationNode) {
 // (see fetchSuggestNarration callers). A single-sentence result is a no-op
 // beyond setting node.text exactly as before this existed.
 function applyActBoardNarrationSuggestion(actKey, narrationNode, narration) {
-  const sentences = actBoardNarrationSentences(narration);
+  // One slide per multi-sentence BEAT (see actBoardNarrationBeats), not per
+  // sentence - each slide should prompt the presenter to say a fuller thought.
+  const beats = actBoardNarrationBeats(narration);
   const existingChildren = actBoardOwnedNarrationSplitChildren(actKey, narrationNode)
     .sort((a, b) => (Number(a.startSeconds) || 0) - (Number(b.startSeconds) || 0));
   if (existingChildren.some(child => child.transcript)) {
@@ -12718,9 +12774,9 @@ function applyActBoardNarrationSuggestion(actKey, narrationNode, narration) {
     refreshActBoardNarrationDraftPauseCues(actKey, narrationNode);
     return;
   }
-  narrationNode.text = sentences[0] || narration;
+  narrationNode.text = beats[0] || narration;
   refreshActBoardNarrationDraftPauseCues(actKey, narrationNode);
-  if (sentences.length <= 1) {
+  if (beats.length <= 1) {
     // A previous, longer suggestion may have left unrecorded split children
     // behind - this shorter one no longer needs any of them.
     existingChildren.forEach(child => removeActBoardUnrecordedSplitChild(actKey, child));
@@ -12729,9 +12785,9 @@ function applyActBoardNarrationSuggestion(actKey, narrationNode, narration) {
   }
   const scene = actBoardSceneForNode(actKey, narrationNode);
   let previous = narrationNode;
-  for (let i = 1; i < sentences.length; i += 1) {
+  for (let i = 1; i < beats.length; i += 1) {
     const child = existingChildren[i - 1] || createActBoardNarrationSegmentNode(actKey, scene);
-    child.text = sentences[i];
+    child.text = beats[i];
     child.status = 'ready';
     child.splitFromNarrationNodeId = narrationNode.id;
     child.previousNarrationNodeId = previous.id;
@@ -12741,11 +12797,103 @@ function applyActBoardNarrationSuggestion(actKey, narrationNode, narration) {
   }
   previous.nextNarrationNodeId = null;
   // Drop any extra previously-split children beyond what this suggestion needs.
-  existingChildren.slice(sentences.length - 1)
+  existingChildren.slice(beats.length - 1)
     .forEach(child => removeActBoardUnrecordedSplitChild(actKey, child));
   packActBoardSceneNarrationStarts(actKey, narrationNode.sceneId);
   syncActBoardLiveSceneSnapshots(actBoardSceneForNode(actKey, narrationNode) || null);
 }
+
+// --- DEV/TEST seeding (not a shipped feature) -----------------------------
+// Fill a narration node with a fake recording so Visualize highlights / Smart
+// arrange (which read only transcript + transcriptWords) can be tested without
+// actually recording audio. No audio file is attached, so playback is silent -
+// that is fine for exercising the arrange pipeline. Word timings are synthesized
+// at a steady pace so clause windows compute. Never clobbers a real recording.
+const ACT_BOARD_SEED_WORD_SECONDS = 0.4;
+
+function fakeRecordActBoardNarration(node) {
+  if (!node) return;
+  const text = String(node.text || '').replace(/\s+/g, ' ').trim();
+  if (!text) return;
+  const words = text.split(' ').filter(Boolean);
+  const transcriptWords = words.map((word, index) => ({
+    word,
+    start: Number((index * ACT_BOARD_SEED_WORD_SECONDS).toFixed(2)),
+    end: Number(((index + 1) * ACT_BOARD_SEED_WORD_SECONDS).toFixed(2)),
+  }));
+  const duration = Number((words.length * ACT_BOARD_SEED_WORD_SECONDS).toFixed(2));
+  node.transcript = text;
+  node.transcriptWords = transcriptWords;
+  node.silences = [];
+  node.audioDurationSeconds = duration;
+  node.sourceDurationSeconds = duration;
+  node.narrationSegmentDurationSeconds = duration;
+  node.recordingStatus = 'ready';
+  node.status = 'ready';
+  // Force a fresh filmable-clause analysis against the new transcript.
+  node.narrationSpanHash = '';
+  node.narrationSpanStatus = 'stale';
+  node.narrationCandidateSpans = [];
+  node.narrationSpans = [];
+}
+
+function seedCannedNarration(topic) {
+  const subject = String(topic || 'this research').trim() || 'this research';
+  return [
+    `For years, researchers wondered how ${subject} really worked. The question mattered because the answers could reshape everyday decisions. But the data was scattered, and no one had put it together.`,
+    `So a team set out to measure it directly. They gathered evidence from the field, ran it through their models, and looked for a pattern. What they found surprised even them.`,
+    `The results pointed to a clear effect, though not without caveats. Some cases behaved exactly as predicted. Others hinted the story is more complicated than a single number can capture.`,
+  ].join('\n\n');
+}
+
+// Seed every scene in an act with a multi-beat suggested draft AND a fake
+// recording of it, so the presenter can jump straight to testing Visualize
+// highlights / Smart arrange. Console-callable: seedActBoardTestNarration().
+async function seedActBoardTestNarration(actKey) {
+  const resolvedActKey = actKey
+    || (currentArcSections[0] && currentArcSections[0].key);
+  if (!resolvedActKey) { console.warn('[seed] no act to seed'); return 0; }
+  const scenes = actBoardScenesForAct(resolvedActKey);
+  if (!scenes.length) { console.warn('[seed] no scenes for', resolvedActKey); return 0; }
+  const act = currentArcSections.find(item => item.key === resolvedActKey)
+    || { key: resolvedActKey, label: resolvedActKey };
+  const source = actBoardSourceSection(resolvedActKey);
+  const abstract = findAbstractText();
+  let seeded = 0;
+  for (const scene of scenes) {
+    const sceneNarrations = actBoardNodesForAct(resolvedActKey)
+      .filter(node => node.type === 'narration' && node.sceneId === scene.id);
+    const root = sceneNarrations.find(node => !node.previousNarrationNodeId)
+      || sceneNarrations[0]
+      || createActBoardNarrationSegmentNode(resolvedActKey, scene);
+    // Never overwrite a real (or already-seeded) recording.
+    if (String(root.transcript || '').trim()) continue;
+    let draft = String(root.text || '').trim() || String(scene.arcSuggestedNarration || '').trim();
+    if (!draft) {
+      try {
+        const res = await fetchSuggestNarration({
+          sectionTitle: scene.title || (source && source.title) || 'Scene',
+          sectionText: (source && source.text) || '',
+          actTitle: act.label || '',
+          actDescription: act.description || '',
+          abstract,
+          documentaryMode: actBoardDocumentaryModeForNode(resolvedActKey, root),
+        });
+        draft = String((res && res.narration) || '').trim();
+      } catch (error) { /* fall back to canned below */ }
+    }
+    if (!draft) draft = seedCannedNarration(scene.title || act.label);
+    applyActBoardNarrationSuggestion(resolvedActKey, root, draft);
+    const chain = orderedActBoardNarrationChain(resolvedActKey, root, null, true);
+    (chain.length ? chain : [root]).forEach(fakeRecordActBoardNarration);
+    seeded += 1;
+  }
+  saveDebugSession();
+  rerenderActBoard();
+  console.log(`[seed] seeded ${seeded} scene(s) for ${resolvedActKey}`);
+  return seeded;
+}
+if (typeof window !== 'undefined') window.seedActBoardTestNarration = seedActBoardTestNarration;
 
 const ACT_BOARD_PIXELS_PER_SECOND = 34;
 const ACT_BOARD_NODE_GAP = 24;
@@ -20507,6 +20655,7 @@ async function findActBoardFootageNode(
         highlight: footageNode.fragment,
         narration: narrationText,
         documentary_mode: actBoardDocumentaryModeForNode(actKey, footageNode),
+        abstract: findAbstractText(),
       }, requestSignal);
     if (!requestIsCurrent()) return;
     footageNode.query = normalizeActBoardFootagePhrase(
@@ -20891,73 +21040,74 @@ async function suggestActBoardSelectedFootage(
   const newlyCreatedFootageNodes = [];
   const footageIds = Array.isArray(narrationNode.footageNodeIds)
     ? narrationNode.footageNodeIds.filter(id => nodes.some(node => node.id === id)) : [];
-  selected.forEach(phrase => {
-    // Several distinct visual ideas can illustrate one beat (a clause carries
-    // up to a few queries). Spawn one footage node per query: the first lands
-    // on the rail, the others are parked off it as alternates until one is
-    // chosen. A phrase-level beat has a single query and behaves exactly as
-    // before.
-    const phraseTextKey = normalizeActBoardFootagePhrase(phrase.text).toLocaleLowerCase();
-    const queries = [];
-    const pushQuery = value => {
-      const clean = normalizeActBoardFootagePhrase(value);
-      if (!clean) return;
-      // The raw clause/phrase text is never a real search query - it means no
-      // distinct query exists yet, not that the clause itself is one. Nothing
-      // sets phrase.query/.queries/.visual_proxy to anything but an echo of
-      // phrase.text anymore (no classifier - see requestActBoardNarrationAnalysis),
-      // so this guard is what actually keeps that echo from becoming the
-      // node's query; leaving it unset instead lets findActBoardFootageNode's
-      // own query-generation call (fetchMediaQueries) run for real.
-      if (clean.toLocaleLowerCase() === phraseTextKey) return;
-      if (!queries.some(item => item.toLocaleLowerCase() === clean.toLocaleLowerCase())) {
-        queries.push(clean);
-      }
-    };
-    [phrase.query || phrase.visual_proxy,
-      ...(Array.isArray(phrase.queries) ? phrase.queries : [])].forEach(pushQuery);
-    // A clause is illustrated by several shots, but never more than actually
-    // fit its own spoken window (plus the gap that follows it, which the last
-    // of them ends up holding through - see smartArrangeActBoardScene's
-    // cross-segment pass) at the shot floor. Squeezing a fixed 3 alternates
-    // into a clause spoken in a couple of seconds stretched every one of them
-    // far past its natural length. Falls back to the fixed count when real
-    // word timing isn't available (should not happen here - this only ever
-    // runs against a recorded transcript - but never trust that blindly).
-    const clauseSeconds = actBoardClauseSpokenSeconds(narrationNode, phrase);
-    const maxAlternates = Number.isFinite(clauseSeconds) && clauseSeconds > 0
-      ? Math.max(1, Math.floor(
-        (clauseSeconds + ACT_BOARD_NARRATION_SEGMENT_GAP_SECONDS) / ACT_BOARD_MIN_SHOT_SECONDS))
-      : ACT_BOARD_CLAUSE_ALTERNATES_MAX;
-    // The first shot's query is reserved for the real per-highlight call
-    // (findActBoardFootageNode's fetchMediaQueries, which grounds it in the
-    // full narration and documentary mode) rather than a local guess - local
-    // subject extraction only adds variety for the shots after it.
-    const isClause = phrase.kind === 'clause' || ACT_BOARD_HIGHLIGHT_UNIT === 'clause';
-    const extraSlots = Math.max(0, maxAlternates - 1);
-    if (isClause && extraSlots > 0) {
-      // Each extra shot searches for a different subject from the clause, the
-      // way phrase-level highlights each searched for their own phrase. Only
-      // when the clause yields a genuine subject to build on do the
-      // scale/angle suffixes fill the remaining slots - never suffixing the
-      // raw clause.
-      actBoardClauseSubjectQueries(phrase.text).forEach(subject => {
-        if (queries.length < extraSlots) pushQuery(subject);
-      });
-      if (queries.length) {
-        const primary = queries[0];
-        ACT_BOARD_CLAUSE_QUERY_VARIANTS.forEach(suffix => {
-          if (queries.length < extraSlots) pushQuery(`${primary} ${suffix}`);
+  // One documentary footage plan for the whole segment: the LLM decides each
+  // beat's cut rhythm (one held shot vs a burst of quick cuts) and the concrete
+  // on-topic query for every shot, grounded in the paper abstract (see backend
+  // media_query_llm.plan_footage). This drives BOTH how many footage nodes a
+  // beat gets and their queries. It degrades gracefully: if the plan is
+  // unavailable (LLM down / no offsets), each beat falls back to the local
+  // path below - one deferred-query shot plus local-subject alternates.
+  const planByBeat = new Map();
+  const planKeyFor = item => (Number.isFinite(Number(item?.start)) && Number.isFinite(Number(item?.end))
+    ? `${Number(item.start)}:${Number(item.end)}` : '');
+  {
+    const planClauses = selected
+      .filter(item => planKeyFor(item))
+      .map(item => ({ text: item.text, start: Number(item.start), end: Number(item.end) }));
+    if (planClauses.length) {
+      try {
+        const planResult = await fetchFootagePlan({
+          clauses: planClauses,
+          narration: String(narrationNode.transcript || narrationNode.text || '').trim(),
+          documentaryMode: actBoardDocumentaryModeForNode(actKey, narrationNode),
+          abstract: findAbstractText(),
+        }, narrationNode._footageSuggestionAbortController?.signal);
+        (planResult?.beats || []).forEach(beat => {
+          const key = planKeyFor(beat);
+          if (key) planByBeat.set(key, beat);
         });
+      } catch (error) {
+        if (error?.name === 'AbortError') return false;
+        // Plan unavailable - every beat uses the local fallback below.
       }
     }
-    // One footage node per selected phrase, plus one per extra local-subject
-    // query found above. The first always has query '' so its search goes
-    // through the real query-generation call instead of a local guess or the
-    // raw phrase text.
-    const alternateCount = Math.min(1 + queries.length, maxAlternates);
-    const alternateQueries = Array.from({ length: alternateCount },
-      (_, index) => (index === 0 ? '' : queries[index - 1] || ''));
+  }
+  if (!requestIsCurrent()) return false;
+  selected.forEach(phrase => {
+    const clauseSeconds = actBoardClauseSpokenSeconds(narrationNode, phrase);
+    const plan = planByBeat.get(planKeyFor(phrase));
+    // How many quick cuts of a given floor length fit this beat's spoken window
+    // (plus the trailing gap the last shot holds through). Montage cuts use a
+    // shorter floor than held shots, so more of them fit.
+    const shotsThatFit = floorSeconds => (Number.isFinite(clauseSeconds) && clauseSeconds > 0
+      ? Math.max(1, Math.floor((clauseSeconds + ACT_BOARD_NARRATION_SEGMENT_GAP_SECONDS) / floorSeconds))
+      : ACT_BOARD_CLAUSE_ALTERNATES_MAX);
+    let rhythm;
+    let alternateQueries;
+    if (plan && Array.isArray(plan.video_queries) && plan.video_queries.length) {
+      // Plan path: the LLM already produced real, on-topic queries and a
+      // rhythm. A hold beat is one sustained shot; a montage beat is several
+      // quick cuts (bounded by what actually fits its window at the montage
+      // floor). Each query is used directly - no per-node fetchMediaQueries.
+      rhythm = plan.rhythm === 'montage' ? 'montage' : 'hold';
+      const cap = rhythm === 'montage'
+        ? shotsThatFit(ACT_BOARD_MONTAGE_MIN_SHOT_SECONDS) : 1;
+      const count = Math.max(1, Math.min(plan.video_queries.length, cap));
+      alternateQueries = plan.video_queries.slice(0, count)
+        .map(q => normalizeActBoardFootagePhrase(q));
+    } else {
+      // Local fallback (LLM plan unavailable): one held shot per beat, its
+      // query deferred to findActBoardFootageNode's own fetchMediaQueries.
+      // Rhythm is left unset so duration assignment uses the held-shot floor.
+      // (Same-fragment shots now share one window - see the matcher - so
+      // spawning several here would just subdivide the beat into cuts with no
+      // rhythm intelligence behind it; one shot is the safe no-plan default.)
+      rhythm = '';
+      const firstQuery = normalizeActBoardFootagePhrase(phrase.query || phrase.visual_proxy);
+      const phraseTextKey = normalizeActBoardFootagePhrase(phrase.text).toLocaleLowerCase();
+      alternateQueries = [firstQuery && firstQuery.toLocaleLowerCase() !== phraseTextKey
+        ? firstQuery : ''];
+    }
     const sameBeatNodes = nodes.filter(node => node.type === 'footage'
       && node.narrationNodeId === narrationNode.id
       && actBoardNarrationSpanTextKey(node.fragment)
@@ -20976,6 +21126,10 @@ async function suggestActBoardSelectedFootage(
         // 'clause' beats end with their clause on the rail; a phrase beat
         // holds until the next beat as before.
         footageBeatKind: phrase.kind === 'clause' ? 'clause' : '',
+        // 'hold' = one sustained shot across the beat; 'montage' = a quick cut
+        // in a burst of shots (shorter floor). '' = unknown (local fallback);
+        // duration assignment then uses the normal held-shot floor.
+        footageRhythm: rhythm,
         filmabilityBucket: phrase.bucket || 'depictable',
         filmabilityQuery: query,
         filmabilityProxy: phrase.visual_proxy || '',
@@ -21007,6 +21161,7 @@ async function suggestActBoardSelectedFootage(
       footageNode.filmabilityQuery = query;
       footageNode.query = '';
       footageNode.manualQuery = false;
+      footageNode.footageRhythm = rhythm;
       footageNode.filmabilityBucket = phrase.bucket || footageNode.filmabilityBucket || 'depictable';
       if (phrase.kind === 'clause') footageNode.footageBeatKind = 'clause';
       footageNode.filmabilityProxy = phrase.visual_proxy || footageNode.filmabilityProxy || '';

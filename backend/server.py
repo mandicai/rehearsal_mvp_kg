@@ -1110,7 +1110,48 @@ def paper_media_queries():
             highlight,
             narration=(data.get('narration') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS],
             documentary_mode=documentary_mode or '',
+            abstract=(data.get('abstract') or '').strip()[:MAX_ABSTRACT_CHARS],
         ))
+    except MediaQueryLLMCallError as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/paper/plan_footage', methods=['POST'])
+def paper_plan_footage():
+    """Per-beat documentary footage plan for one narration segment.
+
+    Given the segment's chosen clause beats, returns each beat's cut rhythm
+    (hold vs montage), shot count, and per-shot stock-video queries so
+    Visualize highlights can create the right number of shots per beat before
+    searching. See media_query_llm.plan_footage."""
+    data = request.get_json(silent=True) or {}
+    raw_clauses = data.get('clauses') or []
+    clauses = [
+        {
+            'text': str(item.get('text') or '').strip()[:MAX_STORYBOARD_SECTION_CHARS],
+            'start': int(item.get('start')),
+            'end': int(item.get('end')),
+        }
+        for item in raw_clauses[:24]
+        if isinstance(item, dict)
+        and str(item.get('text') or '').strip()
+        and str(item.get('start', '')).lstrip('-').isdigit()
+        and str(item.get('end', '')).lstrip('-').isdigit()
+    ]
+    if not clauses:
+        return jsonify({'beats': []})
+    documentary_mode, err = _parse_documentary_mode(data)
+    if err:
+        return err
+    if not media_query_client.is_configured():
+        return jsonify({'error': _STORYBOARD_NOT_CONFIGURED_ERROR}), 503
+    try:
+        return jsonify({'beats': media_query_client.plan_footage(
+            clauses,
+            narration=(data.get('narration') or '').strip()[:MAX_NARRATION_TRANSCRIPT_CHARS],
+            documentary_mode=documentary_mode or '',
+            abstract=(data.get('abstract') or '').strip()[:MAX_ABSTRACT_CHARS],
+        )})
     except MediaQueryLLMCallError as exc:
         return jsonify({'error': str(exc)}), 500
 

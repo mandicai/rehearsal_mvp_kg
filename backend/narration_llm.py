@@ -16,14 +16,22 @@ except ImportError:  # openai is optional when the local app runs without an LLM
     OpenAI = None
 
 
-_SYSTEM_PROMPT = """You are a documentary writer helping a filmmaker draft one short voice-over passage.
-Write natural spoken narration for exactly one documentary scene, grounded only in the supplied paper
-section. Use the narrative act as the scene's dramatic job: do not repeat the act label mechanically.
-Make the passage concrete, clear, and easy to read aloud. Explain the research in plain language while
-preserving uncertainty where the paper is uncertain. Do not invent facts, names, numbers, quotations, or
-conclusions that are not in the supplied material. Do not include camera directions, stage directions,
-headings, quotation marks, or meta-commentary. Return only JSON in this exact shape:
-{"narration": "2-4 sentences of spoken narration"}
+_SYSTEM_PROMPT = """You are a documentary writer helping a filmmaker draft the voice-over for one scene.
+Write natural spoken narration, grounded only in the supplied paper section. Use the narrative act as the
+scene's dramatic job: do not repeat the act label mechanically. Make it concrete, clear, and easy to read
+aloud, in the flowing style of a Vox-type explainer — lead the viewer through the idea rather than
+summarising it.
+
+Write a FULL passage organized into 3-5 short beats, each beat 2-4 sentences that belong together as one
+filmable moment (a claim and its consequence, a setup and its payoff, one step of a process). Separate
+beats with a blank line. Aim for enough narration that the scene has room to breathe and show several
+distinct images — do not compress the whole scene into one or two sentences.
+
+Explain the research in plain language while preserving uncertainty where the paper is uncertain. Do not
+invent facts, names, numbers, quotations, or conclusions that are not in the supplied material. Do not
+include camera directions, stage directions, headings, quotation marks, or meta-commentary. Return only
+JSON in this exact shape (beats separated by a literal blank line inside the string):
+{"narration": "First beat, 2-4 sentences.\\n\\nSecond beat, 2-4 sentences.\\n\\nThird beat..."}
 
 The supplied section text may begin with a block labeled "Current narration and edited phrases".
 Treat that block as the presenter's active revision request: incorporate the edited phrases and the

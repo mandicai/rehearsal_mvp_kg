@@ -1731,6 +1731,7 @@ function fetchPaperExtraction(file) {
 
 const STORYBOARD_API_URL = `${API_BASE_URL}/paper/storyboard`;
 const MEDIA_QUERIES_API_URL = `${API_BASE_URL}/paper/media_queries`;
+const FOOTAGE_PLAN_API_URL = `${API_BASE_URL}/paper/plan_footage`;
 const NARRATION_SPANS_API_URL = `${API_BASE_URL}/narration/spans`;
 const NARRATION_CLAUSES_API_URL = `${API_BASE_URL}/narration/clauses`;
 const FOOTAGE_MATCH_API_URL         = `${API_BASE_URL}/narration/match_footage`;
@@ -1793,6 +1794,29 @@ function fetchMediaQueries(scene, signal) {
     if (err?.name === 'AbortError') throw err;
     if (err.isServerError) throw err;
     throw new Error(`Could not reach the media-query server at ${MEDIA_QUERIES_API_URL} (${err.message}).`);
+  });
+}
+
+// One per-segment documentary footage plan: given the segment's chosen clause
+// beats ([{text,start,end}]), returns each beat's cut rhythm (hold vs montage),
+// shot count, and per-shot stock-video queries. See backend
+// media_query_llm.plan_footage / the /paper/plan_footage route. Returns
+// { beats: [...] }.
+function fetchFootagePlan({ clauses, narration, documentaryMode, abstract }, signal) {
+  return fetch(FOOTAGE_PLAN_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    ...(signal ? { signal } : {}),
+    body: JSON.stringify({
+      clauses: Array.isArray(clauses) ? clauses : [],
+      narration: String(narration || ''),
+      ...(documentaryMode ? { documentary_mode: documentaryMode } : {}),
+      ...(abstract ? { abstract } : {}),
+    }),
+  }).then(handleJsonResponse).catch(err => {
+    if (err?.name === 'AbortError') throw err;
+    if (err.isServerError) throw err;
+    throw new Error(`Could not reach the footage-plan server at ${FOOTAGE_PLAN_API_URL} (${err.message}).`);
   });
 }
 
