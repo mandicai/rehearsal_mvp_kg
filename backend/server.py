@@ -136,7 +136,7 @@ from documentary_techniques import DOCUMENTARY_TECHNIQUES, DOCUMENTARY_TECHNIQUE
 import movie_render
 from stock_media import (
     PexelsClient, InternetArchiveClient, LibraryOfCongressClient, WikimediaCommonsClient,
-    FreesoundClient, StockMediaCallError,
+    ShutterstockClient, FreesoundClient, StockMediaCallError,
 )
 from premiere_bridge import (
     next_premiere_project_id, premiere_project_dir, premiere_footage_dir, premiere_sketch_dir,
@@ -320,6 +320,7 @@ pexels_client = PexelsClient()
 internet_archive_client = InternetArchiveClient()
 library_of_congress_client = LibraryOfCongressClient()
 wikimedia_commons_client = WikimediaCommonsClient()
+shutterstock_client = ShutterstockClient()
 freesound_client = FreesoundClient()
 
 
@@ -2059,18 +2060,15 @@ _FREESOUND_NOT_CONFIGURED_ERROR = (
 
 @app.route('/media/search_video', methods=['POST'])
 def media_search_video():
-    # Pexels and Internet Archive - fast, and every clip is already a short,
-    # purpose-cut stock/archival shot. Wikimedia Commons was tried instead for
-    # its synced-audio footage, but its clips run much longer (full scenes/
-    # reels rather than pre-cut shots), which made the whole Act Board
-    # pipeline (search, download, remux, playback) noticeably slower - not
-    # worth it against Pexels/IA's silent-but-fast clips for most of this
-    # workflow. Library of Congress is left out: its own site started
-    # rate-limiting this route's searches (its /film-and-videos/ search
-    # endpoint has no published API/key, so there's no documented,
-    # less-disruptive way to query it less aggressively). All three of
-    # Wikimedia/Library of Congress/Pexels/IA clients remain fully working in
-    # stock_media.py if the sound-vs-speed tradeoff changes again.
+    # Shutterstock (when a key is configured) is the strongest for relevance
+    # and editorial/news footage; its preview clips are watermarked but fine
+    # for search/preview/rough-cut. Pexels and Internet Archive are fast and
+    # every clip is already a short, purpose-cut stock/archival shot - kept as
+    # free fallbacks (and so search still returns results with no Shutterstock
+    # key). Wikimedia Commons was tried for its synced-audio footage but its
+    # clips run much longer (full scenes/reels), slowing the whole Act Board
+    # pipeline; Library of Congress rate-limits this route's searches. Both
+    # remain fully working in stock_media.py if that tradeoff changes again.
     data = request.get_json(silent=True) or {}
     query = (data.get('query') or '').strip()
     try:
@@ -2082,6 +2080,10 @@ def media_search_video():
         return jsonify({'error': 'query is required'}), 400
 
     providers = [('Pexels', pexels_client), ('Internet Archive', internet_archive_client)]
+    # Only query Shutterstock when it is actually configured, so an unset key
+    # never turns every search into an error from that provider.
+    if shutterstock_client.is_configured():
+        providers.insert(0, ('Shutterstock', shutterstock_client))
 
     videos = []
     errors = []

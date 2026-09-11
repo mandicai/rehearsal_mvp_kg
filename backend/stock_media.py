@@ -33,6 +33,12 @@ Env vars (see backend/.env.example):
     PEXELS_API_KEY      https://www.pexels.com/api/ (free)
     FREESOUND_API_KEY   https://freesound.org/apiv2/apply/ (free tier is
                          non-commercial use only)
+    SHUTTERSTOCK_API_TOKEN  https://developers.shutterstock.com/ (paid; an
+                         individual OAuth access token). SHUTTERSTOCK_API_KEY
+                         is accepted as an alias. Search returns WATERMARKED
+                         preview clips - fine for search/preview/rough-cut;
+                         licensing an un-watermarked file is a separate paid
+                         step this tool does not perform.
     (Internet Archive, Library of Congress, and Wikimedia Commons need no
     env var/key at all.)
 """
@@ -43,6 +49,7 @@ import re
 import requests
 
 _PEXELS_SEARCH_URL = 'https://api.pexels.com/v1/videos/search'
+_SHUTTERSTOCK_SEARCH_URL = 'https://api.shutterstock.com/v2/videos/search'
 _FREESOUND_SEARCH_URL = 'https://freesound.org/apiv2/search/text/'
 _ARCHIVE_SEARCH_URL = 'https://archive.org/advancedsearch.php'
 _ARCHIVE_METADATA_URL = 'https://archive.org/metadata/{identifier}'
@@ -155,6 +162,85 @@ class PexelsClient:
                 'duration': _duration_seconds(video.get('duration')),
                 'creator': (video.get('user') or {}).get('name'),
                 'source_url': video.get('url'),
+            })
+        return results
+
+
+class ShutterstockClient:
+    """Shutterstock video search (paid REST API, api.shutterstock.com/v2).
+
+    Returns the same shape as the other providers. The `video_url` is
+    Shutterstock's WATERMARKED preview MP4 - appropriate for search, inline
+    preview, and rough cuts; obtaining a clean, licensed file is a separate
+    paid step (the /v2/videos/licenses endpoint) this tool deliberately does
+    not perform. Auth is a Bearer token (an individual OAuth access token from
+    the Shutterstock developer portal), read from SHUTTERSTOCK_API_TOKEN
+    (SHUTTERSTOCK_API_KEY accepted as an alias)."""
+    def __init__(self):
+        self.api_key = (os.environ.get('SHUTTERSTOCK_API_TOKEN')
+                        or os.environ.get('SHUTTERSTOCK_API_KEY'))
+        # Two portal credential shapes are supported. An individual OAuth
+        # access token authenticates as `Bearer <token>`. A consumer
+        # key + secret pair (what the developer portal hands out first)
+        # authenticates read/search endpoints via HTTP Basic (key as user,
+        # secret as password) with no separate token exchange - set
+        # SHUTTERSTOCK_API_SECRET to use that form.
+        self.api_secret = os.environ.get('SHUTTERSTOCK_API_SECRET')
+
+    def is_configured(self):
+        return bool(self.api_key)
+
+    def search_videos(self, query, per_page=5):
+        """Returns [{'id', 'thumbnail_url', 'video_url', 'width', 'height',
+        'duration', 'creator', 'source_url'}, ...]."""
+        if not self.is_configured():
+            raise StockMediaCallError('Shutterstock client is not configured (missing SHUTTERSTOCK_API_TOKEN)')
+        request_kwargs = {'timeout': 15}
+        if self.api_secret:
+            request_kwargs['auth'] = (self.api_key, self.api_secret)
+        else:
+            request_kwargs['headers'] = {'Authorization': f'Bearer {self.api_key}'}
+        try:
+            response = requests.get(
+                _SHUTTERSTOCK_SEARCH_URL,
+                params={'query': query, 'per_page': per_page, 'sort': 'popular'},
+                **request_kwargs,
+            )
+            response.raise_for_status()
+            data = response.json()
+        except requests.RequestException as exc:
+            raise StockMediaCallError(f'Shutterstock video search failed: {exc}')
+        except ValueError as exc:  # malformed JSON
+            raise StockMediaCallError(f'Shutterstock video search returned invalid JSON: {exc}')
+
+        results = []
+        for item in data.get('data', []):
+            assets = item.get('assets') or {}
+            preview = ((assets.get('preview_mp4') or {}).get('url')
+                       or (assets.get('preview_webm') or {}).get('url'))
+            if not preview:
+                continue
+            thumbnail = ((assets.get('preview_jpg') or {}).get('url')
+                         or (assets.get('thumb_jpg') or {}).get('url'))
+            # `aspect` is the numeric ratio (e.g. "1.778"); `aspect_ratio` is
+            # the "16:9" label. The board stage is 16:9 and the frontend drops
+            # anything measuring taller than wide, so skip portrait here.
+            try:
+                aspect = float(item.get('aspect'))
+            except (TypeError, ValueError):
+                aspect = None
+            if aspect is not None and aspect < 1:
+                continue
+            results.append({
+                'id': item.get('id'),
+                'thumbnail_url': thumbnail,
+                'video_url': preview,
+                'width': int(round(480 * aspect)) if aspect else None,
+                'height': 480 if aspect else None,
+                'duration': _duration_seconds(item.get('duration')),
+                'creator': (item.get('contributor') or {}).get('id'),
+                'source_url': item.get('url')
+                or f"https://www.shutterstock.com/video/clip-{item.get('id')}",
             })
         return results
 
